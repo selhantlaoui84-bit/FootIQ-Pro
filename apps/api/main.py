@@ -11,14 +11,17 @@ from dataclasses import dataclass
 from typing import Any
 
 try:
-    from fastapi import FastAPI, Request, Response
-    from fastapi.middleware.cors import CORSMiddleware
-except ImportError as exc:
-    raise RuntimeError("FastAPI not installed. Run: python -m pip install -r requirements.txt") from exc
+    from fastapi import FastAPI
 
-from redis.asyncio import Redis
-from sqlalchemy import create_engine, text
-from sqlalchemy.exc import SQLAlchemyError
+app = FastAPI()
+
+@app.get("/")
+def root():
+    return {"status": "running"}
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 
 
 logging.basicConfig(
@@ -101,19 +104,30 @@ async def _check_database() -> None:
         return
 
     try:
+        from sqlalchemy import create_engine, text
+        from sqlalchemy.exc import SQLAlchemyError
+
         engine = create_engine(settings.database_url, pool_pre_ping=True)
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
         engine.dispose()
         logger.info("Database startup check passed")
+    except ImportError:
+        logger.warning("SQLAlchemy is not installed; skipping DB startup check")
     except SQLAlchemyError as exc:
         logger.exception("Database startup check failed")
         raise RuntimeError("Database unavailable") from exc
 
 
-async def _connect_redis() -> Redis | None:
+async def _connect_redis() -> Any | None:
     if not settings.redis_url:
         logger.warning("REDIS_URL is not configured; Redis cache disabled")
+        return None
+
+    try:
+        from redis.asyncio import Redis
+    except ImportError:
+        logger.warning("redis package is not installed; Redis cache disabled")
         return None
 
     redis = Redis.from_url(settings.redis_url, decode_responses=True)
@@ -134,7 +148,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
-        redis: Redis | None = getattr(app.state, "redis", None)
+        redis: Any | None = getattr(app.state, "redis", None)
         if redis is not None:
             await redis.close()
 
@@ -149,11 +163,16 @@ app.add_middleware(
 )
 
 
+@app.get("/")
+def root() -> dict[str, str]:
+    return {"status": "ok", "service": "FootIQ Pro API"}
+
+
 @app.middleware("http")
 async def request_logging_and_prediction_cache(request: Request, call_next):
     start = time.perf_counter()
     cache_key = _prediction_cache_key(request) if _is_prediction_request(request) else None
-    redis: Redis | None = getattr(request.app.state, "redis", None)
+    redis: Any | None = getattr(request.app.state, "redis", None)
 
     if redis is not None and cache_key is not None:
         cached = await redis.get(cache_key)

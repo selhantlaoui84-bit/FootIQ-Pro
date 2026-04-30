@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Ignore Git and GitHub files
 .git
 .github/
@@ -25,31 +24,3 @@ README.md
 logs
 dist-ssr
 .DS_Store
-=======
-# Ignore Git and GitHub files
-.git
-.github/
-
-# Ignore Husky configuration files
-.husky/
-
-# Ignore documentation and metadata files
-CONTRIBUTING.md
-LICENSE
-README.md
-
-# Ignore environment examples and sensitive info
-.env
-*.local
-*.example
-
-# Ignore node modules, logs and cache files
-**/*.log
-**/node_modules
-**/dist
-**/build
-**/.cache
-logs
-dist-ssr
-.DS_Store
->>>>>>> 4f1e48c698515538b2c0af945e9e58c9abb20310

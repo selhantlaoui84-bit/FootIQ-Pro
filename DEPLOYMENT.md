@@ -4,6 +4,12 @@
 
 Platform: Railway or Render
 
+Root directory:
+
+```bash
+apps/api
+```
+
 Build:
 
 ```bash
@@ -13,7 +19,7 @@ python -m pip install -r requirements.txt
 Start:
 
 ```bash
-gunicorn -k uvicorn.workers.UvicornWorker apps.api.main:app -w 2 -b 0.0.0.0:$PORT
+uvicorn main:app --host 0.0.0.0 --port $PORT
 ```
 
 Environment:
