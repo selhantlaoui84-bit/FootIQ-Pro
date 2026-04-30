@@ -12,6 +12,7 @@ from typing import Any
 
 try:
     from fastapi import FastAPI, Request, Response
+    from fastapi.middleware.cors import CORSMiddleware
 except ImportError as exc:
     raise RuntimeError("FastAPI not installed. Run: python -m pip install -r requirements.txt") from exc
 
@@ -56,11 +57,15 @@ class Settings:
     debug: bool = _env_bool("DEBUG")
     database_url: str | None = os.getenv("DATABASE_URL")
     redis_url: str | None = os.getenv("REDIS_URL")
+    cors_origins: str = os.getenv("CORS_ORIGINS", "*")
     cache_ttl_seconds: int = _env_int("CACHE_TTL_SECONDS", 300, minimum=300, maximum=900)
     external_timeout_seconds: float = _env_float("EXTERNAL_TIMEOUT_SECONDS", 5)
 
 
 settings = Settings()
+
+if settings.env not in {"development", "staging", "production", "test"}:
+    raise RuntimeError("ENV must be one of: development, staging, production, test")
 
 
 async def run_with_timeout(
@@ -92,8 +97,6 @@ def _is_prediction_request(request: Request) -> bool:
 
 async def _check_database() -> None:
     if not settings.database_url:
-        if settings.env.lower() == "production":
-            raise RuntimeError("DATABASE_URL is required in production")
         logger.warning("DATABASE_URL is not configured; skipping DB startup check")
         return
 
@@ -110,8 +113,6 @@ async def _check_database() -> None:
 
 async def _connect_redis() -> Redis | None:
     if not settings.redis_url:
-        if settings.env.lower() == "production":
-            raise RuntimeError("REDIS_URL is required in production")
         logger.warning("REDIS_URL is not configured; Redis cache disabled")
         return None
 
@@ -139,6 +140,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(debug=settings.debug, lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.middleware("http")

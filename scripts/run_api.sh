@@ -21,4 +21,4 @@ if [ -d ".python-packages" ]; then
   export PYTHONPATH="$REPO_ROOT/.python-packages${PYTHONPATH:+:$PYTHONPATH}"
 fi
 
-"$PYTHON_BIN" -m gunicorn -k uvicorn.workers.UvicornWorker apps.api.main:app -w "${WEB_CONCURRENCY:-4}" -b 0.0.0.0:8000
+"$PYTHON_BIN" -m gunicorn -k uvicorn.workers.UvicornWorker apps.api.main:app -w "${WEB_CONCURRENCY:-2}" -b "0.0.0.0:${PORT:-8000}"

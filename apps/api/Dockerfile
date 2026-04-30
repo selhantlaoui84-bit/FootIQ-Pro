@@ -10,4 +10,4 @@ COPY apps ./apps
 
 EXPOSE 8000
 
-CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "apps.api.main:app", "-w", "4", "-b", "0.0.0.0:8000"]
+CMD ["sh", "-c", "gunicorn -k uvicorn.workers.UvicornWorker apps.api.main:app -w ${WEB_CONCURRENCY:-2} -b 0.0.0.0:${PORT:-8000}"]
