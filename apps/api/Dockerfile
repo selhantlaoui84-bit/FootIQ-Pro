@@ -8,4 +8,4 @@ RUN python -m pip install --upgrade pip && \
 
 COPY apps/api /app
 
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "gunicorn main:app -k uvicorn.workers.UvicornWorker -b 0.0.0.0:${PORT:-8000}"]
