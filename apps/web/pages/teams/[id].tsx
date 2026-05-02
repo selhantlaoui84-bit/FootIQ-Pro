@@ -39,83 +39,83 @@ export default function TeamDetailPage({ team, relatedMatches, relatedPrediction
   return (
     <ProtectedRoute>
       <Layout>
-      <section className="pageHeader">
-        <p className="eyebrow">{team.competition}</p>
-        <h1>{team.name}</h1>
-        <p>Vue équipe construite à partir des matchs et prédictions disponibles.</p>
-      </section>
+        <section className="pageHeader">
+          <p className="eyebrow">{team.competition}</p>
+          <h1>{team.name}</h1>
+          <p>Vue équipe construite à partir des matchs et prédictions disponibles.</p>
+        </section>
 
-      <section className="metrics">
-        <article className="metric">
-          <span>Elo placeholder</span>
-          <strong>{team.elo ?? 'N/A'}</strong>
-        </article>
-        <article className="metric">
-          <span>Recent form</span>
-          <strong>{team.form ?? 'N/A'}</strong>
-        </article>
-        <article className="metric">
-          <span>Related matches</span>
-          <strong>{relatedMatches.length}</strong>
-        </article>
-        <article className="metric">
-          <span>Average confidence</span>
-          <strong>{averageConfidence || 'N/A'}</strong>
-        </article>
-        <article className="metric">
-          <span>Trend</span>
-          <strong>{team.trend ?? 'stable'}</strong>
-        </article>
-      </section>
+        <section className="metrics">
+          <article className="metric">
+            <span>Elo</span>
+            <strong>{team.elo ?? 'N/A'}</strong>
+          </article>
+          <article className="metric">
+            <span>Forme récente</span>
+            <strong>{team.form ?? 'N/A'}</strong>
+          </article>
+          <article className="metric">
+            <span>Matchs liés</span>
+            <strong>{relatedMatches.length}</strong>
+          </article>
+          <article className="metric">
+            <span>Confiance moyenne</span>
+            <strong>{averageConfidence || 'N/A'}</strong>
+          </article>
+          <article className="metric">
+            <span>Tendance</span>
+            <strong>{team.trend ?? 'stable'}</strong>
+          </article>
+        </section>
 
-      <section className="quickActions">
-        <Link className="button secondary" href="/matches">
-          Tous les matchs
-        </Link>
-        <Link className="button secondary" href="/predictions">
-          Prédictions
-        </Link>
-        <Link className="button secondary" href="/teams">
-          Équipes
-        </Link>
-      </section>
+        <section className="quickActions">
+          <Link className="button secondary" href="/matches">
+            Tous les matchs
+          </Link>
+          <Link className="button secondary" href="/predictions">
+            Prédictions
+          </Link>
+          <Link className="button secondary" href="/teams">
+            Équipes
+          </Link>
+        </section>
 
-      <section className="sectionSplit">
-        <div>
-          <h2>Upcoming matches</h2>
-          <div className="stack">
-            {relatedMatches.length > 0 ? (
-              relatedMatches.map((match) => <MatchCard match={match} key={match.match_id} />)
-            ) : (
-              <Link className="card clickable-card" href="/matches">
-                <p>Aucun match lié disponible. Explorer tous les matchs.</p>
-              </Link>
-            )}
-          </div>
-        </div>
-        <div>
-          <h2>Recent related predictions</h2>
-          <div className="stack">
-            {relatedPredictions.length > 0 ? (
-              relatedPredictions.map((prediction) => (
-                <Link className="card clickable-card" href={matchHref(prediction)} key={prediction.match_id}>
-                  <h3>
-                    {prediction.home_team} vs {prediction.away_team}
-                  </h3>
-                  <p>{prediction.main_prediction}</p>
-                  <div className="confidenceLine confidence-bar">
-                    <span style={{ width: `${prediction.confidence.score}%` }} />
-                  </div>
+        <section className="sectionSplit">
+          <div>
+            <h2>Matchs à venir</h2>
+            <div className="stack">
+              {relatedMatches.length > 0 ? (
+                relatedMatches.map((match) => <MatchCard match={match} key={match.match_id} />)
+              ) : (
+                <Link className="card clickable-card" href="/matches">
+                  <p>Aucun match lié disponible. Explorer tous les matchs.</p>
                 </Link>
-              ))
-            ) : (
-              <Link className="card clickable-card" href="/predictions">
-                <p>Aucune prédiction liée disponible.</p>
-              </Link>
-            )}
+              )}
+            </div>
           </div>
-        </div>
-      </section>
+          <div>
+            <h2>Prédictions liées récentes</h2>
+            <div className="stack">
+              {relatedPredictions.length > 0 ? (
+                relatedPredictions.map((prediction) => (
+                  <Link className="card clickable-card" href={matchHref(prediction)} key={prediction.match_id}>
+                    <h3>
+                      {prediction.home_team} vs {prediction.away_team}
+                    </h3>
+                    <p>{prediction.main_prediction}</p>
+                    <div className="confidenceLine confidence-bar">
+                      <span style={{ width: `${prediction.confidence.score}%` }} />
+                    </div>
+                  </Link>
+                ))
+              ) : (
+                <Link className="card clickable-card" href="/predictions">
+                  <p>Aucune prédiction liée disponible.</p>
+                </Link>
+              )}
+            </div>
+          </div>
+        </section>
       </Layout>
     </ProtectedRoute>
   );

@@ -1,10 +1,12 @@
-﻿import type { GetStaticProps } from 'next';
+import type { GetStaticProps } from 'next';
 import Link from 'next/link';
+import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import {
   getBacktesting,
   getFeatureSummary,
   getMlFeatureImportance,
+  getMlComparison,
   getMlStatus,
   getModelComparison,
   getModels,
@@ -14,6 +16,7 @@ import type {
   BacktestingReport,
   FeatureImportanceRow,
   FeatureSummary,
+  MlComparison,
   MlStatus,
   ModelComparison,
   ModelsMetadata,
@@ -28,24 +31,26 @@ type PerformanceProps = {
   comparison: ModelComparison;
   featureSummary: FeatureSummary;
   mlStatus: MlStatus;
+  mlComparison: MlComparison;
   featureImportance: FeatureImportanceRow[];
 };
 
 export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
-  const [performance, backtesting, models, comparison, featureSummary, mlStatus, featureImportance] = await Promise.all([
+  const [performance, backtesting, models, comparison, featureSummary, mlStatus, mlComparison, featureImportance] = await Promise.all([
     getPerformance(),
     getBacktesting(),
     getModels(),
     getModelComparison(),
     getFeatureSummary(),
     getMlStatus(),
+    getMlComparison(),
     getMlFeatureImportance(),
   ]);
 
-  return { props: { performance, backtesting, models, comparison, featureSummary, mlStatus, featureImportance }, revalidate: 120 };
+  return { props: { performance, backtesting, models, comparison, featureSummary, mlStatus, mlComparison, featureImportance }, revalidate: 120 };
 };
 
-export default function PerformancePage({ performance, backtesting, models, comparison, featureSummary, mlStatus, featureImportance }: PerformanceProps) {
+export default function PerformancePage({ performance, backtesting, models, comparison, featureSummary, mlStatus, mlComparison, featureImportance }: PerformanceProps) {
   const report = {
     ...backtesting,
     model_version: performance.current_model_version ?? performance.model_version ?? models.current_model_version ?? backtesting.model_version,
@@ -64,16 +69,16 @@ export default function PerformancePage({ performance, backtesting, models, comp
   };
 
   const items = [
-    ['Model version', report.model_version],
-    ['Previous model', report.previous_model_version ?? 'elo-poisson-v1'],
-    ['Calibration', report.calibration_applied ? 'applied' : 'applied'],
-    ['Predictions tracked', performance.predictions_tracked ?? performance.tracked],
-    ['Evaluated matches', report.evaluated_matches],
-    ['Result accuracy', `${report.result_accuracy}%`],
-    ['Over 2.5 accuracy', `${report.over_2_5_accuracy}%`],
-    ['BTTS accuracy', `${report.btts_accuracy}%`],
-    ['Average Brier', report.average_brier_score],
-    ['Calibration score', `${report.calibration_score}/100`],
+    ['Modèle', report.model_version],
+    ['Modèle précédent', report.previous_model_version ?? 'elo-poisson-v1'],
+    ['Calibration', report.calibration_applied ? 'active' : 'active'],
+    ['Prédictions suivies', performance.predictions_tracked ?? performance.tracked],
+    ['Matchs évalués', report.evaluated_matches],
+    ['Accuracy résultat', `${report.result_accuracy}%`],
+    ['Accuracy over 2.5', `${report.over_2_5_accuracy}%`],
+    ['Accuracy BTTS', `${report.btts_accuracy}%`],
+    ['Score Brier moyen', report.average_brier_score],
+    ['Score de calibration', `${report.calibration_score}/100`],
   ];
   const competitions = Object.entries(report.competition_breakdown ?? {});
   const modelRows = Object.entries(performance.model_versions ?? comparison.model_versions ?? {});
@@ -101,7 +106,7 @@ export default function PerformancePage({ performance, backtesting, models, comp
 
         <section className="metrics">
           {items.map(([label, value]) => (
-            <Link className="metric clickable-card" href={label === 'Predictions tracked' ? '/predictions' : '/performance'} key={label}>
+            <Link className="metric clickable-card" href={label === 'Prédictions suivies' ? '/predictions' : '/performance'} key={label}>
               <span>{label}</span>
               <strong>{value}</strong>
             </Link>
@@ -109,36 +114,36 @@ export default function PerformancePage({ performance, backtesting, models, comp
         </section>
 
 
-        <section className="sectionSplit" id="model-comparison">
+        <section className="sectionSplit sectionAnchor" id="model-comparison">
           <article className="card accent">
-            <p className="eyebrow">Current model</p>
+            <p className="eyebrow">Modèle actuel</p>
             <h2>{models.current_model_version}</h2>
             <div className="dataList">
-              <span>Previous <strong>{models.previous_model_version}</strong></span>
-              <span>Family <strong>{models.family}</strong></span>
-              <span>Calibration <strong>{models.calibration ? 'enabled' : 'disabled'}</strong></span>
+              <span>Précédent <strong>{models.previous_model_version}</strong></span>
+              <span>Famille <strong>{models.family}</strong></span>
+              <span>Calibration <strong>{models.calibration ? 'active' : 'inactive'}</strong></span>
               <span>Snapshots <strong>{performance.snapshots_count ?? 0}</strong></span>
             </div>
             <p>{models.description}</p>
           </article>
           <article className="card">
-            <h2>Best model</h2>
+            <h2>Meilleur modèle</h2>
             <div className="dataList">
-              <span>Best by Brier <strong>{bestByBrier ?? 'N/A'}</strong></span>
-              <span>Best by accuracy <strong>{bestByAccuracy ?? 'N/A'}</strong></span>
+              <span>Meilleur Brier <strong>{bestByBrier ?? 'N/A'}</strong></span>
+              <span>Meilleure accuracy <strong>{bestByAccuracy ?? 'N/A'}</strong></span>
             </div>
-            <p>A prediction snapshot is a saved version of what the model believed before evaluation. This enables fair model comparison over time.</p>
+            <p>Un snapshot conserve ce que le modèle pensait avant évaluation. Cela permet une comparaison juste dans le temps.</p>
           </article>
         </section>
 
         <section className="card">
-          <h2>Model comparison</h2>
+          <h2>Comparaison des modèles</h2>
           {modelRows.length === 0 ? (
-            <div className="emptyState">No prediction snapshots available yet. Run an admin refresh with PostgreSQL enabled.</div>
+            <div className="emptyState">Aucun snapshot de prédiction disponible. Lancez une actualisation admin avec PostgreSQL actif.</div>
           ) : (
             <div className="metricTable">
               <div className="metricTableRow header">
-                <span>Model</span>
+                <span>Modèle</span>
                 <span>Snapshots</span>
                 <span>Accuracy</span>
                 <span>Brier</span>
@@ -158,37 +163,37 @@ export default function PerformancePage({ performance, backtesting, models, comp
         <section className="sectionSplit" id="feature-store">
           <article className="card accent">
             <p className="eyebrow">Feature Store</p>
-            <h2>Historical training dataset</h2>
+            <h2>Jeu d'entraînement historique</h2>
             <p>
-              The Feature Store freezes the model inputs used for each match. This prepares future supervised learning
-              models such as XGBoost.
+              Le Feature Store fige les variables utilisées par les modèles pour chaque match. Il prépare les futurs
+              modèles supervisés comme XGBoost.
             </p>
             <div className="dataList">
               <span>
-                Status <strong>{featureStoreReady ? 'ready' : 'warming up'}</strong>
+                Statut <strong>{featureStoreReady ? 'prêt' : 'en préparation'}</strong>
               </span>
               <span>
-                Storage <strong>{featureSummary.storage ?? 'memory'}</strong>
+                Stockage <strong>{featureSummary.storage ?? 'mémoire'}</strong>
               </span>
               <span>
                 Snapshots <strong>{featureStore.snapshots_count}</strong>
               </span>
               <span>
-                Training rows <strong>{featureStore.with_target_count}</strong>
+                Lignes entraînables <strong>{featureStore.with_target_count}</strong>
               </span>
               <span>
-                Target coverage <strong>{featureStore.target_coverage}%</strong>
+                Couverture cible <strong>{featureStore.target_coverage}%</strong>
               </span>
             </div>
             <a className="button secondary" href={`${apiUrl}/features/export`}>
-              Download CSV
+              Télécharger le CSV
             </a>
           </article>
 
           <article className="card">
-            <h2>Feature inventory</h2>
+            <h2>Variables disponibles</h2>
             {featureStore.feature_names.length === 0 ? (
-              <div className="emptyState">No feature snapshots available yet. Run an admin refresh after PostgreSQL is enabled.</div>
+              <div className="emptyState">Aucun snapshot de feature disponible. Lancez une actualisation admin après activation de PostgreSQL.</div>
             ) : (
               <div className="tagCloud">
                 {featureStore.feature_names.map((featureName) => (
@@ -208,16 +213,16 @@ export default function PerformancePage({ performance, backtesting, models, comp
           </article>
         </section>
 
-        <section className="sectionSplit" id="candidate-ml">
+        <section className="sectionSplit sectionAnchor" id="candidate-ml">
           <article className="card accent">
-            <p className="eyebrow">Candidate ML Model</p>
+            <p className="eyebrow">Modèle ML candidat</p>
             <h2>{candidate.model_version ?? 'ml-candidate-v1'}</h2>
-            <p>This ML candidate is trained from the Feature Store but is not yet used in production predictions.</p>
+            <p>Ce candidat ML est entraîné depuis le Feature Store, mais il n'est pas encore utilisé en production.</p>
             <div className="dataList">
               <span>Status <strong>{candidate.status}</strong></span>
-              <span>Production model <strong>{mlStatus.production_model_version}</strong></span>
-              <span>Candidate production <strong>{mlStatus.candidate_is_production ? 'yes' : 'false'}</strong></span>
-              <span>Rows used <strong>{candidate.rows_used ?? 0}</strong></span>
+              <span>Modèle production <strong>{mlStatus.production_model_version}</strong></span>
+              <span>Candidat en production <strong>{mlStatus.candidate_is_production ? 'oui' : 'non'}</strong></span>
+              <span>Lignes utilisées <strong>{candidate.rows_used ?? 0}</strong></span>
               <span>Accuracy <strong>{candidate.accuracy ?? 0}%</strong></span>
               <span>Log loss <strong>{candidate.log_loss ?? 'N/A'}</strong></span>
               <span>Brier 1X2 <strong>{candidate.brier_score_1x2 ?? 'N/A'}</strong></span>
@@ -227,7 +232,7 @@ export default function PerformancePage({ performance, backtesting, models, comp
           <article className="card">
             <h2>Feature importance</h2>
             {candidateImportance.length === 0 ? (
-              <div className="emptyState">No candidate model has been trained yet.</div>
+              <div className="emptyState">Aucun modèle candidat n'a encore été entraîné.</div>
             ) : (
               <div className="metricTable">
                 <div className="metricTableRow header">
@@ -249,38 +254,72 @@ export default function PerformancePage({ performance, backtesting, models, comp
           </article>
         </section>
 
-        <section className="sectionSplit">
+        <section className="card modelComparisonTable">
+          <h2>
+            <span className="metricHelp">
+              Comparaison production vs candidat ML
+              <InfoTooltip content="Le modèle ML candidat est évalué en observation. Il ne remplace pas le modèle Elo/Poisson utilisé en production." />
+            </span>
+          </h2>
+          <div className="metricTable">
+            <div className="metricTableRow header">
+              <span>Modèle</span>
+              <span>Accuracy</span>
+              <span>Brier</span>
+              <span>Statut</span>
+            </div>
+            <div className="metricTableRow bucketRow">
+              <span>{mlComparison.production_model_version}</span>
+              <strong>{mlComparison.production.result_accuracy}%</strong>
+              <strong>{mlComparison.production.average_brier_score}</strong>
+              <span>Production</span>
+            </div>
+            <div className="metricTableRow bucketRow">
+              <span>{mlComparison.candidate_model_version}</span>
+              <strong>{mlComparison.candidate.accuracy ?? 'N/A'}{mlComparison.candidate.accuracy !== null ? '%' : ''}</strong>
+              <strong>{mlComparison.candidate.brier_score_1x2 ?? 'N/A'}</strong>
+              <span>{mlComparison.candidate.status}</span>
+            </div>
+          </div>
+          <div className="dataList">
+            <span>Meilleur accuracy <strong>{mlComparison.winner_by_accuracy ?? 'N/A'}</strong></span>
+            <span>Meilleur Brier <strong>{mlComparison.winner_by_brier ?? 'N/A'}</strong></span>
+          </div>
+          <p>{mlComparison.note}</p>
+        </section>
+
+        <section className="sectionSplit sectionAnchor" id="backtesting">
           <article className="card accent">
-            <h2>Calibration reading</h2>
-            <p>{report.evaluated_matches === 0 ? 'No finished matches with scores available yet. Run admin refresh after score fields are enabled.' : report.note}</p>
+            <h2>Lecture de calibration</h2>
+            <p>{report.evaluated_matches === 0 ? 'Aucun match terminé avec score disponible. Lancez une actualisation admin après activation des scores.' : report.note}</p>
             <div className="dataList">
               <span>
-                Lower Brier score <strong>is better</strong>
+                Score Brier plus bas <strong>meilleur</strong>
               </span>
               <span>
-                Calibration <strong>closer to expected reliability is better</strong>
+                Calibration <strong>plus proche de la fiabilité observée</strong>
               </span>
               <span>
                 Smoothing <strong>conservative probability smoothing</strong>
               </span>
               <span>
-                Sample size <strong>{report.evaluated_matches || 'No finished scored matches yet'}</strong>
+                Échantillon <strong>{report.evaluated_matches || 'Aucun match scoré terminé'}</strong>
               </span>
             </div>
           </article>
 
           <article className="card">
-            <h2>Interpretation</h2>
+            <h2>Interprétation</h2>
             <p>
-              Small samples should be interpreted carefully. This report only evaluates finished matches with available
-              final scores, then compares the 1X2 probabilities, over 2.5 signal and BTTS signal against reality.
+              Les petits échantillons doivent être interprétés avec prudence. Le rapport évalue seulement les matchs
+              terminés avec score final, puis compare les probabilités 1N2, over 2.5 et BTTS au résultat réel.
             </p>
-            <p>{report.comparison_note ?? 'Historical model comparison requires stored prediction snapshots.'}</p>
+            <p>{report.comparison_note ?? 'La comparaison historique nécessite des snapshots de prédiction stockés.'}</p>
           </article>
         </section>
 
         <section className="card">
-          <h2>Confidence buckets</h2>
+          <h2>Seuils de confiance</h2>
           <div className="metricTable">
             <div className="metricTableRow header">
               <span>Bucket</span>
@@ -300,9 +339,9 @@ export default function PerformancePage({ performance, backtesting, models, comp
         </section>
 
         <section className="card">
-          <h2>Competition breakdown</h2>
+          <h2>Analyse par compétition</h2>
           {competitions.length === 0 ? (
-            <div className="emptyState">No finished scored matches available for competition analysis yet.</div>
+            <div className="emptyState">Aucun match terminé avec score disponible pour l'analyse par compétition.</div>
           ) : (
             <div className="compactDataGrid">
               {competitions.map(([competition, row]) => (
@@ -328,4 +367,6 @@ export default function PerformancePage({ performance, backtesting, models, comp
     </ProtectedRoute>
   );
 }
+
+
 

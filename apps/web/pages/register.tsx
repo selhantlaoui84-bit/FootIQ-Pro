@@ -46,12 +46,12 @@ export default function RegisterPage() {
       <section className="authShell">
         <form className="authCard" onSubmit={handleSubmit}>
           <p className="eyebrow">FootIQ Pro</p>
-          <h1>Register</h1>
-          <p>Crée un accès pour suivre les analyses, piloter les refreshs et préparer les futures options SaaS.</p>
+          <h1>Créer un compte</h1>
+          <p>Créez un accès pour suivre les analyses, piloter les actualisations et préparer les futures options SaaS.</p>
 
           {!authConfigured && (
             <div className="banner warning">
-              Supabase auth is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.
+              Supabase Auth n'est pas configuré. Ajoutez NEXT_PUBLIC_SUPABASE_URL et NEXT_PUBLIC_SUPABASE_ANON_KEY.
             </div>
           )}
           {error && <div className="banner error">{error}</div>}
@@ -69,7 +69,7 @@ export default function RegisterPage() {
             />
           </label>
           <label className="field">
-            Password
+            Mot de passe
             <input
               autoComplete="new-password"
               disabled={!authConfigured || isSubmitting}
@@ -82,12 +82,12 @@ export default function RegisterPage() {
           </label>
 
           <button className="button primary" disabled={!authConfigured || isSubmitting} type="submit">
-            {isSubmitting ? 'Creation...' : 'Créer le compte'}
+            {isSubmitting ? 'Création...' : 'Créer le compte'}
           </button>
           <p>
             Déjà inscrit ?{' '}
             <Link className="textLink" href="/login">
-              Login
+              Connexion
             </Link>
           </p>
         </form>
@@ -95,3 +95,4 @@ export default function RegisterPage() {
     </Layout>
   );
 }
+

@@ -57,30 +57,30 @@ export default function MatchesPage({ matches }: MatchesProps) {
     <ProtectedRoute>
       <Layout>
       <section className="pageHeader">
-        <p className="eyebrow">Calendrier predictif</p>
-        <h1>Matchs a venir</h1>
+        <p className="eyebrow">Calendrier prédictif</p>
+        <h1>Matchs à venir</h1>
         <p>{matches.length} matchs disponibles depuis l'API ou le fallback mock.</p>
       </section>
 
       <section className="filters">
         <input
-          aria-label="Search matches"
-          placeholder="Rechercher une equipe..."
+          aria-label="Rechercher des matchs"
+          placeholder="Rechercher une équipe..."
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
-        <select aria-label="Competition" value={competition} onChange={(event) => setCompetition(event.target.value)}>
-          <option value="">Toutes competitions</option>
+        <select aria-label="Compétition" value={competition} onChange={(event) => setCompetition(event.target.value)}>
+          <option value="">Toutes compétitions</option>
           {competitions.map((item) => (
             <option key={item} value={item}>
               {item}
             </option>
           ))}
         </select>
-        <select aria-label="Sort" value={sort} onChange={(event) => setSort(event.target.value)}>
-          <option value="date">Kickoff</option>
-          <option value="confidence">Confidence</option>
-          <option value="competition">Competition</option>
+        <select aria-label="Tri" value={sort} onChange={(event) => setSort(event.target.value)}>
+          <option value="date">Date du match</option>
+          <option value="confidence">Confiance</option>
+          <option value="competition">Compétition</option>
         </select>
       </section>
 
@@ -136,3 +136,4 @@ function MatchRow({ match }: { match: Match }) {
     </Link>
   );
 }
+

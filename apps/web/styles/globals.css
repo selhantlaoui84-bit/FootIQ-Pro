@@ -440,6 +440,10 @@ ul {
   flex-shrink: 0;
 }
 
+.statusBadge {
+  flex-shrink: 0;
+}
+
 .badge.moyen {
   background: var(--amber);
 }
@@ -960,6 +964,67 @@ input::placeholder {
 
 .formField span {
   font-weight: 700;
+}
+
+.metricHelp {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tooltip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+}
+
+.tooltipTrigger {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1px solid rgba(98, 216, 255, 0.35);
+  color: #dff7ff;
+  background: rgba(98, 216, 255, 0.12);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: help;
+}
+
+.tooltipBubble {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 10px);
+  z-index: 20;
+  width: min(280px, 80vw);
+  padding: 10px 12px;
+  color: var(--text);
+  background: rgba(10, 18, 30, 0.96);
+  border: 1px solid rgba(98, 216, 255, 0.28);
+  border-radius: 12px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+  font-size: 12px;
+  line-height: 1.45;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 4px);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.tooltip:hover .tooltipBubble,
+.tooltip:focus-within .tooltipBubble {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.sectionAnchor {
+  scroll-margin-top: 96px;
+}
+
+.modelComparisonTable {
+  display: grid;
+  gap: 8px;
 }
 
 @media (max-width: 940px) {

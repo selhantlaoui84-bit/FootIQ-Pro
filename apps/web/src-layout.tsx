@@ -4,9 +4,9 @@ import type { ReactNode } from 'react';
 import { useAuth } from '~/lib/auth';
 
 const links = [
-  { href: '/matches', label: 'Matches' },
-  { href: '/predictions', label: 'Predictions' },
-  { href: '/teams', label: 'Teams' },
+  { href: '/matches', label: 'Matchs' },
+  { href: '/predictions', label: 'Prédictions' },
+  { href: '/teams', label: 'Équipes' },
   { href: '/performance', label: 'Performance' },
 ];
 
@@ -28,23 +28,23 @@ export function Layout({ children }: { children: ReactNode }) {
         <nav>
           {user ? (
             <>
-              <Link href="/dashboard">Dashboard</Link>
+              <Link href="/dashboard">Tableau de bord</Link>
               {links.map((link) => (
                 <Link key={link.href} href={link.href}>
                   {link.label}
                 </Link>
               ))}
-              <Link href="/profile">Profile</Link>
+              <Link href="/profile">Profil</Link>
               {isAdmin && <Link href="/admin">Admin</Link>}
               <button className="navButton logoutButton" type="button" onClick={handleLogout}>
-                Logout
+                Déconnexion
               </button>
             </>
           ) : (
             <>
-              <Link href="/about">About</Link>
-              <Link href="/login">Login</Link>
-              <Link href="/register">Register</Link>
+              <Link href="/about">À propos</Link>
+              <Link href="/login">Connexion</Link>
+              <Link href="/register">Créer un compte</Link>
             </>
           )}
         </nav>
@@ -53,3 +53,4 @@ export function Layout({ children }: { children: ReactNode }) {
     </div>
   );
 }
+

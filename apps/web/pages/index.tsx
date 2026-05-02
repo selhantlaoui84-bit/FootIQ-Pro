@@ -10,22 +10,22 @@ type HomeProps = {
 
 const pillars = [
   {
-    title: 'Probabilites claires',
+    title: 'Probabilités claires',
     href: '/predictions',
     body: 'Lire les issues en pourcentages, sans promesse de certitude.',
   },
-  { title: 'Confidence Index', href: '/performance', body: 'Comprendre quand un signal est robuste ou fragile.' },
+  { title: 'Indice de confiance', href: '/performance', body: 'Comprendre quand un signal est robuste ou fragile.' },
   {
-    title: 'Detection des matchs pieges',
+    title: 'Détection des matchs pièges',
     href: '/predictions?trap=true',
-    body: 'Reperer les favoris apparents avec signaux contradictoires.',
+    body: 'Repérer les favoris apparents avec signaux contradictoires.',
   },
   {
-    title: 'Explications comprehensibles',
+    title: 'Explications compréhensibles',
     href: '/about',
-    body: 'Transformer les donnees en lecture utile et responsable.',
+    body: 'Transformer les données en lecture utile et responsable.',
   },
-  { title: 'Admin refresh', href: '/admin', body: 'Rafraichir les donnees depuis football-data.org.' },
+  { title: 'Actualisation admin', href: '/admin', body: 'Rafraîchir les données depuis football-data.org.' },
 ];
 
 export const getStaticProps: GetStaticProps<HomeProps> = async () => ({
@@ -42,14 +42,14 @@ export default function HomePage({ summary }: HomeProps) {
         <div className="heroCopy">
           <p className="eyebrow">Football analytics probabiliste</p>
           <h1>FootIQ Pro</h1>
-          <p className="subtitle">L'intelligence probabiliste du football francais et europeen.</p>
+          <p className="subtitle">L'intelligence probabiliste du football français et européen.</p>
           <p className="lead">
-            Notre IA ne promet pas de predire l'avenir. Elle identifie les matchs statistiquement lisibles, les risques,
+            Notre IA ne promet pas de prédire l'avenir. Elle identifie les matchs statistiquement lisibles, les risques
             et les signaux qui comptent.
           </p>
           <div className="actions">
             <Link className="button primary" href="/dashboard">
-              Dashboard
+              Tableau de bord
             </Link>
             <Link className="button secondary" href="/matches">
               Explorer les matchs
@@ -63,7 +63,7 @@ export default function HomePage({ summary }: HomeProps) {
             <span style={{ width: `${summary.average_confidence}%` }} />
           </div>
           <div className="miniStats">
-            <span>Confidence {summary.average_confidence}</span>
+            <span>Confiance {summary.average_confidence}%</span>
             <span>{summary.source}</span>
           </div>
         </Link>
@@ -79,7 +79,7 @@ export default function HomePage({ summary }: HomeProps) {
       </section>
 
       <section className="notice">
-        FootIQ Pro est un outil d'analyse statistique et probabiliste. Aucune prediction ne garantit un resultat.
+        FootIQ Pro est un outil d'analyse statistique et probabiliste. Aucune prédiction ne garantit un résultat.
       </section>
     </Layout>
   );

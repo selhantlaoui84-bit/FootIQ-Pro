@@ -3,9 +3,11 @@
   getMockMatch,
   getMockTeam,
   mockBacktestingReport,
+  mockBuildFeatureStoreResponse,
   mockFeatureDataset,
   mockFeatureSummary,
   mockMlFeatureImportance,
+  mockMlComparison,
   mockMlStatus,
   mockModelComparison,
   mockModelsMetadata,
@@ -18,10 +20,12 @@
   teams,
   type Match,
   type BacktestingReport,
+  type BuildFeatureStoreResponse,
   type FeatureDatasetRow,
   type FeatureImportanceRow,
   type FeatureSummary,
   type MlStatus,
+  type MlComparison,
   type ModelComparison,
   type ModelsMetadata,
   type PredictionSnapshot,
@@ -161,6 +165,12 @@ export async function getMlFeatureImportance(): Promise<FeatureImportanceRow[]> 
   return Array.isArray(data) ? data : mockMlFeatureImportance;
 }
 
+export async function getMlComparison(): Promise<MlComparison> {
+  const data = await safeFetchJson<MlComparison>('/ml/comparison');
+
+  return data ?? mockMlComparison;
+}
+
 export async function trainCandidateModel(options?: { modelType?: string; limit?: number }): Promise<TrainingReport> {
   const modelType = options?.modelType ?? 'random_forest';
   const limit = Math.min(Math.max(Math.round(options?.limit ?? 5000), 1), 10000);
@@ -232,6 +242,36 @@ export async function refreshData(): Promise<RefreshResponse | null> {
     return {
       status: 'error',
       detail: error instanceof Error ? error.message : 'Refresh request failed',
+    };
+  }
+}
+
+export async function buildFeatureStore(options?: { limit?: number; force?: boolean }): Promise<BuildFeatureStoreResponse> {
+  const limit = Math.min(Math.max(Math.round(options?.limit ?? 500), 1), 2000);
+  const force = options?.force ?? false;
+
+  try {
+    const response = await fetch(`/api/admin/build-feature-store?limit=${limit}&force=${force}`, {
+      method: 'POST',
+      headers: { Accept: 'application/json' },
+    });
+    const contentType = response.headers.get('content-type') ?? '';
+    const body = contentType.includes('application/json') ? await response.json() : null;
+
+    if (!response.ok) {
+      return {
+        ...mockBuildFeatureStoreResponse,
+        status: 'error',
+        detail: body?.detail ?? `Feature Store failed with status ${response.status}`,
+      };
+    }
+
+    return (body as BuildFeatureStoreResponse) ?? mockBuildFeatureStoreResponse;
+  } catch (error) {
+    return {
+      ...mockBuildFeatureStoreResponse,
+      status: 'error',
+      detail: error instanceof Error ? error.message : 'Feature Store request failed',
     };
   }
 }

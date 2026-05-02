@@ -20,37 +20,37 @@ export default function TeamsPage({ teams }: TeamsProps) {
   return (
     <ProtectedRoute>
       <Layout>
-      <section className="pageHeader">
-        <p className="eyebrow">Référentiel équipes</p>
-        <h1>Teams</h1>
-        <p>
-          {teams.length} équipes disponibles
-          {competitions ? ` sur ${competitions}` : ''}.
-        </p>
-      </section>
+        <section className="pageHeader">
+          <p className="eyebrow">Référentiel équipes</p>
+          <h1>Équipes</h1>
+          <p>
+            {teams.length} équipes disponibles
+            {competitions ? ` sur ${competitions}` : ''}.
+          </p>
+        </section>
 
-      <section className="grid three">
-        {teams.map((team) => (
-          <Link className="card teamCard clickable-card" href={teamHref(team)} key={team.id}>
-            <div className="cardTop">
-              <span>{team.competition}</span>
-              <span className={`trend ${team.trend ?? 'stable'}`}>{team.trend ?? 'stable'}</span>
-            </div>
-            <h2>{team.name}</h2>
-            <div className="dataList">
-              <span>
-                Elo rating <strong>{team.elo ?? 'N/A'}</strong>
-              </span>
-              <span>
-                Recent form <strong>{team.form ?? 'N/A'}</strong>
-              </span>
-              <span>
-                Source <strong>{team.source ?? 'mock'}</strong>
-              </span>
-            </div>
-          </Link>
-        ))}
-      </section>
+        <section className="grid three">
+          {teams.map((team) => (
+            <Link className="card teamCard clickable-card" href={teamHref(team)} key={team.id}>
+              <div className="cardTop">
+                <span>{team.competition}</span>
+                <span className={`trend ${team.trend ?? 'stable'}`}>{team.trend ?? 'stable'}</span>
+              </div>
+              <h2>{team.name}</h2>
+              <div className="dataList">
+                <span>
+                  Rating Elo <strong>{team.elo ?? 'N/A'}</strong>
+                </span>
+                <span>
+                  Forme récente <strong>{team.form ?? 'N/A'}</strong>
+                </span>
+                <span>
+                  Source <strong>{team.source ?? 'mock'}</strong>
+                </span>
+              </div>
+            </Link>
+          ))}
+        </section>
       </Layout>
     </ProtectedRoute>
   );

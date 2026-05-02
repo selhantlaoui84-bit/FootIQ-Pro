@@ -24,7 +24,7 @@ export function ProtectedRoute({ children, requireAuth = true, requireAdmin = fa
     return (
       <section className="protectedLoading authLockedScreen">
         <div className="skeleton" />
-        <p>Verification de la session...</p>
+        <p>Vérification de la session...</p>
       </section>
     );
   }
@@ -33,13 +33,13 @@ export function ProtectedRoute({ children, requireAuth = true, requireAdmin = fa
     return (
       <section className="authLockedScreen">
         <article className="accessDeniedCard">
-          <span className="roleBadge">User</span>
-          <h1>Access denied</h1>
+          <span className="roleBadge">Utilisateur</span>
+          <h1>Accès refusé</h1>
           <p>
-            The admin console is limited to {adminEmail}. You are signed in as {user?.email ?? 'unknown user'}.
+            La console admin est réservée à {adminEmail}. Vous êtes connecté avec {user?.email ?? 'utilisateur inconnu'}.
           </p>
           <Link className="button primary" href="/dashboard">
-            Back to dashboard
+            Retour au tableau de bord
           </Link>
         </article>
       </section>
@@ -48,3 +48,4 @@ export function ProtectedRoute({ children, requireAuth = true, requireAdmin = fa
 
   return <>{children}</>;
 }
+

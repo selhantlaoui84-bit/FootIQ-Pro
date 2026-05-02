@@ -22,6 +22,7 @@ from services.football_data_client import (
 from services.backtesting import calculate_backtest_report, calculate_snapshot_backtest, get_match_result
 from services.elo_model import calculate_team_elos
 from services.ml_training import (
+    MODEL_VERSION as ML_CANDIDATE_VERSION,
     candidate_model_exists,
     load_latest_candidate_metadata,
     train_candidate_model,
@@ -361,10 +362,62 @@ def ml_status():
     }
 
 
+def _ml_comparison():
+    production_report = calculate_backtest_report(_available_matches(), _available_predictions())
+    candidate = load_latest_candidate_metadata()
+    candidate_status = candidate.get("status", "not_trained")
+    candidate_accuracy = candidate.get("accuracy")
+    candidate_brier = candidate.get("brier_score_1x2")
+    production_accuracy = production_report.get("result_accuracy")
+    production_brier = production_report.get("average_brier_score")
+
+    winner_by_accuracy = None
+    if candidate_status == "ok" and candidate_accuracy is not None and production_accuracy is not None:
+        if candidate_accuracy > production_accuracy:
+            winner_by_accuracy = "candidate"
+        elif production_accuracy > candidate_accuracy:
+            winner_by_accuracy = "production"
+
+    winner_by_brier = None
+    if candidate_status == "ok" and candidate_brier is not None and production_brier is not None:
+        if candidate_brier < production_brier:
+            winner_by_brier = "candidate"
+        elif production_brier < candidate_brier:
+            winner_by_brier = "production"
+
+    return {
+        "production_model_version": MODEL_VERSION,
+        "candidate_model_version": ML_CANDIDATE_VERSION,
+        "candidate_is_production": False,
+        "production": {
+            "evaluated_matches": production_report.get("evaluated_matches", 0),
+            "result_accuracy": production_accuracy or 0,
+            "average_brier_score": production_brier or 0,
+            "calibration_score": production_report.get("calibration_score", 0),
+        },
+        "candidate": {
+            "status": candidate_status,
+            "rows_used": candidate.get("rows_used", 0),
+            "accuracy": candidate_accuracy,
+            "log_loss": candidate.get("log_loss"),
+            "brier_score_1x2": candidate_brier,
+            "trained_at": candidate.get("trained_at"),
+        },
+        "winner_by_accuracy": winner_by_accuracy,
+        "winner_by_brier": winner_by_brier,
+        "note": "Le modèle ML candidat est évalué mais n'est pas encore utilisé en production.",
+    }
+
+
 @app.get("/ml/feature-importance")
 def ml_feature_importance():
     metadata = load_latest_candidate_metadata()
     return metadata.get("feature_importance") or []
+
+
+@app.get("/ml/comparison")
+def ml_comparison():
+    return _ml_comparison()
 
 
 @app.get("/models")
@@ -442,6 +495,7 @@ def model_performance():
         "target_coverage": feature_summary["target_coverage"],
         "feature_store_ready": feature_summary["snapshots_count"] > 0,
         "ml_candidate": load_latest_candidate_metadata(),
+        "ml_comparison": _ml_comparison(),
         "candidate_is_production": False,
         "predictions_tracked": len(predictions),
         "tracked": len(predictions) or PERFORMANCE["tracked"],

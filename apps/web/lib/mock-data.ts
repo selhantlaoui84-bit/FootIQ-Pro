@@ -1,5 +1,5 @@
-﻿export type ConfidenceStatus = 'FIABLE' | 'MOYEN' | 'A EVITER' | 'Ã€ Ã‰VITER';
-export type Recommendation = 'Exploitable' | 'Prudence' | 'A eviter' | 'Ã€ Ã©viter';
+export type ConfidenceStatus = 'FIABLE' | 'MOYEN' | 'A EVITER' | 'À ÉVITER';
+export type Recommendation = 'Exploitable' | 'Prudence' | 'À éviter' | 'À éviter';
 
 export type Prediction = {
   id: string;
@@ -143,6 +143,20 @@ export type TrainingReport = {
   detail?: string;
 };
 
+export type BuildFeatureStoreResponse = {
+  status: string;
+  storage?: string;
+  feature_snapshots_built?: number;
+  feature_snapshots_saved?: number;
+  feature_snapshots_skipped?: number;
+  training_rows_available?: number;
+  target_coverage?: number;
+  model_version?: string;
+  created_at?: string;
+  note?: string;
+  detail?: string;
+};
+
 export type MlStatus = {
   status: string;
   latest_candidate: TrainingReport;
@@ -150,6 +164,29 @@ export type MlStatus = {
   candidate_model_exists: boolean;
   production_model_version: string;
   candidate_is_production: boolean;
+};
+
+export type MlComparison = {
+  production_model_version: string;
+  candidate_model_version: string;
+  candidate_is_production: boolean;
+  production: {
+    evaluated_matches: number;
+    result_accuracy: number;
+    average_brier_score: number;
+    calibration_score: number;
+  };
+  candidate: {
+    status: string;
+    rows_used: number;
+    accuracy: number | null;
+    log_loss: number | null;
+    brier_score_1x2: number | null;
+    trained_at: string | null;
+  };
+  winner_by_accuracy: 'production' | 'candidate' | null;
+  winner_by_brier: 'production' | 'candidate' | null;
+  note: string;
 };
 
 export type ModelsMetadata = {
@@ -237,6 +274,7 @@ export type PerformanceMetrics = {
   target_coverage?: number;
   feature_store_ready?: boolean;
   ml_candidate?: TrainingReport;
+  ml_comparison?: MlComparison;
   candidate_is_production?: boolean;
   model_versions?: Record<string, ModelComparisonRow>;
   best_model_by_brier?: string | null;
@@ -369,7 +407,7 @@ export const predictions: Prediction[] = [
     confidence: { score: 64, status: 'MOYEN' },
     flags: { trap_match: false, risk: false },
     recommendation: 'Prudence',
-    main_prediction: 'Real Madrid avantage leger, match ouvert',
+    main_prediction: 'Real Madrid avantage léger, match ouvert',
     explanation: [
       'Deux attaques capables de creer un volume eleve',
       'Arsenal conserve une forte capacite de pressing',
@@ -394,7 +432,7 @@ export const predictions: Prediction[] = [
     goals: { expected_home: 1.2, expected_away: 1.3, over_2_5: 44, btts: 55 },
     confidence: { score: 48, status: 'A EVITER' },
     flags: { trap_match: false, risk: true },
-    recommendation: 'A eviter',
+    recommendation: 'À éviter',
     main_prediction: 'Aucune direction claire',
     explanation: [
       'Probabilites tres proches entre les trois issues',
@@ -421,7 +459,7 @@ export const predictions: Prediction[] = [
     confidence: { score: 56, status: 'MOYEN' },
     flags: { trap_match: false, risk: false },
     recommendation: 'Prudence',
-    main_prediction: 'Lens leger avantage domicile',
+    main_prediction: 'Lens léger avantage domicile',
     explanation: [
       'Lens garde un petit avantage territorial a domicile',
       'Nice limite bien les occasions concedees',
@@ -586,6 +624,18 @@ export const mockFeatureSummary: FeatureSummary = {
 
 export const mockFeatureDataset: FeatureDatasetRow[] = [];
 
+export const mockBuildFeatureStoreResponse: BuildFeatureStoreResponse = {
+  status: 'not_run',
+  storage: 'memory',
+  feature_snapshots_built: 0,
+  feature_snapshots_saved: 0,
+  feature_snapshots_skipped: 0,
+  training_rows_available: 0,
+  target_coverage: 0,
+  model_version: 'elo-poisson-calibrated-v1',
+  note: 'Construisez le Feature Store après avoir actualisé les données.',
+};
+
 export const mockMlFeatureImportance: FeatureImportanceRow[] = [
   { feature: 'elo_delta', importance: 0.18 },
   { feature: 'home_probability', importance: 0.14 },
@@ -608,7 +658,7 @@ export const mockTrainingReport: TrainingReport = {
   confusion_matrix: {},
   feature_importance: mockMlFeatureImportance,
   feature_columns: mockFeatureSummary.feature_names,
-  note: 'Candidate model is not yet used for production predictions.',
+  note: "Le modèle candidat n'est pas encore utilisé pour les prédictions de production.",
 };
 
 export const mockMlStatus: MlStatus = {
@@ -618,6 +668,29 @@ export const mockMlStatus: MlStatus = {
   candidate_model_exists: false,
   production_model_version: 'elo-poisson-calibrated-v1',
   candidate_is_production: false,
+};
+
+export const mockMlComparison: MlComparison = {
+  production_model_version: 'elo-poisson-calibrated-v1',
+  candidate_model_version: 'ml-candidate-v1',
+  candidate_is_production: false,
+  production: {
+    evaluated_matches: 0,
+    result_accuracy: 0,
+    average_brier_score: 0,
+    calibration_score: 0,
+  },
+  candidate: {
+    status: mockTrainingReport.status,
+    rows_used: mockTrainingReport.rows_used ?? 0,
+    accuracy: mockTrainingReport.accuracy ?? null,
+    log_loss: mockTrainingReport.log_loss ?? null,
+    brier_score_1x2: mockTrainingReport.brier_score_1x2 ?? null,
+    trained_at: mockTrainingReport.trained_at ?? null,
+  },
+  winner_by_accuracy: null,
+  winner_by_brier: null,
+  note: "Le modèle ML candidat est évalué mais n'est pas encore utilisé en production.",
 };
 
 export const mockModelsMetadata: ModelsMetadata = {
@@ -633,7 +706,7 @@ export const mockModelComparison: ModelComparison = {
   model_versions: {},
   best_model_by_brier: null,
   best_model_by_accuracy: null,
-  note: 'Model comparison is based on stored prediction snapshots.',
+  note: 'La comparaison des modèles repose sur les snapshots de prédiction stockés.',
 };
 
 export const mockPredictionSnapshots: PredictionSnapshot[] = [];
@@ -641,7 +714,7 @@ export const mockPredictionSnapshots: PredictionSnapshot[] = [];
 export const mockBacktestingReport: BacktestingReport = {
   model_version: 'elo-poisson-calibrated-v1',
   previous_model_version: 'elo-poisson-v1',
-  comparison_note: 'Historical model comparison requires stored prediction snapshots.',
+  comparison_note: 'La comparaison historique nécessite des snapshots de prédiction stockés.',
   calibration_applied: true,
   evaluated_matches: 0,
   result_accuracy: 0,
@@ -660,7 +733,7 @@ export const mockBacktestingReport: BacktestingReport = {
   ],
   competition_breakdown: {},
   last_backtest_at: '2026-05-02T08:00:00Z',
-  note: 'Backtesting is computed on finished matches with available scores.',
+  note: 'Le backtesting est calculé sur les matchs terminés avec scores disponibles.',
 };
 
 export const performanceMetrics: PerformanceMetrics = {
@@ -681,6 +754,7 @@ export const performanceMetrics: PerformanceMetrics = {
   target_coverage: mockFeatureSummary.target_coverage,
   feature_store_ready: mockFeatureSummary.snapshots_count > 0,
   ml_candidate: mockTrainingReport,
+  ml_comparison: mockMlComparison,
   candidate_is_production: false,
   model_versions: mockModelComparison.model_versions,
   best_model_by_brier: mockModelComparison.best_model_by_brier,
@@ -753,7 +827,7 @@ export function buildDashboardSummary(source = 'mock'): DashboardSummary {
 }
 
 export function isAvoidStatus(status: string) {
-  return status === 'A EVITER' || status === 'Ã€ Ã‰VITER';
+  return status === 'A EVITER' || status === 'À ÉVITER';
 }
 
 export function getMockPrediction(id: string) {

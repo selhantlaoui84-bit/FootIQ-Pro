@@ -1,6 +1,7 @@
-﻿import type { GetStaticProps } from 'next';
+import type { GetStaticProps } from 'next';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { getDashboardSummary, getMatches, getMlStatus, getPredictions } from '~/lib/api';
 import { matchHref, statusClass, type DashboardSummary, type Match, type MlStatus, type Prediction } from '~/lib/mock-data';
@@ -37,61 +38,61 @@ export default function DashboardPage({ matches, predictions, summary, mlStatus 
       <section className="commandHero">
         <div>
           <p className="eyebrow">Command center</p>
-          <h1>Dashboard</h1>
-          <p>Lecture dynamique des matchs importÃ©s, des risques et de la confiance modÃ¨le.</p>
+          <h1>Tableau de bord</h1>
+          <p>Lecture dynamique des matchs importés, des risques et de la confiance du modèle.</p>
         </div>
         <div className="heroStats">
           <Stat label="Matchs" value={summary.total_matches} href="/matches" />
-          <Stat label="Confidence" value={`${summary.average_confidence}`} href="/performance" />
+          <Stat label="Confiance" value={`${summary.average_confidence}`} href="/performance" />
           <Stat label="Fiables" value={summary.reliable_matches_count} href="/predictions?status=FIABLE" />
-          <Stat label="PiÃ¨ges" value={summary.trap_matches_count} href="/predictions?trap=true" />
+          <Stat label="Pièges" value={summary.trap_matches_count} href="/predictions?trap=true" />
         </div>
         <div className="sourceStrip">
           <span>Source: {summary.source}</span>
           <span>Storage: {summary.storage}</span>
-          <span>Model: {summary.model_version ?? 'elo-poisson-calibrated-v1'}</span>
+          <span>Modèle: {summary.model_version ?? 'elo-poisson-calibrated-v1'}</span>
           <span>
-            Refresh: {summary.last_refresh_at ? new Date(summary.last_refresh_at).toLocaleString('fr-FR') : 'Non lancÃ©'}
+            Actualisation: {summary.last_refresh_at ? new Date(summary.last_refresh_at).toLocaleString('fr-FR') : 'Non lancée'}
           </span>
         </div>
       </section>
 
       <section className="metrics">
-        <Stat label="Upcoming matches" value={summary.upcoming_matches_count} href="/matches" />
-        <Stat label="Reliable matches" value={summary.reliable_matches_count} href="/predictions?status=FIABLE" />
+        <Stat label="Matchs à venir" value={summary.upcoming_matches_count} href="/matches" />
+        <Stat label="Matchs fiables" value={summary.reliable_matches_count} href="/predictions?status=FIABLE" />
         <Stat
-          label="Risk alerts"
+          label="Alertes de risque"
           value={summary.avoid_matches_count + summary.trap_matches_count}
           href="/predictions?trap=true"
         />
-        <Stat label="Average confidence" value={summary.average_confidence} href="/performance" />
-        <Stat label="Risk score" value={summary.average_risk_score ?? 0} href="/performance" />
-        <Stat label="Teams" value={summary.teams_count} href="/teams" />
-        <Stat label="Predictions" value={summary.predictions_count} href="/predictions" />
-        <Stat label="Competitions" value={competitions.length} href="/matches" />
+        <Stat label="Confiance moyenne" value={summary.average_confidence} href="/performance" />
+        <Stat label="Score de risque" value={summary.average_risk_score ?? 0} href="/performance" />
+        <Stat label="Équipes" value={summary.teams_count} href="/teams" />
+        <Stat label="Prédictions" value={summary.predictions_count} href="/predictions" />
+        <Stat label="Compétitions" value={competitions.length} href="/matches" />
       </section>
 
       <section className="card modelReliabilityBlock">
         <div>
-          <p className="eyebrow">Model reliability</p>
-          <h2>Backtesting snapshot</h2>
-          <p>Current model: {summary.current_model_version ?? summary.model_version ?? 'elo-poisson-calibrated-v1'}. Snapshot comparison tracks model quality over time.</p>
+          <p className="eyebrow">État du modèle</p>
+          <h2>Fiabilité et comparaison</h2>
+          <p>Modèle de production: {summary.current_model_version ?? summary.model_version ?? 'elo-poisson-calibrated-v1'}. Le candidat ML reste en observation.</p>
         </div>
         <div className="compactDataGrid four">
           <Link className="metric clickable-card" href="/performance">
-            <span>Evaluated</span>
+            <span>Matchs évalués</span>
             <strong>{summary.evaluated_matches ?? 0}</strong>
           </Link>
           <Link className="metric clickable-card" href="/performance">
-            <span>Accuracy</span>
+            <span className="metricHelp">Accuracy <InfoTooltip content="Pourcentage de résultats correctement prédits sur l’échantillon évalué." /></span>
             <strong>{summary.result_accuracy ?? 0}%</strong>
           </Link>
           <Link className="metric clickable-card" href="/performance">
-            <span>Brier</span>
+            <span className="metricHelp">Brier <InfoTooltip content="Mesure la qualité des probabilités. Plus le score est bas, meilleur est le modèle." /></span>
             <strong>{summary.average_brier_score ?? 0}</strong>
           </Link>
           <Link className="metric clickable-card" href="/performance">
-            <span>Calibration</span>
+            <span className="metricHelp">Calibration <InfoTooltip content="Mesure si les probabilités annoncées correspondent aux résultats observés." /></span>
             <strong>{summary.calibration_score ?? 0}/100</strong>
           </Link>
           <Link className="metric clickable-card" href="/performance">
@@ -107,23 +108,23 @@ export default function DashboardPage({ matches, predictions, summary, mlStatus 
             <strong>{summary.best_model_by_brier ?? 'N/A'}</strong>
           </Link>
           <Link className="metric clickable-card" href="/performance#feature-store">
-            <span>Feature rows</span>
+            <span>Lignes Feature Store</span>
             <strong>{summary.training_rows_available ?? 0}</strong>
           </Link>
           <Link className="metric clickable-card" href="/performance#feature-store">
-            <span>Target coverage</span>
+            <span>Couverture cible</span>
             <strong>{summary.target_coverage ?? 0}%</strong>
           </Link>
           <Link className="metric clickable-card" href="/performance#feature-store">
-            <span>Feature Store</span>
-            <strong>{summary.feature_store_ready ? 'ready' : 'pending'}</strong>
+            <span className="metricHelp">Feature Store <InfoTooltip content="Base de données des variables utilisées par les modèles pour apprendre et comparer les performances." /></span>
+            <strong>{summary.feature_store_ready ? 'prêt' : 'en attente'}</strong>
           </Link>
           <Link className="metric clickable-card" href="/performance#candidate-ml">
-            <span>ML Candidate</span>
+            <span className="metricHelp">Candidat ML <InfoTooltip content="Modèle supervisé entraîné sur l'historique, actuellement en observation et non utilisé en production." /></span>
             <strong>{summary.ml_candidate_status ?? candidate.status}</strong>
           </Link>
           <Link className="metric clickable-card" href="/performance#candidate-ml">
-            <span>ML Accuracy</span>
+            <span>Accuracy ML</span>
             <strong>{summary.ml_candidate_accuracy ?? candidate.accuracy ?? 0}%</strong>
           </Link>
         </div>
@@ -133,23 +134,23 @@ export default function DashboardPage({ matches, predictions, summary, mlStatus 
           Matchs
         </Link>
         <Link className="button secondary" href="/predictions">
-          PrÃ©dictions
+          Prédictions
         </Link>
         <Link className="button secondary" href="/teams">
-          Ã‰quipes
+          Équipes
         </Link>
         <Link className="button primary" href="/admin">
-          Refresh admin
+          Admin data
         </Link>
       </section>
 
       <section className="sectionSplit">
-        <Panel title="Top reliable matches" empty="Aucun match fiable disponible.">
+        <Panel title="Matchs les plus fiables" empty="Aucun match fiable disponible.">
           {summary.top_reliable_matches.map((prediction) => (
             <PredictionCard prediction={prediction} key={prediction.match_id} />
           ))}
         </Panel>
-        <Panel title="Trap matches / risk alerts" empty="Aucune alerte active.">
+        <Panel title="Matchs pièges / alertes de risque" empty="Aucune alerte active.">
           {summary.top_risky_matches.map((prediction) => (
             <PredictionCard prediction={prediction} key={prediction.match_id} />
           ))}
@@ -157,7 +158,7 @@ export default function DashboardPage({ matches, predictions, summary, mlStatus 
       </section>
 
       <section className="sectionSplit">
-        <Panel title="Upcoming fixtures" empty="Aucun match Ã  venir.">
+        <Panel title="Prochaines affiches" empty="Aucun match à venir.">
           {upcoming.map((match) => (
             <Link className="rowMini clickable-card" href={matchHref(match)} key={match.match_id}>
               <span>{match.competition}</span>
@@ -256,5 +257,6 @@ function Distribution({
     </article>
   );
 }
+
 
 

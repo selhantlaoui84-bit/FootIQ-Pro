@@ -42,12 +42,12 @@ export default function LoginPage() {
       <section className="authShell">
         <form className="authCard" onSubmit={handleSubmit}>
           <p className="eyebrow">Espace SaaS</p>
-          <h1>Login</h1>
-          <p>Connecte-toi pour accéder au dashboard, au profil et aux outils admin.</p>
+          <h1>Connexion</h1>
+          <p>Connectez-vous pour accéder au tableau de bord, au profil et aux outils admin.</p>
 
           {!authConfigured && (
             <div className="banner warning">
-              Supabase auth is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.
+              Supabase Auth n'est pas configuré. Ajoutez NEXT_PUBLIC_SUPABASE_URL et NEXT_PUBLIC_SUPABASE_ANON_KEY.
             </div>
           )}
           {error && <div className="banner error">{error}</div>}
@@ -64,7 +64,7 @@ export default function LoginPage() {
             />
           </label>
           <label className="field">
-            Password
+            Mot de passe
             <input
               autoComplete="current-password"
               disabled={!authConfigured || isSubmitting}
@@ -81,7 +81,7 @@ export default function LoginPage() {
           <p>
             Pas encore de compte ?{' '}
             <Link className="textLink" href="/register">
-              Register
+              Créer un compte
             </Link>
           </p>
         </form>
@@ -89,3 +89,4 @@ export default function LoginPage() {
     </Layout>
   );
 }
+

@@ -1,15 +1,18 @@
-﻿import { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
-import { getBackendHealth, getRefreshStatus, refreshData, trainCandidateModel } from '~/lib/api';
+import { buildFeatureStore, getBackendHealth, getRefreshStatus, refreshData, trainCandidateModel } from '~/lib/api';
 import { useAuth } from '~/lib/auth';
-import type { HealthResponse, RefreshResponse, TrainingReport } from '~/lib/mock-data';
+import type { BuildFeatureStoreResponse, HealthResponse, RefreshResponse, TrainingReport } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
 
 export default function AdminPage() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [refreshInfo, setRefreshInfo] = useState<RefreshResponse | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isBuildingFeatures, setIsBuildingFeatures] = useState(false);
+  const [featureBuildInfo, setFeatureBuildInfo] = useState<BuildFeatureStoreResponse | null>(null);
   const [isTraining, setIsTraining] = useState(false);
   const [modelType, setModelType] = useState('random_forest');
   const [trainingLimit, setTrainingLimit] = useState(5000);
@@ -70,6 +73,24 @@ export default function AdminPage() {
     }
   }
 
+  async function handleBuildFeatureStore() {
+    setIsBuildingFeatures(true);
+    setError(null);
+
+    try {
+      const result = await buildFeatureStore({ limit: 500, force: false });
+      setFeatureBuildInfo(result);
+
+      if (result.status === 'error') {
+        setError(result.detail ?? 'Construction du Feature Store impossible.');
+      }
+    } catch {
+      setError('Construction du Feature Store indisponible pour le moment.');
+    } finally {
+      setIsBuildingFeatures(false);
+    }
+  }
+
   return (
     <ProtectedRoute requireAdmin>
       <Layout>
@@ -78,24 +99,24 @@ export default function AdminPage() {
           <h1>Admin</h1>
           <p>Controle du backend, du refresh football-data.org et de la source active.</p>
           <div className="roleStrip">
-            <span className="userBadge">{user?.email ?? 'Unknown user'}</span>
+            <span className="userBadge">{user?.email ?? 'Utilisateur inconnu'}</span>
             <span className={`roleBadge ${isAdmin ? 'admin' : ''}`}>{isAdmin ? 'Admin' : 'User'}</span>
           </div>
           <div className="quickActions">
             <Link className="button secondary" href="/dashboard">
-              Dashboard
+              Tableau de bord
             </Link>
             <Link className="button secondary" href="/matches">
-              Matches
+              Matchs
             </Link>
             <Link className="button secondary" href="/predictions">
-              Predictions
+              Prédictions
             </Link>
             <Link className="button secondary" href="/performance#model-comparison">
               Backtesting
             </Link>
             <Link className="button secondary" href="/performance#model-comparison">
-              Model comparison
+              Comparaison modèles
             </Link>
             <Link className="button secondary" href="/performance#feature-store">
               Feature Store
@@ -117,16 +138,16 @@ export default function AdminPage() {
           </article>
 
           <article className="card accent">
-            <h2>Refresh data</h2>
+            <h2>1. Actualiser les données</h2>
             <p>Import Ligue 1 et Champions League, avec fallback mock automatique.</p>
-            {!isAdmin && <div className="banner error">Admin access required.</div>}
+            {!isAdmin && <div className="banner error">Accès admin requis.</div>}
             <button
               className="button primary"
               type="button"
               onClick={handleRefresh}
               disabled={isRefreshing || !isAdmin}
             >
-              {isRefreshing ? 'Refresh en cours...' : 'Refresh data'}
+              {isRefreshing ? 'Actualisation en cours...' : 'Actualiser les données'}
             </button>
           </article>
         </section>
@@ -134,19 +155,53 @@ export default function AdminPage() {
         {error && <section className="banner error">{error}</section>}
 
         <section className="card">
-          <p className="eyebrow">Machine learning candidate</p>
-          <h2>Train Candidate ML Model</h2>
-          <p>This trains an offline candidate from the Feature Store. It does not replace production predictions.</p>
+          <p className="eyebrow">Feature Store</p>
+          <h2>
+            <span className="metricHelp">
+              2. Construire le Feature Store
+              <InfoTooltip content="Base de données des variables utilisées par les modèles pour apprendre et comparer les performances." />
+            </span>
+          </h2>
+          <p>Gèle les variables modèle par match pour préparer l'entraînement supervisé.</p>
+          <button
+            className="button secondary"
+            type="button"
+            onClick={handleBuildFeatureStore}
+            disabled={isBuildingFeatures || !isAdmin}
+          >
+            {isBuildingFeatures ? 'Construction...' : 'Construire le Feature Store'}
+          </button>
+          {featureBuildInfo && (
+            <div className="dataList">
+              <span>Statut <strong>{featureBuildInfo.status}</strong></span>
+              <span>Stockage <strong>{featureBuildInfo.storage ?? 'mémoire'}</strong></span>
+              <span>Snapshots créés <strong>{featureBuildInfo.feature_snapshots_built ?? 0}</strong></span>
+              <span>Snapshots sauvegardés <strong>{featureBuildInfo.feature_snapshots_saved ?? 0}</strong></span>
+              <span>Lignes entraînables <strong>{featureBuildInfo.training_rows_available ?? 0}</strong></span>
+              <span>Couverture cible <strong>{featureBuildInfo.target_coverage ?? 0}%</strong></span>
+            </div>
+          )}
+        </section>
+
+        <section className="card">
+          <p className="eyebrow">Modèle supervisé candidat</p>
+          <h2>
+            <span className="metricHelp">
+              3. Entraîner le modèle candidat
+              <InfoTooltip content="Modèle supervisé entraîné sur l'historique, actuellement en observation et non utilisé en production." />
+            </span>
+          </h2>
+          <p>Entraîne un candidat hors production depuis le Feature Store. Le modèle Elo/Poisson reste actif.</p>
           <div className="formGrid">
             <label className="formField">
-              <span>Model type</span>
+              <span>Type de modèle</span>
               <select value={modelType} onChange={(event) => setModelType(event.target.value)}>
                 <option value="random_forest">random_forest</option>
                 <option value="xgboost">xgboost</option>
               </select>
             </label>
             <label className="formField">
-              <span>Training row limit</span>
+              <span>Limite de lignes</span>
               <input
                 min={1}
                 max={10000}
@@ -162,21 +217,21 @@ export default function AdminPage() {
             onClick={handleTrainCandidate}
             disabled={isTraining || !isAdmin}
           >
-            {isTraining ? 'Training...' : 'Train model'}
+            {isTraining ? 'Entraînement...' : 'Entraîner le modèle'}
           </button>
 
           {trainingReport && (
             <div className="dataList">
-              <span>Status <strong>{trainingReport.status}</strong></span>
-              <span>Model type <strong>{trainingReport.model_type ?? 'random_forest'}</strong></span>
-              <span>Fallback used <strong>{trainingReport.fallback_used ? 'yes' : 'no'}</strong></span>
-              <span>Rows used <strong>{trainingReport.rows_used ?? 0}</strong></span>
-              <span>Train rows <strong>{trainingReport.train_rows ?? 0}</strong></span>
-              <span>Test rows <strong>{trainingReport.test_rows ?? 0}</strong></span>
-              <span>Accuracy <strong>{trainingReport.accuracy ?? 0}%</strong></span>
-              <span>Log loss <strong>{trainingReport.log_loss ?? 'N/A'}</strong></span>
+              <span>Statut <strong>{trainingReport.status}</strong></span>
+              <span>Type de modèle <strong>{trainingReport.model_type ?? 'random_forest'}</strong></span>
+              <span>Fallback utilisé <strong>{trainingReport.fallback_used ? 'oui' : 'non'}</strong></span>
+              <span>Lignes utilisées <strong>{trainingReport.rows_used ?? 0}</strong></span>
+              <span>Lignes train <strong>{trainingReport.train_rows ?? 0}</strong></span>
+              <span>Lignes test <strong>{trainingReport.test_rows ?? 0}</strong></span>
+              <span className="metricHelp">Accuracy <InfoTooltip content="Pourcentage de résultats correctement prédits sur l’échantillon évalué." /> <strong>{trainingReport.accuracy ?? 0}%</strong></span>
+              <span className="metricHelp">Log loss <InfoTooltip content="Mesure pénalisant fortement les prédictions confiantes mais incorrectes. Plus bas est meilleur." /> <strong>{trainingReport.log_loss ?? 'N/A'}</strong></span>
               <span>Brier 1X2 <strong>{trainingReport.brier_score_1x2 ?? 'N/A'}</strong></span>
-              <span>Trained at <strong>{trainingReport.trained_at ?? 'N/A'}</strong></span>
+              <span>Entraîné le <strong>{trainingReport.trained_at ?? 'N/A'}</strong></span>
             </div>
           )}
           {trainingReport?.note && <div className="banner info">{trainingReport.note}</div>}
@@ -186,38 +241,38 @@ export default function AdminPage() {
           <h2>Dernier refresh</h2>
           <div className="dataList">
             <span>
-              Status <strong>{refreshInfo?.status ?? 'unknown'}</strong>
+              Statut <strong>{refreshInfo?.status ?? 'inconnu'}</strong>
             </span>
             <span>
               Source <strong>{refreshInfo?.source ?? 'mock'}</strong>
             </span>
             <span>
-              Storage <strong>{refreshInfo?.storage ?? 'memory'}</strong>
+              Stockage <strong>{refreshInfo?.storage ?? 'mémoire'}</strong>
             </span>
             <span>
-              Matches imported <strong>{refreshInfo?.matches_imported ?? 0}</strong>
+              Matchs importés <strong>{refreshInfo?.matches_imported ?? 0}</strong>
             </span>
             <span>
-              Teams imported <strong>{refreshInfo?.teams_imported ?? 0}</strong>
+              Équipes importées <strong>{refreshInfo?.teams_imported ?? 0}</strong>
             </span>
             <span>
-              Predictions imported <strong>{refreshInfo?.predictions_imported ?? 0}</strong>
+              Prédictions importées <strong>{refreshInfo?.predictions_imported ?? 0}</strong>
             </span>
             <span>
-              Snapshots saved <strong>{refreshInfo?.snapshots_saved ?? 0}</strong>
+              Snapshots sauvegardés <strong>{refreshInfo?.snapshots_saved ?? 0}</strong>
             </span>
             <span>
-              Feature snapshots <strong>{refreshInfo?.feature_snapshots_saved ?? 0}</strong>
+              Snapshots features <strong>{refreshInfo?.feature_snapshots_saved ?? 0}</strong>
             </span>
             <span>
-              Training rows <strong>{refreshInfo?.training_rows_available ?? 0}</strong>
+              Lignes entraînables <strong>{refreshInfo?.training_rows_available ?? 0}</strong>
             </span>
             <span>
-              Last refresh <strong>{refreshInfo?.last_refresh_at ?? 'N/A'}</strong>
+              Dernière actualisation <strong>{refreshInfo?.last_refresh_at ?? 'N/A'}</strong>
             </span>
           </div>
           <div className="banner info">
-            Backtesting and feature snapshots update automatically from finished matches with available scores. See the model report on{' '}
+            Le backtesting et les snapshots se mettent à jour depuis les matchs terminés avec score disponible. Voir le rapport modèle dans{' '}
             <Link className="textLink" href="/performance#feature-store">
               Performance
             </Link>
@@ -228,4 +283,5 @@ export default function AdminPage() {
     </ProtectedRoute>
   );
 }
+
 

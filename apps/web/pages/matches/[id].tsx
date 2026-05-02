@@ -1,5 +1,6 @@
-﻿import type { GetStaticPaths, GetStaticProps } from 'next';
+import type { GetStaticPaths, GetStaticProps } from 'next';
 import Link from 'next/link';
+import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { getMatch, getPrediction } from '~/lib/api';
 import { matches, statusClass, teamNameHref, type Match, type Prediction } from '~/lib/mock-data';
@@ -49,10 +50,10 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
 
       <section className="sectionSplit">
         <article className="card">
-          <h2>ModÃ¨le offensif</h2>
+          <h2>Modèle offensif</h2>
           <div className="dataList">
             <span>
-              Model <strong>{prediction.model_version ?? 'elo-poisson-calibrated-v1'}</strong>
+              Modèle <strong>{prediction.model_version ?? 'elo-poisson-calibrated-v1'}</strong>
             </span>
             <span>
               Score attendu{' '}
@@ -82,20 +83,25 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
         </article>
 
         <article className="card">
-          <h2>Confidence Index</h2>
+          <h2 className="metricHelp">
+            Indice de confiance
+            <InfoTooltip content="Indice de confiance du modèle. Il mesure la lisibilité statistique du match, pas une certitude de résultat." />
+          </h2>
           <strong className="bigScore">{prediction.confidence.score}/100</strong>
           <div className="confidenceLine tall confidence-bar">
             <span style={{ width: `${prediction.confidence.score}%` }} />
           </div>
           <div className="dataList">
             <span>
-              Risk score <strong>{prediction.risk_score ?? 'N/A'}</strong>
+              <span className="metricHelp">Score de risque <InfoTooltip content="Score de risque contextuel. Plus il est élevé, plus le match est difficile à lire." /></span>
+              <strong>{prediction.risk_score ?? 'N/A'}</strong>
             </span>
             <span>
-              Trap score <strong>{prediction.trap_match_score ?? 'N/A'}</strong>
+              <span className="metricHelp">Score piège <InfoTooltip content="Indique un match potentiellement piégeux malgré un favori apparent." /></span>
+              <strong>{prediction.trap_match_score ?? 'N/A'}</strong>
             </span>
             <span>
-              Data quality <strong>{prediction.features?.data_quality_score ?? 'N/A'}</strong>
+              Qualité des données <strong>{prediction.features?.data_quality_score ?? 'N/A'}</strong>
             </span>
           </div>
           <p>{prediction.recommendation}</p>
@@ -106,19 +112,21 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
         <article className="card">
           <h2>Elo</h2>
           <strong className="bigScore">{prediction.features?.elo_delta ?? 'N/A'}</strong>
-          <p>Delta Elo ajuste avec avantage domicile.</p>
+          <p>Écart Elo ajusté avec avantage domicile.</p>
+          <InfoTooltip content="Écart de niveau relatif entre les deux équipes selon le système Elo." />
         </article>
         <article className="card">
-          <h2>Form</h2>
+          <h2>Forme</h2>
           <strong className="bigScore">{prediction.features?.form_delta ?? 'N/A'}</strong>
-          <p>Differentiel de dynamique recente.</p>
+          <p>Différentiel de dynamique récente.</p>
+          <InfoTooltip content="Différence de forme récente entre les équipes." />
         </article>
         <article className="card">
-          <h2>Attack / Defense</h2>
+          <h2>Attaque / Défense</h2>
           <div className="dataList">
-            <span>Attack delta <strong>{prediction.features?.attack_delta ?? 'N/A'}</strong></span>
-            <span>Defense delta <strong>{prediction.features?.defense_delta ?? 'N/A'}</strong></span>
-            <span>Draw risk <strong>{prediction.features?.draw_risk_score ?? 'N/A'}</strong></span>
+            <span>Écart attaque <strong>{prediction.features?.attack_delta ?? 'N/A'}</strong></span>
+            <span>Écart défense <strong>{prediction.features?.defense_delta ?? 'N/A'}</strong></span>
+            <span>Risque de nul <strong>{prediction.features?.draw_risk_score ?? 'N/A'}</strong></span>
           </div>
         </article>
       </section>
@@ -129,20 +137,20 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
           <h2>Calibration</h2>
           <div className="dataList">
             <span>
-              Applied <strong>{prediction.calibration?.applied ? 'yes' : 'yes'}</strong>
+              Appliquée <strong>{prediction.calibration?.applied ? 'oui' : 'oui'}</strong>
             </span>
             <span>
-              Method <strong>{prediction.calibration?.method ?? 'conservative_probability_smoothing'}</strong>
+              Méthode <strong>{prediction.calibration?.method ?? 'conservative_probability_smoothing'}</strong>
             </span>
             <span>
-              Confidence penalty <strong>{prediction.calibration?.confidence_penalty ?? 'N/A'}</strong>
+              Pénalité de confiance <strong>{prediction.calibration?.confidence_penalty ?? 'N/A'}</strong>
             </span>
           </div>
-          <p>Le modele reduit les probabilites trop agressives pour ameliorer la calibration.</p>
+          <p>Le modèle réduit les probabilités trop agressives pour améliorer la calibration.</p>
         </article>
         <article className="card">
-          <h2>Probability smoothing</h2>
-          <p>Les favoris trop hauts sont legerement lisses et le nul est rehausse lorsque le match reste incertain.</p>
+          <h2>Lissage des probabilités</h2>
+          <p>Les favoris trop hauts sont légèrement lissés et le nul est rehaussé lorsque le match reste incertain.</p>
         </article>
       </section>
 
@@ -153,13 +161,13 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
           <p>{prediction.main_prediction}</p>
         </article>
         <article className={prediction.flags.trap_match || prediction.flags.risk ? 'card danger' : 'card'}>
-          <h2>{prediction.flags.trap_match ? 'Match piÃ¨ge dÃ©tectÃ©' : 'Risk alert'}</h2>
+          <h2>{prediction.flags.trap_match ? 'Match piège détecté' : 'Alerte de risque'}</h2>
           <p>
             {prediction.flags.trap_match
               ? 'Favori apparent, mais signaux contradictoires.'
               : prediction.flags.risk
-                ? 'LisibilitÃ© rÃ©duite, prudence recommandÃ©e.'
-                : 'Aucune alerte majeure dÃ©tectÃ©e.'}
+                ? 'Lisibilité réduite, prudence recommandée.'
+                : 'Aucune alerte majeure détectée.'}
           </p>
         </article>
       </section>
@@ -187,7 +195,7 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
         {[prediction.home_team, prediction.away_team].map((team) => (
           <Link className="card clickable-card" href={teamNameHref(team)} key={team}>
             <h3>{team}</h3>
-            <p>Voir la fiche Ã©quipe et les matchs liÃ©s.</p>
+            <p>Voir la fiche équipe et les matchs liés.</p>
           </Link>
         ))}
       </section>
@@ -204,7 +212,10 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
 function Probability({ label, value }: { label: string; value: number }) {
   return (
     <article className="card probability">
-      <span>{label}</span>
+      <span className="metricHelp">
+        {label}
+        <InfoTooltip content="Probabilité estimée par le modèle. Elle exprime une tendance statistique, pas une garantie." />
+      </span>
       <strong>{value}%</strong>
       <div className="probabilityBar confidence-bar">
         <span style={{ width: `${value}%` }} />
