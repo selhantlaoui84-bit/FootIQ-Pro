@@ -1,5 +1,5 @@
-export type ConfidenceStatus = 'FIABLE' | 'MOYEN' | 'A EVITER' | 'À ÉVITER';
-export type Recommendation = 'Exploitable' | 'Prudence' | 'A eviter' | 'À éviter';
+﻿export type ConfidenceStatus = 'FIABLE' | 'MOYEN' | 'A EVITER' | 'Ã€ Ã‰VITER';
+export type Recommendation = 'Exploitable' | 'Prudence' | 'A eviter' | 'Ã€ Ã©viter';
 
 export type Prediction = {
   id: string;
@@ -11,10 +11,29 @@ export type Prediction = {
   kickoff: string;
   status?: string;
   source?: string;
+  model_version?: string;
   probabilities: { home: number; draw: number; away: number };
-  goals: { expected_home: number; expected_away: number; over_2_5: number; btts: number };
+  goals: {
+    expected_home: number;
+    expected_away: number;
+    most_likely_score?: string;
+    over_1_5?: number;
+    over_2_5: number;
+    over_3_5?: number;
+    btts: number;
+  };
   confidence: { score: number; status: ConfidenceStatus };
+  features?: {
+    elo_delta?: number;
+    form_delta?: number;
+    attack_delta?: number;
+    defense_delta?: number;
+    draw_risk_score?: number;
+    data_quality_score?: number;
+  };
   flags: { trap_match: boolean; risk: boolean };
+  risk_score?: number;
+  trap_match_score?: number;
   recommendation: Recommendation;
   main_prediction: string;
   explanation: string[];
@@ -75,6 +94,15 @@ export type PerformanceMetrics = {
   calibration: string;
   brierScore: string;
   modelVersion: string;
+  model_version?: string;
+  predictions_tracked?: number;
+  average_confidence?: number;
+  average_risk_score?: number;
+  reliable_count?: number;
+  medium_count?: number;
+  avoid_count?: number;
+  trap_match_count?: number;
+  note?: string;
   lastUpdated: string;
   latest_refresh?: RefreshResponse | null;
 };
@@ -91,6 +119,8 @@ export type DashboardSummary = {
   avoid_matches_count: number;
   trap_matches_count: number;
   average_confidence: number;
+  average_risk_score?: number;
+  model_version?: string;
   competitions_breakdown: Record<string, number>;
   top_reliable_matches: Prediction[];
   top_risky_matches: Prediction[];
@@ -380,6 +410,10 @@ export function buildDashboardSummary(source = 'mock'): DashboardSummary {
     average_confidence: Math.round(
       predictions.reduce((sum, prediction) => sum + prediction.confidence.score, 0) / predictions.length,
     ),
+    average_risk_score: Math.round(
+      predictions.reduce((sum, prediction) => sum + (prediction.risk_score ?? 50), 0) / predictions.length,
+    ),
+    model_version: 'elo-poisson-v1',
     competitions_breakdown: competitionsBreakdown,
     top_reliable_matches: [...predictions].sort((a, b) => b.confidence.score - a.confidence.score).slice(0, 5),
     top_risky_matches: predictions
@@ -392,7 +426,7 @@ export function buildDashboardSummary(source = 'mock'): DashboardSummary {
 }
 
 export function isAvoidStatus(status: string) {
-  return status === 'A EVITER' || status === 'À ÉVITER';
+  return status === 'A EVITER' || status === 'Ã€ Ã‰VITER';
 }
 
 export function getMockPrediction(id: string) {
@@ -440,3 +474,5 @@ export function statusClass(status: string) {
 
   return status.toLowerCase();
 }
+
+

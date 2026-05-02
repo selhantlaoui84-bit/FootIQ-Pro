@@ -1,4 +1,4 @@
-import type { GetStaticPaths, GetStaticProps } from 'next';
+﻿import type { GetStaticPaths, GetStaticProps } from 'next';
 import Link from 'next/link';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { getMatch, getPrediction } from '~/lib/api';
@@ -49,8 +49,11 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
 
       <section className="sectionSplit">
         <article className="card">
-          <h2>Modèle offensif</h2>
+          <h2>ModÃ¨le offensif</h2>
           <div className="dataList">
+            <span>
+              Model <strong>{prediction.model_version ?? 'elo-poisson-v1'}</strong>
+            </span>
             <span>
               Score attendu{' '}
               <strong>
@@ -58,7 +61,16 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
               </strong>
             </span>
             <span>
+              Score probable <strong>{prediction.goals.most_likely_score ?? 'N/A'}</strong>
+            </span>
+            <span>
+              Over 1.5 <strong>{prediction.goals.over_1_5 ?? 'N/A'}%</strong>
+            </span>
+            <span>
               Over 2.5 <strong>{prediction.goals.over_2_5}%</strong>
+            </span>
+            <span>
+              Over 3.5 <strong>{prediction.goals.over_3_5 ?? 'N/A'}%</strong>
             </span>
             <span>
               BTTS <strong>{prediction.goals.btts}%</strong>
@@ -75,7 +87,39 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
           <div className="confidenceLine tall confidence-bar">
             <span style={{ width: `${prediction.confidence.score}%` }} />
           </div>
+          <div className="dataList">
+            <span>
+              Risk score <strong>{prediction.risk_score ?? 'N/A'}</strong>
+            </span>
+            <span>
+              Trap score <strong>{prediction.trap_match_score ?? 'N/A'}</strong>
+            </span>
+            <span>
+              Data quality <strong>{prediction.features?.data_quality_score ?? 'N/A'}</strong>
+            </span>
+          </div>
           <p>{prediction.recommendation}</p>
+        </article>
+      </section>
+
+      <section className="grid three">
+        <article className="card">
+          <h2>Elo</h2>
+          <strong className="bigScore">{prediction.features?.elo_delta ?? 'N/A'}</strong>
+          <p>Delta Elo ajuste avec avantage domicile.</p>
+        </article>
+        <article className="card">
+          <h2>Form</h2>
+          <strong className="bigScore">{prediction.features?.form_delta ?? 'N/A'}</strong>
+          <p>Differentiel de dynamique recente.</p>
+        </article>
+        <article className="card">
+          <h2>Attack / Defense</h2>
+          <div className="dataList">
+            <span>Attack delta <strong>{prediction.features?.attack_delta ?? 'N/A'}</strong></span>
+            <span>Defense delta <strong>{prediction.features?.defense_delta ?? 'N/A'}</strong></span>
+            <span>Draw risk <strong>{prediction.features?.draw_risk_score ?? 'N/A'}</strong></span>
+          </div>
         </article>
       </section>
 
@@ -86,13 +130,13 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
           <p>{prediction.main_prediction}</p>
         </article>
         <article className={prediction.flags.trap_match || prediction.flags.risk ? 'card danger' : 'card'}>
-          <h2>{prediction.flags.trap_match ? 'Match piège détecté' : 'Risk alert'}</h2>
+          <h2>{prediction.flags.trap_match ? 'Match piÃ¨ge dÃ©tectÃ©' : 'Risk alert'}</h2>
           <p>
             {prediction.flags.trap_match
               ? 'Favori apparent, mais signaux contradictoires.'
               : prediction.flags.risk
-                ? 'Lisibilité réduite, prudence recommandée.'
-                : 'Aucune alerte majeure détectée.'}
+                ? 'LisibilitÃ© rÃ©duite, prudence recommandÃ©e.'
+                : 'Aucune alerte majeure dÃ©tectÃ©e.'}
           </p>
         </article>
       </section>
@@ -120,7 +164,7 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
         {[prediction.home_team, prediction.away_team].map((team) => (
           <Link className="card clickable-card" href={teamNameHref(team)} key={team}>
             <h3>{team}</h3>
-            <p>Voir la fiche équipe et les matchs liés.</p>
+            <p>Voir la fiche Ã©quipe et les matchs liÃ©s.</p>
           </Link>
         ))}
       </section>
@@ -145,3 +189,4 @@ function Probability({ label, value }: { label: string; value: number }) {
     </article>
   );
 }
+

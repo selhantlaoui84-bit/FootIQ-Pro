@@ -54,6 +54,7 @@ def normalize_match(raw_match, competition_label):
         "kickoff": raw_match.get("utcDate"),
         "status": raw_match.get("status", "SCHEDULED"),
         "source": "football-data.org",
+        "score": raw_match.get("score"),
     }
 
 

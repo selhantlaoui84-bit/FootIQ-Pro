@@ -1,4 +1,4 @@
-import type { GetStaticProps } from 'next';
+﻿import type { GetStaticProps } from 'next';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
@@ -36,19 +36,20 @@ export default function DashboardPage({ matches, predictions, summary }: Dashboa
         <div>
           <p className="eyebrow">Command center</p>
           <h1>Dashboard</h1>
-          <p>Lecture dynamique des matchs importés, des risques et de la confiance modèle.</p>
+          <p>Lecture dynamique des matchs importÃ©s, des risques et de la confiance modÃ¨le.</p>
         </div>
         <div className="heroStats">
           <Stat label="Matchs" value={summary.total_matches} href="/matches" />
           <Stat label="Confidence" value={`${summary.average_confidence}`} href="/performance" />
           <Stat label="Fiables" value={summary.reliable_matches_count} href="/predictions?status=FIABLE" />
-          <Stat label="Pièges" value={summary.trap_matches_count} href="/predictions?trap=true" />
+          <Stat label="PiÃ¨ges" value={summary.trap_matches_count} href="/predictions?trap=true" />
         </div>
         <div className="sourceStrip">
           <span>Source: {summary.source}</span>
           <span>Storage: {summary.storage}</span>
+          <span>Model: {summary.model_version ?? 'elo-poisson-v1'}</span>
           <span>
-            Refresh: {summary.last_refresh_at ? new Date(summary.last_refresh_at).toLocaleString('fr-FR') : 'Non lancé'}
+            Refresh: {summary.last_refresh_at ? new Date(summary.last_refresh_at).toLocaleString('fr-FR') : 'Non lancÃ©'}
           </span>
         </div>
       </section>
@@ -62,6 +63,7 @@ export default function DashboardPage({ matches, predictions, summary }: Dashboa
           href="/predictions?trap=true"
         />
         <Stat label="Average confidence" value={summary.average_confidence} href="/performance" />
+        <Stat label="Risk score" value={summary.average_risk_score ?? 0} href="/performance" />
         <Stat label="Teams" value={summary.teams_count} href="/teams" />
         <Stat label="Predictions" value={summary.predictions_count} href="/predictions" />
         <Stat label="Competitions" value={competitions.length} href="/matches" />
@@ -72,10 +74,10 @@ export default function DashboardPage({ matches, predictions, summary }: Dashboa
           Matchs
         </Link>
         <Link className="button secondary" href="/predictions">
-          Prédictions
+          PrÃ©dictions
         </Link>
         <Link className="button secondary" href="/teams">
-          Équipes
+          Ã‰quipes
         </Link>
         <Link className="button primary" href="/admin">
           Refresh admin
@@ -96,7 +98,7 @@ export default function DashboardPage({ matches, predictions, summary }: Dashboa
       </section>
 
       <section className="sectionSplit">
-        <Panel title="Upcoming fixtures" empty="Aucun match à venir.">
+        <Panel title="Upcoming fixtures" empty="Aucun match Ã  venir.">
           {upcoming.map((match) => (
             <Link className="rowMini clickable-card" href={matchHref(match)} key={match.match_id}>
               <span>{match.competition}</span>
@@ -195,3 +197,4 @@ function Distribution({
     </article>
   );
 }
+

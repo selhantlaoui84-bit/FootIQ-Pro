@@ -8,7 +8,7 @@ from sqlalchemy import text
 from data.database import db_available, execute_safe, fetch_all_safe, fetch_one_safe
 
 logger = logging.getLogger(__name__)
-MODEL_VERSION = "FootIQ-Pro v0.5"
+MODEL_VERSION = "elo-poisson-v1"
 
 
 def _json(data) -> str:

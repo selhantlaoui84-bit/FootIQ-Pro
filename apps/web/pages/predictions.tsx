@@ -135,6 +135,20 @@ function PredictionCard({ prediction }: { prediction: Prediction }) {
       <div className="confidenceLine confidence-bar">
         <span style={{ width: `${prediction.confidence.score}%` }} />
       </div>
+      <div className="dataList compact">
+        <span>
+          Model <strong>{prediction.model_version ?? 'elo-poisson-v1'}</strong>
+        </span>
+        <span>
+          Score <strong>{prediction.goals.most_likely_score ?? 'N/A'}</strong>
+        </span>
+        <span>
+          Risk <strong>{prediction.risk_score ?? 'N/A'}</strong>
+        </span>
+        <span>
+          Elo delta <strong>{prediction.features?.elo_delta ?? 'N/A'}</strong>
+        </span>
+      </div>
       <p>{prediction.explanation[0]}</p>
     </Link>
   );

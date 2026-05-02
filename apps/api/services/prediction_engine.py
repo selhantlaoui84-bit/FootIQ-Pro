@@ -1,16 +1,8 @@
-STRONG_TEAMS = {
-    "arsenal",
-    "barcelona",
-    "bayern",
-    "bayern munich",
-    "inter",
-    "inter milan",
-    "liverpool",
-    "manchester city",
-    "psg",
-    "paris saint-germain",
-    "real madrid",
-}
+from services.elo_model import calculate_team_elos, get_elo_features
+from services.feature_engineering import build_match_features
+from services.poisson_model import build_score_matrix, calculate_goal_probabilities
+
+MODEL_VERSION = "elo-poisson-v1"
 
 
 def slugify(value: str) -> str:
@@ -30,88 +22,130 @@ def calculate_status(confidence_score: int) -> str:
         return "FIABLE"
     if confidence_score >= 55:
         return "MOYEN"
-    return "À ÉVITER"
+    return "? ?VITER"
 
 
 def detect_trap_match(probabilities: dict, confidence_score: int) -> bool:
     favorite_probability = max(probabilities.get("home", 0), probabilities.get("draw", 0), probabilities.get("away", 0))
-    return favorite_probability >= 55 and confidence_score < 55
+    return favorite_probability >= 55 and confidence_score < 60
 
 
-def _is_strong(team_name: str) -> bool:
-    normalized = team_name.strip().lower()
-    return any(strong_team in normalized for strong_team in STRONG_TEAMS)
+def _normalize_probabilities(home: float, draw: float, away: float) -> dict:
+    values = [max(1, home), max(1, draw), max(1, away)]
+    total = sum(values)
+    home_pct = round(values[0] / total * 100)
+    draw_pct = round(values[1] / total * 100)
+    away_pct = 100 - home_pct - draw_pct
+    return {"home": home_pct, "draw": draw_pct, "away": away_pct}
 
 
-def _recommendation(confidence_score: int) -> str:
-    if confidence_score >= 75:
+def _result_probabilities_from_poisson(home_lambda: float, away_lambda: float) -> dict:
+    matrix = build_score_matrix(home_lambda, away_lambda)
+    flat = [cell for row in matrix for cell in row]
+    home = sum(cell["probability"] for cell in flat if cell["home_goals"] > cell["away_goals"])
+    draw = sum(cell["probability"] for cell in flat if cell["home_goals"] == cell["away_goals"])
+    away = sum(cell["probability"] for cell in flat if cell["home_goals"] < cell["away_goals"])
+    return _normalize_probabilities(home * 100, draw * 100, away * 100)
+
+
+def _blend_probabilities(elo_home_probability: float, poisson_probabilities: dict, features: dict) -> dict:
+    elo_home = elo_home_probability * 100
+    elo_away = (1 - elo_home_probability) * 100
+    elo_draw = 24 + features["draw_risk_score"] * 16
+    feature_home_boost = features["form_delta"] * 12 + features["attack_delta"] * 4 + features["defense_delta"] * 4
+    home = poisson_probabilities["home"] * 0.55 + elo_home * 0.35 + feature_home_boost
+    draw = poisson_probabilities["draw"] * 0.7 + elo_draw * 0.3
+    away = poisson_probabilities["away"] * 0.55 + elo_away * 0.35 - feature_home_boost
+    return _normalize_probabilities(home, draw, away)
+
+
+def _lambdas(features: dict, elo_features: dict) -> tuple[float, float]:
+    elo_delta = elo_features["elo_delta"]
+    home_lambda = 1.35 + features["attack_delta"] * 0.18 + features["defense_delta"] * 0.2 + elo_delta / 900
+    away_lambda = 1.15 - features["defense_delta"] * 0.16 - features["form_delta"] * 0.22 - elo_delta / 1100
+    return max(0.45, min(3.2, home_lambda)), max(0.35, min(3.0, away_lambda))
+
+
+def _confidence(probabilities: dict, features: dict) -> int:
+    sorted_probs = sorted(probabilities.values(), reverse=True)
+    spread = sorted_probs[0] - sorted_probs[1]
+    score = 46 + spread * 0.7 + features["data_quality_score"] * 18 - features["draw_risk_score"] * 16
+    if probabilities["draw"] >= 30:
+        score -= 5
+    return max(35, min(88, round(score)))
+
+
+def _risk_scores(probabilities: dict, confidence_score: int, features: dict) -> tuple[int, int]:
+    favorite = max(probabilities.values())
+    risk = 100 - confidence_score + round(features["draw_risk_score"] * 20) + (8 if probabilities["draw"] >= 30 else 0)
+    trap = max(0, round((favorite - 50) * 1.8 + (60 - confidence_score) + features["draw_risk_score"] * 20))
+    return max(0, min(100, risk)), max(0, min(100, trap))
+
+
+def _recommendation(confidence_score: int, risk_score: int) -> str:
+    if confidence_score >= 75 and risk_score < 45:
         return "Exploitable"
-    if confidence_score >= 55:
+    if confidence_score >= 55 and risk_score < 65:
         return "Prudence"
-    return "À éviter"
+    return "? ?viter"
 
 
-def _goals_from_probabilities(probabilities: dict) -> dict:
-    home_edge = probabilities["home"] - probabilities["away"]
-    expected_home = round(1.35 + max(home_edge, 0) / 35, 1)
-    expected_away = round(1.2 + max(-home_edge, 0) / 42, 1)
-    favorite_probability = max(probabilities.values())
-
-    return {
-        "expected_home": expected_home,
-        "expected_away": expected_away,
-        "over_2_5": min(64, 42 + int(favorite_probability / 4)),
-        "btts": min(62, 45 + int((100 - abs(home_edge)) / 8)),
-    }
+def _main_prediction(home_team: str, away_team: str, probabilities: dict) -> str:
+    winner = max(probabilities, key=probabilities.get)
+    if winner == "home":
+        return f"{home_team} pr?sente l'avantage probabiliste principal"
+    if winner == "away":
+        return f"{away_team} pr?sente l'avantage probabiliste principal"
+    return "Le nul ressort comme un sc?nario significatif"
 
 
-def generate_prediction_from_match(match: dict) -> dict:
+def _explanation(features: dict, elo_features: dict, probabilities: dict, goals: dict) -> list[str]:
+    items = []
+    if abs(elo_features["elo_delta"]) >= 80:
+        leader = "domicile" if elo_features["elo_delta"] > 0 else "ext?rieur"
+        items.append(f"L'?cart Elo donne un avantage mesur? au camp {leader}.")
+    else:
+        items.append("Les ratings Elo restent proches, ce qui limite la certitude du signal.")
+
+    if abs(features["form_delta"]) >= 0.15:
+        side = "domicile" if features["form_delta"] > 0 else "ext?rieur"
+        items.append(f"La dynamique r?cente penche l?g?rement c?t? {side}.")
+    else:
+        items.append("La forme r?cente ne cr?e pas de rupture nette entre les ?quipes.")
+
+    items.append(f"Le mod?le Poisson projette un score le plus probable de {goals['most_likely_score']}.")
+    if probabilities["draw"] >= 30:
+        items.append("La probabilit? de nul reste ?lev?e, ce qui r?duit la lisibilit?.")
+    return items[:4]
+
+
+def _risks(features: dict, probabilities: dict, risk_score: int) -> list[str]:
+    risks = []
+    if features["data_quality_score"] < 0.55:
+        risks.append("Historique exploitable limit?: prudence sur la calibration.")
+    if probabilities["draw"] >= 30:
+        risks.append("Nul statistiquement significatif.")
+    if risk_score >= 65:
+        risks.append("Score de risque ?lev? malgr? le favori apparent.")
+    risks.append("Compositions, blessures et contexte de calendrier non int?gr?s.")
+    return risks
+
+
+def generate_prediction_from_match(match: dict, all_matches: list[dict] | None = None, elo_ratings: dict | None = None) -> dict:
+    all_matches = all_matches or [match]
     home_team = match.get("home_team", "")
     away_team = match.get("away_team", "")
     slug = match.get("slug") or match.get("match_id") or match_slug(home_team, away_team)
-    home_strong = _is_strong(home_team)
-    away_strong = _is_strong(away_team)
-
-    if home_strong and not away_strong:
-        probabilities = {"home": 62, "draw": 23, "away": 15}
-        confidence_score = 76
-        main_prediction = f"{home_team} avantage domicile"
-        explanation = [
-            "Equipe a forte reference statistique face a une opposition moins dominante",
-            "Le contexte domicile augmente la lisibilite du scenario",
-            "La probabilite reste une estimation, pas une certitude",
-        ]
-    elif away_strong and not home_strong:
-        probabilities = {"home": 22, "draw": 25, "away": 53}
-        confidence_score = 68
-        main_prediction = f"{away_team} avantage leger"
-        explanation = [
-            "L'equipe exterieure presente un niveau de reference superieur",
-            "Le facteur domicile adverse reduit la confiance globale",
-            "Le scenario reste sensible au rythme du match",
-        ]
-    elif home_strong and away_strong:
-        probabilities = {"home": 40, "draw": 27, "away": 33}
-        confidence_score = 58
-        main_prediction = "Match de haut niveau, avantage limite"
-        explanation = [
-            "Deux equipes fortes reduisent la clarte du signal principal",
-            "Le volume offensif attendu reste eleve",
-            "La marge entre les issues reste moderee",
-        ]
-    else:
-        probabilities = {"home": 42, "draw": 28, "away": 30}
-        confidence_score = 52
-        main_prediction = "Match equilibre, prudence recommandee"
-        explanation = [
-            "Les signaux disponibles ne degagent pas de favori net",
-            "Le nul conserve une probabilite significative",
-            "La confiance reste limitee sans donnees contextuelles avancees",
-        ]
-
-    goals = _goals_from_probabilities(probabilities)
-    status = calculate_status(confidence_score)
-    trap_match = detect_trap_match(probabilities, confidence_score)
+    features = build_match_features(match, all_matches)
+    elo_ratings = elo_ratings or calculate_team_elos(all_matches)
+    elo_features = get_elo_features(home_team, away_team, elo_ratings)
+    home_lambda, away_lambda = _lambdas(features, elo_features)
+    goals = calculate_goal_probabilities(home_lambda, away_lambda)
+    poisson_probabilities = _result_probabilities_from_poisson(home_lambda, away_lambda)
+    probabilities = _blend_probabilities(elo_features["elo_home_win_probability"], poisson_probabilities, features)
+    confidence_score = _confidence(probabilities, features)
+    risk_score, trap_match_score = _risk_scores(probabilities, confidence_score, features)
+    trap_match = detect_trap_match(probabilities, confidence_score) or trap_match_score >= 65
 
     return {
         "id": slug,
@@ -123,44 +157,28 @@ def generate_prediction_from_match(match: dict) -> dict:
         "kickoff": match.get("kickoff"),
         "status": match.get("status", "SCHEDULED"),
         "source": match.get("source", "mock"),
+        "model_version": MODEL_VERSION,
         "probabilities": probabilities,
         "goals": goals,
-        "confidence": {"score": confidence_score, "status": status},
-        "flags": {"trap_match": trap_match, "risk": confidence_score < 55},
-        "recommendation": _recommendation(confidence_score),
-        "main_prediction": main_prediction,
-        "explanation": explanation,
-        "risks": [
-            "Donnees de composition non integrees",
-            "Calendrier et fatigue a surveiller",
-            "Probabilite de nul a ne pas negliger",
-        ],
-        "disclaimer": "Modele probabiliste. Aucune garantie de resultat.",
+        "confidence": {"score": confidence_score, "status": calculate_status(confidence_score)},
+        "features": {
+            "elo_delta": elo_features["elo_delta"],
+            "form_delta": features["form_delta"],
+            "attack_delta": features["attack_delta"],
+            "defense_delta": features["defense_delta"],
+            "draw_risk_score": features["draw_risk_score"],
+            "data_quality_score": features["data_quality_score"],
+        },
+        "flags": {"trap_match": trap_match, "risk": risk_score >= 65 or confidence_score < 55},
+        "risk_score": risk_score,
+        "trap_match_score": trap_match_score,
+        "recommendation": _recommendation(confidence_score, risk_score),
+        "main_prediction": _main_prediction(home_team, away_team, probabilities),
+        "explanation": _explanation(features, elo_features, probabilities, goals),
+        "risks": _risks(features, probabilities, risk_score),
+        "disclaimer": "Mod?le probabilistique. Aucune garantie de r?sultat.",
     }
 
 
 def generate_mock_prediction(match: dict) -> dict:
-    confidence_score = int(match["confidence_score"])
-    probabilities = match["probabilities"]
-    slug = match.get("slug") or match.get("match_id") or match_slug(match["home_team"], match["away_team"])
-
-    return {
-        "id": slug,
-        "match_id": slug,
-        "slug": slug,
-        "home_team": match["home_team"],
-        "away_team": match["away_team"],
-        "competition": match["competition"],
-        "kickoff": match["kickoff"],
-        "status": match.get("status", "SCHEDULED"),
-        "source": match.get("source", "mock"),
-        "probabilities": probabilities,
-        "goals": match["goals"],
-        "confidence": {"score": confidence_score, "status": calculate_status(confidence_score)},
-        "flags": {"trap_match": detect_trap_match(probabilities, confidence_score), "risk": confidence_score < 55},
-        "recommendation": match["recommendation"],
-        "main_prediction": match["main_prediction"],
-        "explanation": match["explanation"],
-        "risks": match["risks"],
-        "disclaimer": "Modele probabiliste. Aucune garantie de resultat.",
-    }
+    return generate_prediction_from_match({**match, "source": match.get("source", "mock")}, [match])

@@ -1,4 +1,4 @@
-import type { GetStaticProps } from 'next';
+﻿import type { GetStaticProps } from 'next';
 import Link from 'next/link';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { getPerformance, getPredictions } from '~/lib/api';
@@ -20,23 +20,23 @@ export default function PerformancePage({ performance, predictions }: Performanc
   const reliable = predictions.filter((prediction) => prediction.confidence.status === 'FIABLE').length;
   const averageConfidence = predictions.length
     ? Math.round(predictions.reduce((sum, prediction) => sum + prediction.confidence.score, 0) / predictions.length)
-    : performance.averageConfidence;
+    : performance.averageConfidence ?? 0;
   const items = [
-    ['Predictions tracked', predictions.length || performance.tracked],
-    ['Reliable predictions', reliable],
-    ['Average confidence', averageConfidence],
-    ['Calibration status', performance.calibration],
-    ['Brier score', performance.brierScore],
-    ['Model version', performance.modelVersion],
+    ['Predictions tracked', performance.predictions_tracked ?? predictions.length ?? performance.tracked],
+    ['Reliable predictions', performance.reliable_count ?? reliable],
+    ['Average confidence', performance.average_confidence ?? averageConfidence],
+    ['Average risk', performance.average_risk_score ?? 'N/A'],
+    ['Trap matches', performance.trap_match_count ?? 0],
+    ['Model version', performance.model_version ?? performance.modelVersion],
   ];
 
   return (
     <ProtectedRoute>
       <Layout>
       <section className="pageHeader">
-        <p className="eyebrow">Calibration modèle</p>
+        <p className="eyebrow">Calibration modÃ¨le</p>
         <h1>Performance</h1>
-        <p>Un bon modèle probabiliste n'a pas toujours raison. Il doit surtout être bien calibré.</p>
+        <p>Un bon modÃ¨le probabiliste n'a pas toujours raison. Il doit surtout Ãªtre bien calibrÃ©.</p>
       </section>
 
       <section className="metrics">
@@ -52,9 +52,10 @@ export default function PerformancePage({ performance, predictions }: Performanc
         <Link className="card clickable-card" href="/about">
           <h2>Lecture responsable</h2>
           <p>
-            Les taux de réussite sont suivis par niveau de confiance. L'objectif est une calibration honnête: lorsqu'un
-            événement est annoncé à 60%, il doit se produire environ 60% du temps sur un grand volume.
+            Les taux de rÃ©ussite sont suivis par niveau de confiance. L'objectif est une calibration honnÃªte: lorsqu'un
+            Ã©vÃ©nement est annoncÃ© Ã  60%, il doit se produire environ 60% du temps sur un grand volume.
           </p>
+          <p>{performance.note ?? 'Backtesting will be added in the next phase.'}</p>
         </Link>
         <Link className="card clickable-card" href="/admin">
           <h2>Dernier refresh</h2>
@@ -72,3 +73,4 @@ export default function PerformancePage({ performance, predictions }: Performanc
     </ProtectedRoute>
   );
 }
+

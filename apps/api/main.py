@@ -16,7 +16,9 @@ from services.football_data_client import (
     get_ligue1_matches,
     get_ligue1_teams,
 )
+from services.elo_model import calculate_team_elos
 from services.prediction_engine import generate_prediction_from_match
+from services.prediction_engine import MODEL_VERSION
 
 
 @asynccontextmanager
@@ -45,11 +47,13 @@ def _available_teams():
 
 
 def _available_predictions():
-    return (
-        repository.get_predictions()
-        or runtime_store.get_predictions()
-        or [_prediction_for_match(match) for match in _available_matches()]
-    )
+    matches = _available_matches()
+    stored_predictions = repository.get_predictions() or runtime_store.get_predictions()
+    if stored_predictions and all(item.get("model_version") == MODEL_VERSION for item in stored_predictions):
+        return stored_predictions
+
+    elo_ratings = calculate_team_elos(matches)
+    return [_prediction_for_match(match, matches, elo_ratings) for match in matches]
 
 
 def _find_match(match_id: str):
@@ -72,7 +76,7 @@ def _find_team(team_id: str):
 
 def _find_prediction(match_id: str):
     prediction = repository.get_prediction(match_id)
-    if prediction:
+    if prediction and prediction.get("model_version") == MODEL_VERSION:
         return prediction
 
     prediction = next(
@@ -83,21 +87,22 @@ def _find_prediction(match_id: str):
         ),
         None,
     )
-    if prediction:
+    if prediction and prediction.get("model_version") == MODEL_VERSION:
         return prediction
 
     match = _find_match(match_id)
     if match is not None:
-        return _prediction_for_match(match)
+        matches = _available_matches()
+        return _prediction_for_match(match, matches, calculate_team_elos(matches))
 
     return get_mock_prediction(match_id)
 
 
-def _prediction_for_match(match: dict):
-    if "probabilities" in match and "confidence" in match:
+def _prediction_for_match(match: dict, all_matches: list[dict] | None = None, elo_ratings: dict | None = None):
+    if "probabilities" in match and "confidence" in match and match.get("model_version") == MODEL_VERSION:
         return match
 
-    return generate_prediction_from_match(match)
+    return generate_prediction_from_match(match, all_matches or _available_matches(), elo_ratings)
 
 
 def _refresh_status():
@@ -124,6 +129,9 @@ def _dashboard_summary():
     medium = [item for item in predictions if item["confidence"]["status"] == "MOYEN"]
     avoid = [item for item in predictions if item["confidence"]["status"] in {"À ÉVITER", "A EVITER"}]
     traps = [item for item in predictions if item["flags"]["trap_match"]]
+    average_risk_score = 0
+    if predictions:
+        average_risk_score = round(sum(item.get("risk_score", 0) for item in predictions) / len(predictions))
     status = _refresh_status()
     competitions = {}
 
@@ -145,6 +153,8 @@ def _dashboard_summary():
         "avoid_matches_count": len(avoid),
         "trap_matches_count": len(traps),
         "average_confidence": average_confidence,
+        "average_risk_score": average_risk_score,
+        "model_version": MODEL_VERSION,
         "competitions_breakdown": competitions,
         "top_reliable_matches": sorted(
             predictions,
@@ -226,13 +236,28 @@ def team_detail(team_id: str):
 def model_performance():
     predictions = _available_predictions()
     average_confidence = 0
+    average_risk_score = 0
     if predictions:
         average_confidence = round(sum(item["confidence"]["score"] for item in predictions) / len(predictions))
+        average_risk_score = round(sum(item.get("risk_score", 0) for item in predictions) / len(predictions))
+    reliable = [item for item in predictions if item["confidence"]["status"] == "FIABLE"]
+    medium = [item for item in predictions if item["confidence"]["status"] == "MOYEN"]
+    avoid = [item for item in predictions if item["confidence"]["status"] in {"À ÉVITER", "A EVITER"}]
+    traps = [item for item in predictions if item["flags"]["trap_match"]]
 
     return {
         **PERFORMANCE,
+        "model_version": MODEL_VERSION,
+        "predictions_tracked": len(predictions),
         "tracked": len(predictions) or PERFORMANCE["tracked"],
         "averageConfidence": str(average_confidence or PERFORMANCE["averageConfidence"]),
+        "average_confidence": average_confidence,
+        "average_risk_score": average_risk_score,
+        "reliable_count": len(reliable),
+        "medium_count": len(medium),
+        "avoid_count": len(avoid),
+        "trap_match_count": len(traps),
+        "note": "Backtesting will be added in the next phase.",
         "latest_refresh": _refresh_status(),
     }
 
@@ -264,7 +289,8 @@ def refresh_data(x_admin_key: str | None = Header(default=None, alias="X-Admin-K
             matches = external_matches or MATCHES
             teams = external_teams or TEAMS
 
-    predictions = [_prediction_for_match(match) for match in matches]
+    elo_ratings = calculate_team_elos(matches)
+    predictions = [_prediction_for_match(match, matches, elo_ratings) for match in matches]
     storage = "memory"
 
     if repository.save_matches(matches) and repository.save_teams(teams) and repository.save_predictions(predictions):
