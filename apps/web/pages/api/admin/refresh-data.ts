@@ -1,46 +1,57 @@
-﻿import type { NextApiRequest, NextApiResponse } from "next";
+﻿import type { NextApiRequest, NextApiResponse } from 'next';
 
-const API_URL =
-  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ||
-  "https://footiq-pro-production.up.railway.app";
+const DEFAULT_API_URL = 'https://footiq-pro-production.up.railway.app';
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ status: "error", detail: "Method not allowed" });
+function getApiUrl() {
+  return (process.env.NEXT_PUBLIC_API_URL || DEFAULT_API_URL).replace(/\/$/, '');
+}
+
+async function parseJsonSafely(response: Response) {
+  const contentType = response.headers.get('content-type') ?? '';
+  const text = await response.text();
+
+  if (!contentType.includes('application/json')) {
+    return { status: 'error', detail: text || 'Non JSON response from backend' };
   }
 
-  const adminKey = process.env.NEXT_PUBLIC_ADMIN_API_KEY;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { status: 'error', detail: 'Invalid JSON response from backend' };
+  }
+}
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== 'POST') {
+    res.setHeader('Allow', 'POST');
+    return res.status(405).json({ status: 'error', detail: 'Method not allowed' });
+  }
+
+  const adminKey = process.env.ADMIN_API_KEY || process.env.NEXT_PUBLIC_ADMIN_API_KEY;
 
   if (!adminKey) {
     return res.status(500).json({
-      status: "error",
-      detail: "NEXT_PUBLIC_ADMIN_API_KEY is not configured",
+      status: 'error',
+      detail: 'ADMIN_API_KEY is not configured on the web server',
     });
   }
 
   try {
-    const response = await fetch(`${API_URL}/admin/refresh-data`, {
-      method: "POST",
+    const backendResponse = await fetch(`${getApiUrl()}/admin/refresh-data`, {
+      method: 'POST',
       headers: {
-        Accept: "application/json",
-        "X-Admin-Key": adminKey,
+        Accept: 'application/json',
+        'X-Admin-Key': adminKey,
       },
     });
 
-    const text = await response.text();
+    const body = await parseJsonSafely(backendResponse);
 
-    let body: unknown;
-    try {
-      body = JSON.parse(text);
-    } catch {
-      body = { status: "error", detail: text || "Non JSON response from backend" };
-    }
-
-    return res.status(response.status).json(body);
+    return res.status(backendResponse.status).json(body);
   } catch (error) {
-    return res.status(500).json({
-      status: "error",
-      detail: error instanceof Error ? error.message : "Refresh proxy failed",
+    return res.status(502).json({
+      status: 'error',
+      detail: error instanceof Error ? error.message : 'Refresh proxy failed',
     });
   }
 }

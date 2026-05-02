@@ -11,7 +11,6 @@ export default function AdminPage() {
   const [refreshInfo, setRefreshInfo] = useState<RefreshResponse | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const adminKeyConfigured = Boolean(process.env.NEXT_PUBLIC_ADMIN_API_KEY);
   const { user, isAdmin } = useAuth();
 
   useEffect(() => {
@@ -27,11 +26,6 @@ export default function AdminPage() {
     setIsRefreshing(true);
     setError(null);
 
-    if (!adminKeyConfigured) {
-      setError('Admin key not configured');
-      setIsRefreshing(false);
-      return;
-    }
 
     try {
       const result = await refreshData();
@@ -94,22 +88,18 @@ export default function AdminPage() {
               <span>
                 API URL <strong>{process.env.NEXT_PUBLIC_API_URL ?? 'non configuree'}</strong>
               </span>
-              <span>
-                Admin key <strong>{adminKeyConfigured ? 'configured' : 'missing'}</strong>
-              </span>
             </div>
           </article>
 
           <article className="card accent">
             <h2>Refresh data</h2>
             <p>Import Ligue 1 et Champions League, avec fallback mock automatique.</p>
-            {!adminKeyConfigured && <div className="banner warning">Admin key not configured</div>}
             {!isAdmin && <div className="banner error">Admin access required.</div>}
             <button
               className="button primary"
               type="button"
               onClick={handleRefresh}
-              disabled={isRefreshing || !adminKeyConfigured || !isAdmin}
+              disabled={isRefreshing || !isAdmin}
             >
               {isRefreshing ? 'Refresh en cours...' : 'Refresh data'}
             </button>

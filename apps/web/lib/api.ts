@@ -142,34 +142,14 @@ export async function getRefreshStatus(): Promise<RefreshResponse | null> {
 }
 
 export async function refreshData(): Promise<RefreshResponse | null> {
-  const adminKey = process.env.NEXT_PUBLIC_ADMIN_API_KEY;
-
-  if (!adminKey) {
-    return {
-      status: 'error',
-      detail: 'NEXT_PUBLIC_ADMIN_API_KEY is missing in Vercel build.',
-    };
-  }
-
   try {
     const response = await fetch('/api/admin/refresh-data', {
       method: 'POST',
-      headers: {
-        Accept: 'application/json',
-      },
+      headers: { Accept: 'application/json' },
     });
 
-    const text = await response.text();
-
-    let body: any = null;
-
-    try {
-      body = JSON.parse(text);
-    } catch {
-      body = {
-        detail: text || 'Non JSON response',
-      };
-    }
+    const contentType = response.headers.get('content-type') ?? '';
+    const body = contentType.includes('application/json') ? await response.json() : null;
 
     if (!response.ok) {
       return {

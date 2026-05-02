@@ -1,4 +1,4 @@
-# FootIQ Pro Deployment
+﻿# FootIQ Pro Deployment
 
 ## Backend
 
@@ -123,4 +123,31 @@ curl https://<backend_url>/health
 curl https://<backend_url>/matches
 curl https://<backend_url>/predictions
 curl -X POST https://<backend_url>/admin/refresh-data -H "X-Admin-Key: <admin_key>"
+```
+
+## Admin Refresh Proxy
+
+Browser flow:
+
+```bash
+/admin button
+POST /api/admin/refresh-data on Vercel
+POST https://footiq-pro-production.up.railway.app/admin/refresh-data with X-Admin-Key from Vercel ADMIN_API_KEY
+```
+
+Validation:
+
+```bash
+curl -X POST https://<frontend_url>/api/admin/refresh-data
+curl https://<frontend_url>/api/admin
+```
+
+Expected production result after deploy:
+
+```json
+{
+  "status": "ok",
+  "storage": "postgresql",
+  "snapshots_saved": 486
+}
 ```
