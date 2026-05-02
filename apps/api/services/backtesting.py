@@ -244,3 +244,63 @@ def calculate_backtest_report(matches: list[dict], predictions: list[dict]) -> d
     }
 
 
+
+
+
+def calculate_snapshot_backtest(matches: list[dict], snapshots: list[dict]) -> dict:
+    matches_by_id = {
+        match.get("match_id") or match.get("id") or match.get("slug"): match
+        for match in matches
+        if match.get("match_id") or match.get("id") or match.get("slug")
+    }
+    grouped: dict[str, dict] = {}
+
+    for snapshot in snapshots or []:
+        prediction = snapshot.get("prediction")
+        if not isinstance(prediction, dict):
+            prediction = _parse_raw_json(snapshot.get("prediction_json"))
+        if not isinstance(prediction, dict):
+            continue
+
+        model_version = snapshot.get("model_version") or prediction.get("model_version") or "unknown"
+        entry = grouped.setdefault(
+            model_version,
+            {"snapshots": 0, "evaluations": []},
+        )
+        entry["snapshots"] += 1
+        match_id = snapshot.get("match_id") or prediction.get("match_id") or prediction.get("id") or prediction.get("slug")
+        match = matches_by_id.get(match_id)
+        if match is None:
+            continue
+        evaluation = evaluate_prediction(prediction, match)
+        if evaluation is not None:
+            entry["evaluations"].append(evaluation)
+
+    model_versions = {}
+    for model_version, entry in grouped.items():
+        evaluations = entry["evaluations"]
+        count = len(evaluations)
+        correct = sum(1 for item in evaluations if item.get("result_correct"))
+        brier_scores = [float(item.get("brier_score_1x2", 0)) for item in evaluations]
+        confidence_values = [int(item.get("confidence_score", 0)) for item in evaluations]
+        model_versions[model_version] = {
+            "snapshots": entry["snapshots"],
+            "evaluated_matches": count,
+            "result_accuracy": _percentage(correct, count),
+            "average_brier_score": _average(brier_scores),
+            "average_confidence": round(sum(confidence_values) / count) if count else 0,
+        }
+
+    evaluated_items = {key: value for key, value in model_versions.items() if value["evaluated_matches"] > 0}
+    best_model_by_brier = None
+    best_model_by_accuracy = None
+    if evaluated_items:
+        best_model_by_brier = min(evaluated_items, key=lambda key: evaluated_items[key]["average_brier_score"])
+        best_model_by_accuracy = max(evaluated_items, key=lambda key: evaluated_items[key]["result_accuracy"])
+
+    return {
+        "model_versions": model_versions,
+        "best_model_by_brier": best_model_by_brier,
+        "best_model_by_accuracy": best_model_by_accuracy,
+        "note": "Model comparison is based on stored prediction snapshots.",
+    }

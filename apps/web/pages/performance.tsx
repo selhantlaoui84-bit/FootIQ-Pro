@@ -1,25 +1,32 @@
 ﻿import type { GetStaticProps } from 'next';
 import Link from 'next/link';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
-import { getBacktesting, getPerformance } from '~/lib/api';
-import type { BacktestingReport, PerformanceMetrics } from '~/lib/mock-data';
+import { getBacktesting, getModelComparison, getModels, getPerformance } from '~/lib/api';
+import type { BacktestingReport, ModelComparison, ModelsMetadata, PerformanceMetrics } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
 
 type PerformanceProps = {
   performance: PerformanceMetrics;
   backtesting: BacktestingReport;
+  models: ModelsMetadata;
+  comparison: ModelComparison;
 };
 
 export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
-  const [performance, backtesting] = await Promise.all([getPerformance(), getBacktesting()]);
+  const [performance, backtesting, models, comparison] = await Promise.all([
+    getPerformance(),
+    getBacktesting(),
+    getModels(),
+    getModelComparison(),
+  ]);
 
-  return { props: { performance, backtesting }, revalidate: 120 };
+  return { props: { performance, backtesting, models, comparison }, revalidate: 120 };
 };
 
-export default function PerformancePage({ performance, backtesting }: PerformanceProps) {
+export default function PerformancePage({ performance, backtesting, models, comparison }: PerformanceProps) {
   const report = {
     ...backtesting,
-    model_version: performance.model_version ?? backtesting.model_version,
+    model_version: performance.current_model_version ?? performance.model_version ?? models.current_model_version ?? backtesting.model_version,
     evaluated_matches: performance.evaluated_matches ?? backtesting.evaluated_matches,
     result_accuracy: performance.result_accuracy ?? backtesting.result_accuracy,
     over_2_5_accuracy: performance.over_2_5_accuracy ?? backtesting.over_2_5_accuracy,
@@ -29,7 +36,7 @@ export default function PerformancePage({ performance, backtesting }: Performanc
     confidence_buckets: performance.confidence_buckets ?? backtesting.confidence_buckets,
     competition_breakdown: performance.competition_breakdown ?? backtesting.competition_breakdown,
     previous_model_version: performance.previous_model_version ?? backtesting.previous_model_version,
-    comparison_note: performance.comparison_note ?? backtesting.comparison_note,
+    comparison_note: performance.model_comparison_note ?? performance.comparison_note ?? comparison.note ?? backtesting.comparison_note,
     calibration_applied: performance.calibration_applied ?? backtesting.calibration_applied,
     note: performance.note ?? backtesting.note,
   };
@@ -47,6 +54,9 @@ export default function PerformancePage({ performance, backtesting }: Performanc
     ['Calibration score', `${report.calibration_score}/100`],
   ];
   const competitions = Object.entries(report.competition_breakdown ?? {});
+  const modelRows = Object.entries(performance.model_versions ?? comparison.model_versions ?? {});
+  const bestByBrier = performance.best_model_by_brier ?? comparison.best_model_by_brier;
+  const bestByAccuracy = performance.best_model_by_accuracy ?? comparison.best_model_by_accuracy;
 
   return (
     <ProtectedRoute>
@@ -64,6 +74,53 @@ export default function PerformancePage({ performance, backtesting }: Performanc
               <strong>{value}</strong>
             </Link>
           ))}
+        </section>
+
+
+        <section className="sectionSplit" id="model-comparison">
+          <article className="card accent">
+            <p className="eyebrow">Current model</p>
+            <h2>{models.current_model_version}</h2>
+            <div className="dataList">
+              <span>Previous <strong>{models.previous_model_version}</strong></span>
+              <span>Family <strong>{models.family}</strong></span>
+              <span>Calibration <strong>{models.calibration ? 'enabled' : 'disabled'}</strong></span>
+              <span>Snapshots <strong>{performance.snapshots_count ?? 0}</strong></span>
+            </div>
+            <p>{models.description}</p>
+          </article>
+          <article className="card">
+            <h2>Best model</h2>
+            <div className="dataList">
+              <span>Best by Brier <strong>{bestByBrier ?? 'N/A'}</strong></span>
+              <span>Best by accuracy <strong>{bestByAccuracy ?? 'N/A'}</strong></span>
+            </div>
+            <p>A prediction snapshot is a saved version of what the model believed before evaluation. This enables fair model comparison over time.</p>
+          </article>
+        </section>
+
+        <section className="card">
+          <h2>Model comparison</h2>
+          {modelRows.length === 0 ? (
+            <div className="emptyState">No prediction snapshots available yet. Run an admin refresh with PostgreSQL enabled.</div>
+          ) : (
+            <div className="metricTable">
+              <div className="metricTableRow header">
+                <span>Model</span>
+                <span>Snapshots</span>
+                <span>Accuracy</span>
+                <span>Brier</span>
+              </div>
+              {modelRows.map(([modelVersion, row]) => (
+                <div className="metricTableRow bucketRow" key={modelVersion}>
+                  <span>{modelVersion}</span>
+                  <strong>{row.snapshots}</strong>
+                  <strong>{row.result_accuracy}%</strong>
+                  <strong>{row.average_brier_score}</strong>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         <section className="sectionSplit">

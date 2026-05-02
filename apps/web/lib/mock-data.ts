@@ -89,9 +89,47 @@ export type RefreshResponse = {
   matches_imported?: number;
   teams_imported?: number;
   predictions_imported?: number;
+  snapshots_saved?: number;
   last_refresh_at?: string | null;
   error?: string;
   detail?: string;
+};
+
+
+export type ModelsMetadata = {
+  current_model_version: string;
+  previous_model_version: string;
+  family: string;
+  calibration: boolean;
+  description: string;
+  available_model_versions?: string[];
+};
+
+export type ModelComparisonRow = {
+  snapshots: number;
+  evaluated_matches: number;
+  result_accuracy: number;
+  average_brier_score: number;
+  average_confidence: number;
+};
+
+export type ModelComparison = {
+  model_versions: Record<string, ModelComparisonRow>;
+  best_model_by_brier: string | null;
+  best_model_by_accuracy: string | null;
+  note: string;
+};
+
+export type PredictionSnapshot = {
+  id: string;
+  match_id?: string;
+  model_version?: string;
+  prediction?: Prediction | null;
+  created_at?: string | null;
+  evaluated_at?: string | null;
+  actual_result?: string | null;
+  result_correct?: boolean | null;
+  brier_score_1x2?: number | null;
 };
 
 export type ConfidenceBucket = {
@@ -136,6 +174,12 @@ export type PerformanceMetrics = {
   previous_model_version?: string;
   comparison_note?: string;
   calibration_applied?: boolean;
+  current_model_version?: string;
+  snapshots_count?: number;
+  model_versions?: Record<string, ModelComparisonRow>;
+  best_model_by_brier?: string | null;
+  best_model_by_accuracy?: string | null;
+  model_comparison_note?: string;
   predictions_tracked?: number;
   evaluated_matches?: number;
   result_accuracy?: number;
@@ -171,6 +215,9 @@ export type DashboardSummary = {
   average_risk_score?: number;
   model_version?: string;
   calibration_applied?: boolean;
+  current_model_version?: string;
+  snapshots_count?: number;
+  best_model_by_brier?: string | null;
   evaluated_matches?: number;
   result_accuracy?: number;
   average_brier_score?: number;
@@ -441,6 +488,24 @@ export const teams: Team[] = [
   },
 ];
 
+export const mockModelsMetadata: ModelsMetadata = {
+  current_model_version: 'elo-poisson-calibrated-v1',
+  previous_model_version: 'elo-poisson-v1',
+  family: 'elo_poisson',
+  calibration: true,
+  description: 'Calibrated Elo + Poisson model with conservative probability smoothing.',
+  available_model_versions: ['elo-poisson-calibrated-v1', 'elo-poisson-v1'],
+};
+
+export const mockModelComparison: ModelComparison = {
+  model_versions: {},
+  best_model_by_brier: null,
+  best_model_by_accuracy: null,
+  note: 'Model comparison is based on stored prediction snapshots.',
+};
+
+export const mockPredictionSnapshots: PredictionSnapshot[] = [];
+
 export const mockBacktestingReport: BacktestingReport = {
   model_version: 'elo-poisson-calibrated-v1',
   previous_model_version: 'elo-poisson-v1',
@@ -477,6 +542,12 @@ export const performanceMetrics: PerformanceMetrics = {
   previous_model_version: mockBacktestingReport.previous_model_version,
   comparison_note: mockBacktestingReport.comparison_note,
   calibration_applied: true,
+  current_model_version: mockModelsMetadata.current_model_version,
+  snapshots_count: 0,
+  model_versions: mockModelComparison.model_versions,
+  best_model_by_brier: mockModelComparison.best_model_by_brier,
+  best_model_by_accuracy: mockModelComparison.best_model_by_accuracy,
+  model_comparison_note: mockModelComparison.note,
   predictions_tracked: predictions.length,
   evaluated_matches: mockBacktestingReport.evaluated_matches,
   result_accuracy: mockBacktestingReport.result_accuracy,
@@ -518,6 +589,9 @@ export function buildDashboardSummary(source = 'mock'): DashboardSummary {
     ),
     model_version: 'elo-poisson-calibrated-v1',
     calibration_applied: true,
+    current_model_version: mockModelsMetadata.current_model_version,
+    snapshots_count: 0,
+    best_model_by_brier: mockModelComparison.best_model_by_brier,
     evaluated_matches: mockBacktestingReport.evaluated_matches,
     result_accuracy: mockBacktestingReport.result_accuracy,
     average_brier_score: mockBacktestingReport.average_brier_score,

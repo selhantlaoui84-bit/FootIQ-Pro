@@ -73,7 +73,7 @@ export default function DashboardPage({ matches, predictions, summary }: Dashboa
         <div>
           <p className="eyebrow">Model reliability</p>
           <h2>Backtesting snapshot</h2>
-          <p>Computed from finished matches with available final scores. Calibrated smoothing reduces overconfident probabilities.</p>
+          <p>Current model: {summary.current_model_version ?? summary.model_version ?? 'elo-poisson-calibrated-v1'}. Snapshot comparison tracks model quality over time.</p>
         </div>
         <div className="compactDataGrid four">
           <Link className="metric clickable-card" href="/performance">
@@ -95,6 +95,14 @@ export default function DashboardPage({ matches, predictions, summary }: Dashboa
           <Link className="metric clickable-card" href="/performance">
             <span>Smoothing</span>
             <strong>{summary.calibration_applied ? 'on' : 'on'}</strong>
+          </Link>
+          <Link className="metric clickable-card" href="/performance#model-comparison">
+            <span>Snapshots</span>
+            <strong>{summary.snapshots_count ?? 0}</strong>
+          </Link>
+          <Link className="metric clickable-card" href="/performance#model-comparison">
+            <span>Best Brier</span>
+            <strong>{summary.best_model_by_brier ?? 'N/A'}</strong>
           </Link>
         </div>
       </section>

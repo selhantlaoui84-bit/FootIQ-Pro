@@ -2,7 +2,7 @@
 import os
 from datetime import datetime
 
-from sqlalchemy import Column, Integer, MetaData, Table, Text, TIMESTAMP, create_engine, text
+from sqlalchemy import Boolean, Column, Float, Integer, MetaData, Table, Text, TIMESTAMP, create_engine, text
 from sqlalchemy.engine import Engine
 
 logger = logging.getLogger(__name__)
@@ -52,6 +52,21 @@ predictions_table = Table(
     Column("payload_json", Text),
     Column("model_version", Text),
     Column("created_at", TIMESTAMP(timezone=True)),
+)
+
+
+prediction_snapshots_table = Table(
+    "prediction_snapshots",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("match_id", Text),
+    Column("model_version", Text),
+    Column("prediction_json", Text),
+    Column("created_at", TIMESTAMP(timezone=True)),
+    Column("evaluated_at", TIMESTAMP(timezone=True), nullable=True),
+    Column("actual_result", Text, nullable=True),
+    Column("result_correct", Boolean, nullable=True),
+    Column("brier_score_1x2", Float, nullable=True),
 )
 
 refresh_logs_table = Table(

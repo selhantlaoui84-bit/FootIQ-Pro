@@ -3,6 +3,9 @@
   getMockMatch,
   getMockTeam,
   mockBacktestingReport,
+  mockModelComparison,
+  mockModelsMetadata,
+  mockPredictionSnapshots,
   buildDashboardSummary,
   matches,
   performanceMetrics,
@@ -10,6 +13,9 @@
   teams,
   type Match,
   type BacktestingReport,
+  type ModelComparison,
+  type ModelsMetadata,
+  type PredictionSnapshot,
   type DashboardSummary,
   type HealthResponse,
   type PerformanceMetrics,
@@ -91,6 +97,25 @@ export async function getTeam(teamId: string): Promise<Team> {
   const data = await safeFetchJson<Team>(`/teams/${encodeURIComponent(teamId)}`);
 
   return data ?? getMockTeam(teamId);
+}
+
+
+export async function getModels(): Promise<ModelsMetadata> {
+  const data = await safeFetchJson<ModelsMetadata>('/models');
+
+  return data ?? mockModelsMetadata;
+}
+
+export async function getModelComparison(): Promise<ModelComparison> {
+  const data = await safeFetchJson<ModelComparison>('/models/comparison');
+
+  return data ?? mockModelComparison;
+}
+
+export async function getPredictionSnapshots(): Promise<PredictionSnapshot[]> {
+  const data = await safeFetchJson<PredictionSnapshot[]>('/predictions/snapshots');
+
+  return Array.isArray(data) ? data : mockPredictionSnapshots;
 }
 
 export async function getBacktesting(): Promise<BacktestingReport> {

@@ -16,8 +16,9 @@ from services.football_data_client import (
     get_ligue1_matches,
     get_ligue1_teams,
 )
-from services.backtesting import calculate_backtest_report, get_match_result
+from services.backtesting import calculate_backtest_report, calculate_snapshot_backtest, get_match_result
 from services.elo_model import calculate_team_elos
+from services.model_registry import get_model_metadata
 from services.prediction_engine import generate_prediction_from_match
 from services.prediction_engine import MODEL_VERSION
 
@@ -145,6 +146,8 @@ def _dashboard_summary():
     if predictions:
         average_confidence = round(sum(item["confidence"]["score"] for item in predictions) / len(predictions))
 
+    comparison = calculate_snapshot_backtest(matches, repository.get_prediction_snapshots())
+
     return {
         "total_matches": total_matches,
         "teams_count": len(teams),
@@ -157,6 +160,9 @@ def _dashboard_summary():
         "average_confidence": average_confidence,
         "average_risk_score": average_risk_score,
         "model_version": MODEL_VERSION,
+        "current_model_version": MODEL_VERSION,
+        "snapshots_count": sum(item.get("snapshots", 0) for item in comparison["model_versions"].values()),
+        "best_model_by_brier": comparison.get("best_model_by_brier"),
         "evaluated_matches": backtest["evaluated_matches"],
         "result_accuracy": backtest["result_accuracy"],
         "average_brier_score": backtest["average_brier_score"],
@@ -215,6 +221,12 @@ def list_predictions():
     return _available_predictions()
 
 
+
+
+@app.get("/predictions/snapshots")
+def prediction_snapshots():
+    return repository.get_latest_prediction_snapshots(limit=100)
+
 @app.get("/predictions/{match_id}")
 def prediction_detail(match_id: str):
     prediction = _find_prediction(match_id)
@@ -237,6 +249,19 @@ def team_detail(team_id: str):
 
     return team
 
+
+
+@app.get("/models")
+def models():
+    metadata = get_model_metadata()
+    versions = repository.get_model_versions()
+    available_versions = sorted(set(versions + [metadata["current_model_version"], metadata["previous_model_version"]]))
+    return {**metadata, "available_model_versions": available_versions}
+
+
+@app.get("/models/comparison")
+def model_comparison():
+    return calculate_snapshot_backtest(_available_matches(), repository.get_prediction_snapshots())
 
 
 @app.get("/debug/finished-matches")
@@ -282,10 +307,19 @@ def model_performance():
     avoid = [item for item in predictions if item["confidence"]["status"] in {"Ã€ Ã‰VITER", "A EVITER"}]
     traps = [item for item in predictions if item["flags"]["trap_match"]]
 
+    comparison = calculate_snapshot_backtest(_available_matches(), repository.get_prediction_snapshots())
+    snapshots_count = sum(item.get("snapshots", 0) for item in comparison["model_versions"].values())
+
     return {
         **PERFORMANCE,
         **backtest,
         "model_version": MODEL_VERSION,
+        "current_model_version": MODEL_VERSION,
+        "snapshots_count": snapshots_count,
+        "model_versions": comparison["model_versions"],
+        "best_model_by_brier": comparison.get("best_model_by_brier"),
+        "best_model_by_accuracy": comparison.get("best_model_by_accuracy"),
+        "model_comparison_note": comparison.get("note"),
         "predictions_tracked": len(predictions),
         "tracked": len(predictions) or PERFORMANCE["tracked"],
         "averageConfidence": str(average_confidence or PERFORMANCE["averageConfidence"]),
@@ -330,9 +364,11 @@ def refresh_data(x_admin_key: str | None = Header(default=None, alias="X-Admin-K
     predictions = [_prediction_for_match(match, matches, elo_ratings) for match in matches]
     storage = "memory"
 
+    snapshots_saved = 0
     if repository.save_matches(matches) and repository.save_teams(teams) and repository.save_predictions(predictions):
         storage = "postgresql"
         repository.save_refresh_log(source, storage, len(matches), len(teams))
+        snapshots_saved = repository.save_prediction_snapshots(predictions)
 
     runtime_store.set_matches(matches)
     runtime_store.set_teams(teams)
@@ -348,6 +384,7 @@ def refresh_data(x_admin_key: str | None = Header(default=None, alias="X-Admin-K
         "matches_imported": status["matches_imported"],
         "teams_imported": status["teams_imported"],
         "predictions_imported": status["predictions_imported"],
+        "snapshots_saved": snapshots_saved,
         "last_refresh_at": status["last_refresh_at"],
     }
 

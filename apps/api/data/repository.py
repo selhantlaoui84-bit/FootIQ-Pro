@@ -95,7 +95,7 @@ def get_team(team_id: str) -> dict | None:
         text("SELECT raw_json FROM teams WHERE id = :team_id OR slug = :team_id LIMIT 1"),
         {"team_id": team_id},
     )
-    return _match_payload_from_row(row)
+    return _loads(row.get("raw_json")) if row else None
 
 
 def save_matches(matches: list[dict]) -> bool:
@@ -293,3 +293,137 @@ def get_latest_refresh_log() -> dict | None:
 
 
 
+
+
+
+def save_prediction_snapshot(prediction: dict) -> str | None:
+    if not prediction or not db_available():
+        return None
+
+    snapshot_id = str(uuid.uuid4())
+    prediction_id = prediction.get("match_id") or prediction.get("id") or prediction.get("slug")
+    ok = execute_safe(
+        text(
+            """
+            INSERT INTO prediction_snapshots (id, match_id, model_version, prediction_json, created_at)
+            VALUES (:id, :match_id, :model_version, :prediction_json, :created_at)
+            """
+        ),
+        {
+            "id": snapshot_id,
+            "match_id": prediction_id,
+            "model_version": prediction.get("model_version", MODEL_VERSION),
+            "prediction_json": _json(prediction),
+            "created_at": _now(),
+        },
+    )
+    return snapshot_id if ok else None
+
+
+def save_prediction_snapshots(predictions: list[dict]) -> int:
+    if not predictions or not db_available():
+        return 0
+
+    saved = 0
+    for prediction in predictions:
+        if save_prediction_snapshot(prediction):
+            saved += 1
+    return saved
+
+
+def _snapshot_from_row(row: dict) -> dict:
+    created_at = row.get("created_at")
+    evaluated_at = row.get("evaluated_at")
+    return {
+        "id": row.get("id"),
+        "match_id": row.get("match_id"),
+        "model_version": row.get("model_version"),
+        "prediction": _loads(row.get("prediction_json")),
+        "prediction_json": row.get("prediction_json"),
+        "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else created_at,
+        "evaluated_at": evaluated_at.isoformat() if hasattr(evaluated_at, "isoformat") else evaluated_at,
+        "actual_result": row.get("actual_result"),
+        "result_correct": row.get("result_correct"),
+        "brier_score_1x2": row.get("brier_score_1x2"),
+    }
+
+
+def get_prediction_snapshots(model_version: str | None = None, limit: int = 500) -> list[dict]:
+    if not db_available():
+        return []
+
+    if model_version:
+        rows = fetch_all_safe(
+            text(
+                """
+                SELECT id, match_id, model_version, prediction_json, created_at, evaluated_at,
+                       actual_result, result_correct, brier_score_1x2
+                FROM prediction_snapshots
+                WHERE model_version = :model_version
+                ORDER BY created_at DESC
+                LIMIT :limit
+                """
+            ),
+            {"model_version": model_version, "limit": limit},
+        )
+    else:
+        rows = fetch_all_safe(
+            text(
+                """
+                SELECT id, match_id, model_version, prediction_json, created_at, evaluated_at,
+                       actual_result, result_correct, brier_score_1x2
+                FROM prediction_snapshots
+                ORDER BY created_at DESC
+                LIMIT :limit
+                """
+            ),
+            {"limit": limit},
+        )
+
+    return [_snapshot_from_row(row) for row in rows]
+
+
+def get_latest_prediction_snapshots(limit: int = 100) -> list[dict]:
+    return get_prediction_snapshots(limit=limit)
+
+
+def update_snapshot_evaluation(snapshot_id: str, evaluation: dict) -> bool:
+    if not snapshot_id or not evaluation or not db_available():
+        return False
+
+    return execute_safe(
+        text(
+            """
+            UPDATE prediction_snapshots
+            SET evaluated_at = :evaluated_at,
+                actual_result = :actual_result,
+                result_correct = :result_correct,
+                brier_score_1x2 = :brier_score_1x2
+            WHERE id = :id
+            """
+        ),
+        {
+            "id": snapshot_id,
+            "evaluated_at": _now(),
+            "actual_result": evaluation.get("actual_result"),
+            "result_correct": evaluation.get("result_correct"),
+            "brier_score_1x2": evaluation.get("brier_score_1x2"),
+        },
+    )
+
+
+def get_model_versions() -> list[str]:
+    if not db_available():
+        return []
+
+    rows = fetch_all_safe(
+        text(
+            """
+            SELECT DISTINCT model_version
+            FROM prediction_snapshots
+            WHERE model_version IS NOT NULL
+            ORDER BY model_version
+            """
+        )
+    )
+    return [row.get("model_version") for row in rows if row.get("model_version")]

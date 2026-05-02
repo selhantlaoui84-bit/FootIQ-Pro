@@ -75,8 +75,11 @@ export default function AdminPage() {
             <Link className="button secondary" href="/predictions">
               Predictions
             </Link>
-            <Link className="button secondary" href="/performance">
+            <Link className="button secondary" href="/performance#model-comparison">
               Backtesting
+            </Link>
+            <Link className="button secondary" href="/performance#model-comparison">
+              Model comparison
             </Link>
           </div>
         </section>
@@ -137,11 +140,14 @@ export default function AdminPage() {
               Predictions imported <strong>{refreshInfo?.predictions_imported ?? 0}</strong>
             </span>
             <span>
+              Snapshots saved <strong>{refreshInfo?.snapshots_saved ?? 0}</strong>
+            </span>
+            <span>
               Last refresh <strong>{refreshInfo?.last_refresh_at ?? 'N/A'}</strong>
             </span>
           </div>
           <div className="banner info">
-            Backtesting updates automatically from finished matches with available scores. See the model report on{' '}
+            Backtesting updates automatically from finished matches with available scores. See the model report and snapshot comparison on{' '}
             <Link className="textLink" href="/performance">
               Performance
             </Link>
