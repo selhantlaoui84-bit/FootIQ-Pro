@@ -95,9 +95,13 @@ export async function getHealth() {
   return getBackendHealth();
 }
 
-export async function getPredictions(options?: { includeHybridEngine?: boolean }): Promise<Prediction[]> {
-  const query = options?.includeHybridEngine ? '?include_hybrid_engine=true' : '';
-  const data = await safeFetchJson<Prediction[]>(`/predictions${query}`);
+export async function getPredictions(options?: { includeHybridEngine?: boolean; limit?: number; view?: MatchView }): Promise<Prediction[]> {
+  const params = new URLSearchParams();
+  if (options?.includeHybridEngine) params.set('include_hybrid_engine', 'true');
+  if (options?.limit) params.set('limit', String(Math.min(Math.max(Math.round(options.limit), 1), 500)));
+  if (options?.view) params.set('view', options.view);
+  const query = params.toString();
+  const data = await safeFetchJson<Prediction[]>(`/predictions${query ? `?${query}` : ''}`);
 
   return Array.isArray(data) && data.length > 0 ? data : predictions;
 }
@@ -288,8 +292,10 @@ export async function getRefreshStatus(): Promise<RefreshResponse | null> {
 }
 
 
-export async function getHybridEngineSummary(): Promise<HybridEngineSummary> {
-  const data = await safeFetchJson<HybridEngineSummary>('/hybrid/engine-summary');
+export async function getHybridEngineSummary(options?: { limit?: number; view?: MatchView }): Promise<HybridEngineSummary> {
+  const limit = Math.min(Math.max(Math.round(options?.limit ?? 200), 1), 1000);
+  const view = options?.view ?? 'upcoming';
+  const data = await safeFetchJson<HybridEngineSummary>(`/hybrid/engine-summary?limit=${limit}&view=${encodeURIComponent(view)}`);
 
   return data ?? mockHybridEngineSummary;
 }

@@ -201,9 +201,24 @@ def _find_shadow(match_id: str):
     return next((row for row in _shadow_memory_rows() if row.get("match_id") == match_id), None)
 
 
-def _prediction_with_shadow(prediction: dict, include_hybrid_engine: bool = True):
+def _shadow_lookup(limit: int = 2000):
+    rows = repository.get_ml_shadow_predictions(limit=limit) or _shadow_memory_rows()
+    lookup = {}
+    for row in rows:
+        match_id = row.get("match_id")
+        if match_id and match_id not in lookup:
+            lookup[match_id] = row
+    return lookup, rows
+
+
+def _prediction_with_shadow(
+    prediction: dict,
+    include_hybrid_engine: bool = True,
+    shadow_lookup: dict | None = None,
+    shadow_backtesting: dict | None = None,
+):
     match_id = prediction.get("match_id") or prediction.get("id") or prediction.get("slug")
-    shadow = _find_shadow(match_id)
+    shadow = (shadow_lookup or {}).get(match_id) if shadow_lookup is not None else _find_shadow(match_id)
     enriched = dict(prediction)
     if shadow:
         enriched["shadow"] = {
@@ -212,8 +227,30 @@ def _prediction_with_shadow(prediction: dict, include_hybrid_engine: bool = True
         }
     enriched["hybrid"] = build_hybrid_decision(enriched, enriched.get("shadow"))
     if include_hybrid_engine:
-        enriched["hybrid_engine"] = build_hybrid_engine_decision(enriched, enriched.get("shadow"), _shadow_backtesting_report())
+        enriched["hybrid_engine"] = build_hybrid_engine_decision(
+            enriched,
+            enriched.get("shadow"),
+            shadow_backtesting or _shadow_backtesting_report(),
+        )
     return enriched
+
+
+def _prediction_time(prediction: dict) -> float:
+    return _kickoff_ts(prediction)
+
+
+def _filter_predictions_for_view(predictions: list[dict], view: str = "upcoming"):
+    normalized_view = (view or "upcoming").lower()
+    result = list(predictions or [])
+    if normalized_view == "history":
+        result = [item for item in result if _is_finished(item)]
+        result.sort(key=_prediction_time, reverse=True)
+    elif normalized_view == "all":
+        result.sort(key=lambda item: (_is_finished(item), _prediction_time(item)))
+    else:
+        result = [item for item in result if not _is_finished(item)]
+        result.sort(key=_prediction_time)
+    return result
 
 
 
@@ -323,22 +360,30 @@ def _hybrid_summary():
     }
 
 
-def _hybrid_engine_summary():
-    shadow_backtesting = _shadow_backtesting_report()
-    predictions = _available_predictions()
-    decisions = [
-        build_hybrid_engine_decision(_prediction_with_shadow(prediction, include_hybrid_engine=False), _prediction_with_shadow(prediction, include_hybrid_engine=False).get("shadow"), shadow_backtesting)
-        for prediction in predictions
-    ]
+def _hybrid_engine_summary(limit: int = 200, view: str = "upcoming"):
+    started_at = time.perf_counter()
+    safe_limit = max(1, min(int(limit or 200), 1000))
+    selected_predictions = _filter_predictions_for_view(_available_predictions(), view=view)[:safe_limit]
+    shadow_lookup, shadow_rows = _shadow_lookup(limit=2000)
+    shadow_backtesting = calculate_shadow_backtest_report(_available_matches(), shadow_rows)
     summary = {"strong_count": 0, "medium_count": 0, "weak_count": 0, "avoid_count": 0, "unknown_count": 0}
-    for decision in decisions:
+
+    for prediction in selected_predictions:
+        enriched = _prediction_with_shadow(
+            prediction,
+            include_hybrid_engine=False,
+            shadow_lookup=shadow_lookup,
+            shadow_backtesting=shadow_backtesting,
+        )
+        decision = build_hybrid_engine_decision(enriched, enriched.get("shadow"), shadow_backtesting)
         level = decision.get("decision_level", "unknown")
         key = f"{level}_count" if level in {"strong", "medium", "weak", "avoid", "unknown"} else "unknown_count"
         summary[key] = summary.get(key, 0) + 1
 
-    shadow_count = _shadow_summary().get("shadow_predictions_count", 0)
+    shadow_count = len(shadow_rows)
     recommendation = "hybrid_advisory_active" if shadow_count > 0 else "insufficient_shadow_data"
     reason = "Le moteur hybride v1 est actif comme couche consultative." if shadow_count > 0 else "Aucune donn?e shadow suffisante pour alimenter le moteur hybride."
+    duration_ms = round((time.perf_counter() - started_at) * 1000)
 
     return {
         "engine_version": "hybrid-engine-v1",
@@ -346,7 +391,13 @@ def _hybrid_engine_summary():
         "candidate_is_production": False,
         "official_prediction_stays_primary": True,
         "production_model_version": MODEL_VERSION,
-        "shadow_backtesting": shadow_backtesting,
+        "limit": safe_limit,
+        "view": view,
+        "processed_predictions": len(selected_predictions),
+        "duration_ms": duration_ms,
+        "shadow_evaluated_matches": shadow_backtesting.get("evaluated_matches", 0),
+        "shadow_accuracy": shadow_backtesting.get("shadow_accuracy", 0),
+        "shadow_activation_recommendation": shadow_backtesting.get("activation_recommendation", "do_not_activate"),
         "summary": summary,
         "recommendation": recommendation,
         "reason": reason,
@@ -443,6 +494,7 @@ def _dashboard_summary():
     feature_summary = _feature_summary()
     shadow_backtesting = _shadow_backtesting_report()
     hybrid_summary = _hybrid_summary()
+    hybrid_engine = _hybrid_engine_summary(limit=100, view="upcoming")
     candidate_metadata = load_latest_candidate_metadata()
 
     return {
@@ -477,10 +529,10 @@ def _dashboard_summary():
         "hybrid_recommendation": hybrid_summary.get("recommendation"),
         "hybrid_mode": hybrid_summary.get("mode"),
         "hybrid_candidate_is_production": hybrid_summary.get("candidate_is_production", False),
-        "hybrid_engine_version": _hybrid_engine_summary().get("engine_version"),
-        "hybrid_engine_recommendation": _hybrid_engine_summary().get("recommendation"),
-        "hybrid_engine_strong_count": _hybrid_engine_summary().get("summary", {}).get("strong_count", 0),
-        "hybrid_engine_avoid_count": _hybrid_engine_summary().get("summary", {}).get("avoid_count", 0),
+        "hybrid_engine_version": hybrid_engine.get("engine_version"),
+        "hybrid_engine_recommendation": hybrid_engine.get("recommendation"),
+        "hybrid_engine_strong_count": hybrid_engine.get("summary", {}).get("strong_count", 0),
+        "hybrid_engine_avoid_count": hybrid_engine.get("summary", {}).get("avoid_count", 0),
         "evaluated_matches": backtest["evaluated_matches"],
         "result_accuracy": backtest["result_accuracy"],
         "average_brier_score": backtest["average_brier_score"],
@@ -540,11 +592,28 @@ def match_detail(match_id: str):
 
 
 @app.get("/predictions")
-def list_predictions(include_hybrid: bool = False, include_hybrid_engine: bool = False):
+def list_predictions(
+    include_hybrid: bool = False,
+    include_hybrid_engine: bool = False,
+    limit: int = Query(default=100, ge=1, le=500),
+    view: str = Query(default="upcoming", pattern="^(all|upcoming|history)$"),
+):
     predictions = _available_predictions()
     if not include_hybrid and not include_hybrid_engine:
         return predictions
-    return [_prediction_with_shadow(prediction, include_hybrid_engine=include_hybrid_engine) for prediction in predictions]
+
+    selected_predictions = _filter_predictions_for_view(predictions, view=view)[:limit]
+    shadow_lookup, shadow_rows = _shadow_lookup(limit=2000)
+    shadow_backtesting = calculate_shadow_backtest_report(_available_matches(), shadow_rows) if include_hybrid_engine else None
+    return [
+        _prediction_with_shadow(
+            prediction,
+            include_hybrid_engine=include_hybrid_engine,
+            shadow_lookup=shadow_lookup,
+            shadow_backtesting=shadow_backtesting,
+        )
+        for prediction in selected_predictions
+    ]
 
 
 
@@ -559,7 +628,9 @@ def prediction_detail(match_id: str):
     if prediction is None:
         raise HTTPException(status_code=404, detail="Prediction not found")
 
-    return _prediction_with_shadow(prediction)
+    shadow_lookup, shadow_rows = _shadow_lookup(limit=2000)
+    shadow_backtesting = calculate_shadow_backtest_report(_available_matches(), shadow_rows)
+    return _prediction_with_shadow(prediction, shadow_lookup=shadow_lookup, shadow_backtesting=shadow_backtesting)
 
 
 @app.get("/teams")
@@ -697,8 +768,8 @@ def ml_comparison():
 
 
 @app.get("/hybrid/engine-summary")
-def hybrid_engine_summary():
-    return _hybrid_engine_summary()
+def hybrid_engine_summary(limit: int = Query(default=200, ge=1, le=1000), view: str = Query(default="upcoming", pattern="^(all|upcoming|history)$")):
+    return _hybrid_engine_summary(limit=limit, view=view)
 
 
 @app.get("/hybrid/summary")
@@ -786,7 +857,7 @@ def model_performance():
         "ml_shadow_summary": _shadow_summary(),
         "ml_shadow_backtesting": shadow_backtesting,
         "hybrid_summary": _hybrid_summary(),
-        "hybrid_engine_summary": _hybrid_engine_summary(),
+        "hybrid_engine_summary": _hybrid_engine_summary(limit=200, view="upcoming"),
         "candidate_is_production": False,
         "predictions_tracked": len(predictions),
         "tracked": len(predictions) or PERFORMANCE["tracked"],

@@ -510,7 +510,14 @@ export type HybridEngineSummary = {
   candidate_is_production: boolean;
   official_prediction_stays_primary: boolean;
   production_model_version: string;
-  shadow_backtesting: MlShadowBacktesting;
+  limit?: number;
+  view?: string;
+  processed_predictions?: number;
+  duration_ms?: number;
+  shadow_evaluated_matches?: number;
+  shadow_accuracy?: number;
+  shadow_activation_recommendation?: string;
+  shadow_backtesting?: MlShadowBacktesting;
   summary: {
     strong_count: number;
     medium_count: number;
@@ -1287,6 +1294,13 @@ export const mockHybridEngineSummary: HybridEngineSummary = {
   candidate_is_production: false,
   official_prediction_stays_primary: true,
   production_model_version: 'elo-poisson-calibrated-v1',
+  limit: 200,
+  view: 'upcoming',
+  processed_predictions: 0,
+  duration_ms: 0,
+  shadow_evaluated_matches: 0,
+  shadow_accuracy: 0,
+  shadow_activation_recommendation: 'do_not_activate',
   shadow_backtesting: mockMlShadowBacktesting,
   summary: { strong_count: 0, medium_count: 0, weak_count: 0, avoid_count: 0, unknown_count: 0 },
   recommendation: 'insufficient_shadow_data',

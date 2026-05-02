@@ -13,7 +13,7 @@ type PredictionsProps = {
 };
 
 export const getStaticProps: GetStaticProps<PredictionsProps> = async () => ({
-  props: { predictions: await getPredictions({ includeHybridEngine: true }) },
+  props: { predictions: await getPredictions({ includeHybridEngine: true, limit: 100, view: 'upcoming' }) },
   revalidate: 120,
 });
 
