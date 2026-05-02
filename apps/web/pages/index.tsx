@@ -1,17 +1,17 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 
 export default function Home() {
   return (
     <main className="page-shell">
       <section className="hero">
-        <div className="hero-badge">FootIQ Pro · Analyse probabiliste</div>
+        <div className="hero-badge">FootIQ Pro Â· Analyse probabiliste</div>
 
-        <h1>L’intelligence statistique du football européen.</h1>
+        <h1>Lâ€™intelligence statistique du football europÃ©en.</h1>
 
         <p className="hero-subtitle">
-          FootIQ Pro transforme les données football en probabilités lisibles :
-          matchs fiables, signaux de risque, confidence index et détection des
-          matchs pièges.
+          FootIQ Pro transforme les donnÃ©es football en probabilitÃ©s lisibles :
+          matchs fiables, signaux de risque, confidence index et dÃ©tection des
+          matchs piÃ¨ges.
         </p>
 
         <div className="hero-actions">
@@ -24,27 +24,28 @@ export default function Home() {
         </div>
 
         <p className="disclaimer">
-          Outil d’analyse statistique et probabiliste. Aucune prédiction ne
-          garantit un résultat.
+          Outil dâ€™analyse statistique et probabiliste. Aucune prÃ©diction ne
+          garantit un rÃ©sultat.
         </p>
       </section>
 
       <section className="grid-3">
         <article className="glass-card">
-          <h2>Probabilités claires</h2>
-          <p>1N2, over/under, BTTS, score attendu et explication en français.</p>
+          <h2>ProbabilitÃ©s claires</h2>
+          <p>1N2, over/under, BTTS, score attendu et explication en franÃ§ais.</p>
         </article>
 
         <article className="glass-card">
           <h2>Confidence Index</h2>
-          <p>Un score de fiabilité pour savoir quand les données parlent vraiment.</p>
+          <p>Un score de fiabilitÃ© pour savoir quand les donnÃ©es parlent vraiment.</p>
         </article>
 
         <article className="glass-card">
-          <h2>Matchs pièges</h2>
-          <p>Détection des favoris fragiles, signaux contradictoires et risques cachés.</p>
+          <h2>Matchs piÃ¨ges</h2>
+          <p>DÃ©tection des favoris fragiles, signaux contradictoires et risques cachÃ©s.</p>
         </article>
       </section>
     </main>
   );
 }
+
