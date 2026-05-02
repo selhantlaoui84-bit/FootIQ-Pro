@@ -25,8 +25,8 @@ async function safeFetchJson<T>(path: string, init?: RequestInit): Promise<T | n
 
   try {
     const response = await fetch(`${API_URL}${path}`, {
-      headers: { Accept: 'application/json' },
       ...init,
+      headers: { Accept: 'application/json', ...(init?.headers ?? {}) },
     });
 
     if (!response.ok) {
@@ -108,7 +108,19 @@ export async function getRefreshStatus(): Promise<RefreshResponse | null> {
 }
 
 export async function refreshData(): Promise<RefreshResponse | null> {
+  const adminKey = process.env.NEXT_PUBLIC_ADMIN_API_KEY;
+
+  if (!adminKey) {
+    return {
+      status: 'error',
+      error: 'Admin key not configured',
+    };
+  }
+
   return safeFetchJson<RefreshResponse>('/admin/refresh-data', {
     method: 'POST',
+    headers: {
+      'X-Admin-Key': adminKey,
+    },
   });
 }

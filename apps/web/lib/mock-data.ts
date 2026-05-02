@@ -58,11 +58,12 @@ export type Team = {
 
 export type RefreshResponse = {
   status: string;
-  source: string;
+  source?: string;
   storage?: string;
-  matches_imported: number;
-  teams_imported: number;
-  last_refresh_at: string | null;
+  matches_imported?: number;
+  teams_imported?: number;
+  last_refresh_at?: string | null;
+  error?: string;
 };
 
 export type PerformanceMetrics = {

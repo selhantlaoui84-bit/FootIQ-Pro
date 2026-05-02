@@ -1,6 +1,7 @@
 import type { GetStaticProps } from 'next';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { getDashboardSummary, getMatches, getPredictions } from '~/lib/api';
 import { matchHref, statusClass, type DashboardSummary, type Match, type Prediction } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
@@ -29,7 +30,8 @@ export default function DashboardPage({ matches, predictions, summary }: Dashboa
   const competitions = Object.entries(summary.competitions_breakdown);
 
   return (
-    <Layout>
+    <ProtectedRoute>
+      <Layout>
       <section className="commandHero">
         <div>
           <p className="eyebrow">Command center</p>
@@ -117,7 +119,8 @@ export default function DashboardPage({ matches, predictions, summary }: Dashboa
           />
         </div>
       </section>
-    </Layout>
+      </Layout>
+    </ProtectedRoute>
   );
 }
 

@@ -1,6 +1,6 @@
 import os
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from data import runtime_store
@@ -101,6 +101,17 @@ def _dashboard_summary():
     }
 
 
+def _require_admin_key(x_admin_key: str | None):
+    env = os.getenv("ENV", "development").lower()
+    admin_key = os.getenv("ADMIN_API_KEY")
+
+    if not admin_key and env != "production":
+        return
+
+    if not admin_key or x_admin_key != admin_key:
+        raise HTTPException(status_code=401, detail="Invalid admin key")
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -168,7 +179,9 @@ def refresh_status():
 
 
 @app.post("/admin/refresh-data")
-def refresh_data():
+def refresh_data(x_admin_key: str | None = Header(default=None, alias="X-Admin-Key")):
+    _require_admin_key(x_admin_key)
+
     source = "mock"
     matches = MATCHES
     teams = TEAMS

@@ -97,6 +97,29 @@ nav a:hover {
   background: rgba(255, 255, 255, 0.07);
 }
 
+.navButton {
+  padding: 8px 10px;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.navButton:hover,
+.navButton:focus-visible {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.07);
+  outline: none;
+}
+
+.logoutButton {
+  color: #d8e2f2;
+}
+
 main {
   display: grid;
   gap: 34px;
@@ -254,6 +277,8 @@ ul {
 
 .button:disabled {
   color: #718097;
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(148, 163, 184, 0.1);
   cursor: not-allowed;
 }
 
@@ -608,6 +633,99 @@ input::placeholder {
 .notice {
   padding: 20px;
   color: #d8e2f2;
+}
+
+.authShell {
+  display: grid;
+  place-items: center;
+  min-height: 62vh;
+}
+
+.authCard {
+  display: grid;
+  width: min(100%, 480px);
+  gap: 16px;
+  padding: 28px;
+  background:
+    linear-gradient(145deg, rgba(98, 216, 255, 0.12), transparent 42%),
+    linear-gradient(315deg, rgba(49, 215, 139, 0.1), transparent 44%), var(--card);
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  box-shadow:
+    0 28px 90px rgba(0, 0, 0, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(18px);
+}
+
+.authCard h1 {
+  margin-bottom: 0;
+  font-size: clamp(38px, 6vw, 62px);
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+  color: #d8e2f2;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.field input {
+  width: 100%;
+}
+
+.banner {
+  padding: 14px 16px;
+  color: #d8e2f2;
+  background: rgba(255, 255, 255, 0.065);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+.banner.error {
+  color: #ffd7dc;
+  background: rgba(255, 93, 108, 0.12);
+  border-color: rgba(255, 93, 108, 0.36);
+}
+
+.banner.success {
+  color: #c8ffe6;
+  background: rgba(49, 215, 139, 0.12);
+  border-color: rgba(49, 215, 139, 0.36);
+}
+
+.banner.warning {
+  color: #ffe9bd;
+  background: rgba(246, 189, 68, 0.12);
+  border-color: rgba(246, 189, 68, 0.36);
+}
+
+.protectedLoading {
+  display: grid;
+  place-items: center;
+  gap: 14px;
+  min-height: 46vh;
+  text-align: center;
+}
+
+.protectedLoading .skeleton {
+  width: min(280px, 80vw);
+}
+
+.userBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.logoutWide {
+  width: 100%;
+  margin-top: 18px;
 }
 
 .emptyState,
