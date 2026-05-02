@@ -24,7 +24,9 @@
   type Team,
 } from '~/lib/mock-data';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '');
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ||
+  'https://footiq-pro-production.up.railway.app';
 
 async function safeFetchJson<T>(path: string, init?: RequestInit): Promise<T | null> {
   if (!API_URL) {
@@ -145,27 +147,32 @@ export async function refreshData(): Promise<RefreshResponse | null> {
   if (!adminKey) {
     return {
       status: 'error',
-      error: 'Admin key not configured',
-    };
-  }
-
-  if (!API_URL) {
-    return {
-      status: 'error',
-      detail: 'API URL not configured',
+      detail: 'NEXT_PUBLIC_ADMIN_API_KEY is missing in Vercel build.',
     };
   }
 
   try {
-    const response = await fetch(`${API_URL}/admin/refresh-data`, {
+    const url = `${API_URL}/admin/refresh-data`;
+
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         Accept: 'application/json',
         'X-Admin-Key': adminKey,
       },
     });
-    const contentType = response.headers.get('content-type') ?? '';
-    const body = contentType.includes('application/json') ? await response.json() : null;
+
+    const text = await response.text();
+
+    let body: any = null;
+
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = {
+        detail: text || 'Non JSON response',
+      };
+    }
 
     if (!response.ok) {
       return {
@@ -175,12 +182,11 @@ export async function refreshData(): Promise<RefreshResponse | null> {
     }
 
     return body as RefreshResponse;
-  } catch {
+  } catch (error) {
     return {
       status: 'error',
-      detail: 'Refresh request failed',
+      detail: error instanceof Error ? error.message : 'Refresh request failed',
     };
   }
 }
-
 
