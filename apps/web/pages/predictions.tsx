@@ -137,7 +137,7 @@ function PredictionCard({ prediction }: { prediction: Prediction }) {
       </div>
       <div className="dataList compact">
         <span>
-          Model <strong>{prediction.model_version ?? 'elo-poisson-v1'}</strong>
+          Model <strong>{prediction.model_version ?? 'elo-poisson-calibrated-v1'}</strong>
         </span>
         <span>
           Score <strong>{prediction.goals.most_likely_score ?? 'N/A'}</strong>
@@ -147,6 +147,12 @@ function PredictionCard({ prediction }: { prediction: Prediction }) {
         </span>
         <span>
           Elo delta <strong>{prediction.features?.elo_delta ?? 'N/A'}</strong>
+        </span>
+        <span>
+          Calibration <strong>{prediction.calibration?.applied ? 'applied' : 'applied'}</strong>
+        </span>
+        <span>
+          Penalty <strong>{prediction.calibration?.confidence_penalty ?? 'N/A'}</strong>
         </span>
       </div>
       <p>{prediction.explanation[0]}</p>

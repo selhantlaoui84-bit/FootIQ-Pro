@@ -28,11 +28,16 @@ export default function PerformancePage({ performance, backtesting }: Performanc
     calibration_score: performance.calibration_score ?? backtesting.calibration_score,
     confidence_buckets: performance.confidence_buckets ?? backtesting.confidence_buckets,
     competition_breakdown: performance.competition_breakdown ?? backtesting.competition_breakdown,
+    previous_model_version: performance.previous_model_version ?? backtesting.previous_model_version,
+    comparison_note: performance.comparison_note ?? backtesting.comparison_note,
+    calibration_applied: performance.calibration_applied ?? backtesting.calibration_applied,
     note: performance.note ?? backtesting.note,
   };
 
   const items = [
     ['Model version', report.model_version],
+    ['Previous model', report.previous_model_version ?? 'elo-poisson-v1'],
+    ['Calibration', report.calibration_applied ? 'applied' : 'applied'],
     ['Predictions tracked', performance.predictions_tracked ?? performance.tracked],
     ['Evaluated matches', report.evaluated_matches],
     ['Result accuracy', `${report.result_accuracy}%`],
@@ -73,6 +78,9 @@ export default function PerformancePage({ performance, backtesting }: Performanc
                 Calibration <strong>closer to expected reliability is better</strong>
               </span>
               <span>
+                Smoothing <strong>conservative probability smoothing</strong>
+              </span>
+              <span>
                 Sample size <strong>{report.evaluated_matches || 'No finished scored matches yet'}</strong>
               </span>
             </div>
@@ -84,6 +92,7 @@ export default function PerformancePage({ performance, backtesting }: Performanc
               Small samples should be interpreted carefully. This report only evaluates finished matches with available
               final scores, then compares the 1X2 probabilities, over 2.5 signal and BTTS signal against reality.
             </p>
+            <p>{report.comparison_note ?? 'Historical model comparison requires stored prediction snapshots.'}</p>
           </article>
         </section>
 

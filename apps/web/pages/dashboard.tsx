@@ -47,7 +47,7 @@ export default function DashboardPage({ matches, predictions, summary }: Dashboa
         <div className="sourceStrip">
           <span>Source: {summary.source}</span>
           <span>Storage: {summary.storage}</span>
-          <span>Model: {summary.model_version ?? 'elo-poisson-v1'}</span>
+          <span>Model: {summary.model_version ?? 'elo-poisson-calibrated-v1'}</span>
           <span>
             Refresh: {summary.last_refresh_at ? new Date(summary.last_refresh_at).toLocaleString('fr-FR') : 'Non lancÃ©'}
           </span>
@@ -73,7 +73,7 @@ export default function DashboardPage({ matches, predictions, summary }: Dashboa
         <div>
           <p className="eyebrow">Model reliability</p>
           <h2>Backtesting snapshot</h2>
-          <p>Computed from finished matches with available final scores.</p>
+          <p>Computed from finished matches with available final scores. Calibrated smoothing reduces overconfident probabilities.</p>
         </div>
         <div className="compactDataGrid four">
           <Link className="metric clickable-card" href="/performance">
@@ -91,6 +91,10 @@ export default function DashboardPage({ matches, predictions, summary }: Dashboa
           <Link className="metric clickable-card" href="/performance">
             <span>Calibration</span>
             <strong>{summary.calibration_score ?? 0}/100</strong>
+          </Link>
+          <Link className="metric clickable-card" href="/performance">
+            <span>Smoothing</span>
+            <strong>{summary.calibration_applied ? 'on' : 'on'}</strong>
           </Link>
         </div>
       </section>

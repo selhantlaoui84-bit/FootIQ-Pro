@@ -227,6 +227,9 @@ def calculate_backtest_report(matches: list[dict], predictions: list[dict]) -> d
 
     return {
         "model_version": MODEL_VERSION,
+        "previous_model_version": "elo-poisson-v1",
+        "comparison_note": "Historical model comparison requires stored prediction snapshots.",
+        "calibration_applied": MODEL_VERSION == "elo-poisson-calibrated-v1",
         "evaluated_matches": count,
         "result_accuracy": _percentage(correct, count),
         "over_2_5_accuracy": _accuracy_for_optional(evaluations, "over_2_5_correct"),

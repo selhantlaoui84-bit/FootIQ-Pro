@@ -12,6 +12,13 @@ export type Prediction = {
   status?: string;
   source?: string;
   model_version?: string;
+  calibration?: {
+    applied: boolean;
+    method: string;
+    overconfidence_factor?: number;
+    draw_adjustment?: number;
+    confidence_penalty?: number;
+  };
   probabilities: { home: number; draw: number; away: number };
   goals: {
     expected_home: number;
@@ -102,6 +109,9 @@ export type CompetitionBacktest = {
 
 export type BacktestingReport = {
   model_version: string;
+  previous_model_version?: string;
+  comparison_note?: string;
+  calibration_applied?: boolean;
   evaluated_matches: number;
   result_accuracy: number;
   over_2_5_accuracy: number;
@@ -123,6 +133,9 @@ export type PerformanceMetrics = {
   brierScore: string;
   modelVersion: string;
   model_version?: string;
+  previous_model_version?: string;
+  comparison_note?: string;
+  calibration_applied?: boolean;
   predictions_tracked?: number;
   evaluated_matches?: number;
   result_accuracy?: number;
@@ -157,6 +170,7 @@ export type DashboardSummary = {
   average_confidence: number;
   average_risk_score?: number;
   model_version?: string;
+  calibration_applied?: boolean;
   evaluated_matches?: number;
   result_accuracy?: number;
   average_brier_score?: number;
@@ -180,6 +194,8 @@ export const predictions: Prediction[] = [
     kickoff: '2026-05-05T20:00:00Z',
     status: 'SCHEDULED',
     source: 'mock',
+    model_version: 'elo-poisson-calibrated-v1',
+    calibration: { applied: true, method: 'conservative_probability_smoothing', overconfidence_factor: 0.1, draw_adjustment: 2, confidence_penalty: 5 },
     probabilities: { home: 61, draw: 23, away: 16 },
     goals: { expected_home: 2.1, expected_away: 1.2, over_2_5: 58, btts: 54 },
     confidence: { score: 78, status: 'FIABLE' },
@@ -204,6 +220,8 @@ export const predictions: Prediction[] = [
     kickoff: '2026-05-06T18:45:00Z',
     status: 'SCHEDULED',
     source: 'mock',
+    model_version: 'elo-poisson-calibrated-v1',
+    calibration: { applied: true, method: 'conservative_probability_smoothing', overconfidence_factor: 0.1, draw_adjustment: 2, confidence_penalty: 5 },
     probabilities: { home: 43, draw: 29, away: 28 },
     goals: { expected_home: 1.5, expected_away: 1.2, over_2_5: 46, btts: 57 },
     confidence: { score: 54, status: 'A EVITER' },
@@ -228,6 +246,8 @@ export const predictions: Prediction[] = [
     kickoff: '2026-05-07T20:00:00Z',
     status: 'SCHEDULED',
     source: 'mock',
+    model_version: 'elo-poisson-calibrated-v1',
+    calibration: { applied: true, method: 'conservative_probability_smoothing', overconfidence_factor: 0.1, draw_adjustment: 2, confidence_penalty: 5 },
     probabilities: { home: 44, draw: 27, away: 29 },
     goals: { expected_home: 1.8, expected_away: 1.5, over_2_5: 61, btts: 62 },
     confidence: { score: 64, status: 'MOYEN' },
@@ -252,6 +272,8 @@ export const predictions: Prediction[] = [
     kickoff: '2026-05-08T19:00:00Z',
     status: 'SCHEDULED',
     source: 'mock',
+    model_version: 'elo-poisson-calibrated-v1',
+    calibration: { applied: true, method: 'conservative_probability_smoothing', overconfidence_factor: 0.1, draw_adjustment: 2, confidence_penalty: 5 },
     probabilities: { home: 36, draw: 31, away: 33 },
     goals: { expected_home: 1.2, expected_away: 1.3, over_2_5: 44, btts: 55 },
     confidence: { score: 48, status: 'A EVITER' },
@@ -276,6 +298,8 @@ export const predictions: Prediction[] = [
     kickoff: '2026-05-09T17:00:00Z',
     status: 'SCHEDULED',
     source: 'mock',
+    model_version: 'elo-poisson-calibrated-v1',
+    calibration: { applied: true, method: 'conservative_probability_smoothing', overconfidence_factor: 0.1, draw_adjustment: 2, confidence_penalty: 5 },
     probabilities: { home: 41, draw: 30, away: 29 },
     goals: { expected_home: 1.4, expected_away: 1.2, over_2_5: 43, btts: 52 },
     confidence: { score: 56, status: 'MOYEN' },
@@ -418,7 +442,10 @@ export const teams: Team[] = [
 ];
 
 export const mockBacktestingReport: BacktestingReport = {
-  model_version: 'elo-poisson-v1',
+  model_version: 'elo-poisson-calibrated-v1',
+  previous_model_version: 'elo-poisson-v1',
+  comparison_note: 'Historical model comparison requires stored prediction snapshots.',
+  calibration_applied: true,
   evaluated_matches: 0,
   result_accuracy: 0,
   over_2_5_accuracy: 0,
@@ -447,6 +474,9 @@ export const performanceMetrics: PerformanceMetrics = {
   brierScore: '0.184',
   modelVersion: 'FootIQ-Pro v0.5',
   model_version: mockBacktestingReport.model_version,
+  previous_model_version: mockBacktestingReport.previous_model_version,
+  comparison_note: mockBacktestingReport.comparison_note,
+  calibration_applied: true,
   predictions_tracked: predictions.length,
   evaluated_matches: mockBacktestingReport.evaluated_matches,
   result_accuracy: mockBacktestingReport.result_accuracy,
@@ -486,7 +516,8 @@ export function buildDashboardSummary(source = 'mock'): DashboardSummary {
     average_risk_score: Math.round(
       predictions.reduce((sum, prediction) => sum + (prediction.risk_score ?? 50), 0) / predictions.length,
     ),
-    model_version: 'elo-poisson-v1',
+    model_version: 'elo-poisson-calibrated-v1',
+    calibration_applied: true,
     evaluated_matches: mockBacktestingReport.evaluated_matches,
     result_accuracy: mockBacktestingReport.result_accuracy,
     average_brier_score: mockBacktestingReport.average_brier_score,

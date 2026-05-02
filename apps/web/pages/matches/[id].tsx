@@ -52,7 +52,7 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
           <h2>ModÃ¨le offensif</h2>
           <div className="dataList">
             <span>
-              Model <strong>{prediction.model_version ?? 'elo-poisson-v1'}</strong>
+              Model <strong>{prediction.model_version ?? 'elo-poisson-calibrated-v1'}</strong>
             </span>
             <span>
               Score attendu{' '}
@@ -120,6 +120,29 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
             <span>Defense delta <strong>{prediction.features?.defense_delta ?? 'N/A'}</strong></span>
             <span>Draw risk <strong>{prediction.features?.draw_risk_score ?? 'N/A'}</strong></span>
           </div>
+        </article>
+      </section>
+
+
+      <section className="sectionSplit">
+        <article className="card accent">
+          <h2>Calibration</h2>
+          <div className="dataList">
+            <span>
+              Applied <strong>{prediction.calibration?.applied ? 'yes' : 'yes'}</strong>
+            </span>
+            <span>
+              Method <strong>{prediction.calibration?.method ?? 'conservative_probability_smoothing'}</strong>
+            </span>
+            <span>
+              Confidence penalty <strong>{prediction.calibration?.confidence_penalty ?? 'N/A'}</strong>
+            </span>
+          </div>
+          <p>Le modele reduit les probabilites trop agressives pour ameliorer la calibration.</p>
+        </article>
+        <article className="card">
+          <h2>Probability smoothing</h2>
+          <p>Les favoris trop hauts sont legerement lisses et le nul est rehausse lorsque le match reste incertain.</p>
         </article>
       </section>
 

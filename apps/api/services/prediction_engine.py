@@ -1,8 +1,9 @@
+from services.calibration import calibrate_probabilities, derive_calibration_profile
 from services.elo_model import calculate_team_elos, get_elo_features
 from services.feature_engineering import build_match_features
 from services.poisson_model import build_score_matrix, calculate_goal_probabilities
 
-MODEL_VERSION = "elo-poisson-v1"
+MODEL_VERSION = "elo-poisson-calibrated-v1"
 
 
 def slugify(value: str) -> str:
@@ -18,11 +19,11 @@ def match_slug(home_team: str, away_team: str) -> str:
 
 
 def calculate_status(confidence_score: int) -> str:
-    if confidence_score >= 75:
+    if confidence_score >= 78:
         return "FIABLE"
     if confidence_score >= 55:
         return "MOYEN"
-    return "? ?VITER"
+    return "A EVITER"
 
 
 def detect_trap_match(probabilities: dict, confidence_score: int) -> bool:
@@ -66,13 +67,13 @@ def _lambdas(features: dict, elo_features: dict) -> tuple[float, float]:
     return max(0.45, min(3.2, home_lambda)), max(0.35, min(3.0, away_lambda))
 
 
-def _confidence(probabilities: dict, features: dict) -> int:
+def _confidence(probabilities: dict, features: dict, confidence_penalty: int = 0) -> int:
     sorted_probs = sorted(probabilities.values(), reverse=True)
     spread = sorted_probs[0] - sorted_probs[1]
-    score = 46 + spread * 0.7 + features["data_quality_score"] * 18 - features["draw_risk_score"] * 16
+    score = 43 + spread * 0.62 + features["data_quality_score"] * 16 - features["draw_risk_score"] * 17 - confidence_penalty
     if probabilities["draw"] >= 30:
         score -= 5
-    return max(35, min(88, round(score)))
+    return max(32, min(84, round(score)))
 
 
 def _risk_scores(probabilities: dict, confidence_score: int, features: dict) -> tuple[int, int]:
@@ -83,11 +84,11 @@ def _risk_scores(probabilities: dict, confidence_score: int, features: dict) -> 
 
 
 def _recommendation(confidence_score: int, risk_score: int) -> str:
-    if confidence_score >= 75 and risk_score < 45:
+    if confidence_score >= 78 and risk_score < 42:
         return "Exploitable"
     if confidence_score >= 55 and risk_score < 65:
         return "Prudence"
-    return "? ?viter"
+    return "A eviter"
 
 
 def _main_prediction(home_team: str, away_team: str, probabilities: dict) -> str:
@@ -142,8 +143,10 @@ def generate_prediction_from_match(match: dict, all_matches: list[dict] | None =
     home_lambda, away_lambda = _lambdas(features, elo_features)
     goals = calculate_goal_probabilities(home_lambda, away_lambda)
     poisson_probabilities = _result_probabilities_from_poisson(home_lambda, away_lambda)
-    probabilities = _blend_probabilities(elo_features["elo_home_win_probability"], poisson_probabilities, features)
-    confidence_score = _confidence(probabilities, features)
+    raw_probabilities = _blend_probabilities(elo_features["elo_home_win_probability"], poisson_probabilities, features)
+    calibration_profile = derive_calibration_profile(None)
+    probabilities = calibrate_probabilities(raw_probabilities, calibration_profile)
+    confidence_score = _confidence(probabilities, features, calibration_profile["confidence_penalty"])
     risk_score, trap_match_score = _risk_scores(probabilities, confidence_score, features)
     trap_match = detect_trap_match(probabilities, confidence_score) or trap_match_score >= 65
 
@@ -159,6 +162,13 @@ def generate_prediction_from_match(match: dict, all_matches: list[dict] | None =
         "source": match.get("source", "mock"),
         "model_version": MODEL_VERSION,
         "probabilities": probabilities,
+        "calibration": {
+            "applied": True,
+            "method": "conservative_probability_smoothing",
+            "overconfidence_factor": calibration_profile["overconfidence_factor"],
+            "draw_adjustment": calibration_profile["draw_adjustment"],
+            "confidence_penalty": calibration_profile["confidence_penalty"],
+        },
         "goals": goals,
         "confidence": {"score": confidence_score, "status": calculate_status(confidence_score)},
         "features": {
