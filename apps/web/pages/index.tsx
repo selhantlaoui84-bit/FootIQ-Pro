@@ -1,51 +1,86 @@
-﻿import Link from "next/link";
+import type { GetStaticProps } from 'next';
+import Link from 'next/link';
+import { getDashboardSummary } from '~/lib/api';
+import { matchHref, type DashboardSummary } from '~/lib/mock-data';
+import { Layout } from '~/src-layout';
 
-export default function Home() {
+type HomeProps = {
+  summary: DashboardSummary;
+};
+
+const pillars = [
+  {
+    title: 'Probabilites claires',
+    href: '/predictions',
+    body: 'Lire les issues en pourcentages, sans promesse de certitude.',
+  },
+  { title: 'Confidence Index', href: '/performance', body: 'Comprendre quand un signal est robuste ou fragile.' },
+  {
+    title: 'Detection des matchs pieges',
+    href: '/predictions?trap=true',
+    body: 'Reperer les favoris apparents avec signaux contradictoires.',
+  },
+  {
+    title: 'Explications comprehensibles',
+    href: '/about',
+    body: 'Transformer les donnees en lecture utile et responsable.',
+  },
+  { title: 'Admin refresh', href: '/admin', body: 'Rafraichir les donnees depuis football-data.org.' },
+];
+
+export const getStaticProps: GetStaticProps<HomeProps> = async () => ({
+  props: { summary: await getDashboardSummary() },
+  revalidate: 120,
+});
+
+export default function HomePage({ summary }: HomeProps) {
+  const featured = summary.top_reliable_matches[0];
+
   return (
-    <main className="page-shell">
+    <Layout>
       <section className="hero">
-        <div className="hero-badge">FootIQ Pro Â· Analyse probabiliste</div>
-
-        <h1>Lâ€™intelligence statistique du football europÃ©en.</h1>
-
-        <p className="hero-subtitle">
-          FootIQ Pro transforme les donnÃ©es football en probabilitÃ©s lisibles :
-          matchs fiables, signaux de risque, confidence index et dÃ©tection des
-          matchs piÃ¨ges.
-        </p>
-
-        <div className="hero-actions">
-          <Link href="/dashboard" className="btn btn-primary">
-            Voir le dashboard
-          </Link>
-          <Link href="/matches" className="btn btn-secondary">
-            Explorer les matchs
-          </Link>
+        <div className="heroCopy">
+          <p className="eyebrow">Football analytics probabiliste</p>
+          <h1>FootIQ Pro</h1>
+          <p className="subtitle">L'intelligence probabiliste du football francais et europeen.</p>
+          <p className="lead">
+            Notre IA ne promet pas de predire l'avenir. Elle identifie les matchs statistiquement lisibles, les risques,
+            et les signaux qui comptent.
+          </p>
+          <div className="actions">
+            <Link className="button primary" href="/dashboard">
+              Dashboard
+            </Link>
+            <Link className="button secondary" href="/matches">
+              Explorer les matchs
+            </Link>
+          </div>
         </div>
-
-        <p className="disclaimer">
-          Outil dâ€™analyse statistique et probabiliste. Aucune prÃ©diction ne
-          garantit un rÃ©sultat.
-        </p>
+        <Link className="heroPanel clickable-card" href={featured ? matchHref(featured) : '/dashboard'}>
+          <span className="panelLabel">Signal actuel</span>
+          <strong>{summary.total_matches}</strong>
+          <div className="probabilityBar">
+            <span style={{ width: `${summary.average_confidence}%` }} />
+          </div>
+          <div className="miniStats">
+            <span>Confidence {summary.average_confidence}</span>
+            <span>{summary.source}</span>
+          </div>
+        </Link>
       </section>
 
-      <section className="grid-3">
-        <article className="glass-card">
-          <h2>ProbabilitÃ©s claires</h2>
-          <p>1N2, over/under, BTTS, score attendu et explication en franÃ§ais.</p>
-        </article>
-
-        <article className="glass-card">
-          <h2>Confidence Index</h2>
-          <p>Un score de fiabilitÃ© pour savoir quand les donnÃ©es parlent vraiment.</p>
-        </article>
-
-        <article className="glass-card">
-          <h2>Matchs piÃ¨ges</h2>
-          <p>DÃ©tection des favoris fragiles, signaux contradictoires et risques cachÃ©s.</p>
-        </article>
+      <section className="grid five">
+        {pillars.map((pillar) => (
+          <Link className="card clickable-card card-link" href={pillar.href} key={pillar.title}>
+            <h3>{pillar.title}</h3>
+            <p>{pillar.body}</p>
+          </Link>
+        ))}
       </section>
-    </main>
+
+      <section className="notice">
+        FootIQ Pro est un outil d'analyse statistique et probabiliste. Aucune prediction ne garantit un resultat.
+      </section>
+    </Layout>
   );
 }
-

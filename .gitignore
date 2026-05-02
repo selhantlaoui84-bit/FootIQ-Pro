@@ -48,3 +48,10 @@ docs/instructions/Roadmap.md
 .cursorrules
 .cursorrules
 *.md
+__pycache__/
+*.pyc
+.venv/
+.next/
+node_modules/
+.env
+.env.local

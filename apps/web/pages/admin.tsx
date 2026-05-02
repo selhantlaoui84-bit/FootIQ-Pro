@@ -1,48 +1,98 @@
-﻿import { useState } from "react";
+import { useEffect, useState } from 'react';
+import { getBackendHealth, getRefreshStatus, refreshData } from '~/lib/api';
+import type { HealthResponse, RefreshResponse } from '~/lib/mock-data';
+import { Layout } from '~/src-layout';
 
-export default function Admin() {
-  const [result, setResult] = useState<string>("Aucune action lancée.");
+export default function AdminPage() {
+  const [health, setHealth] = useState<HealthResponse | null>(null);
+  const [refreshInfo, setRefreshInfo] = useState<RefreshResponse | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  async function refreshData() {
+  useEffect(() => {
+    getBackendHealth()
+      .then(setHealth)
+      .catch(() => setHealth(null));
+    getRefreshStatus()
+      .then(setRefreshInfo)
+      .catch(() => setRefreshInfo(null));
+  }, []);
+
+  async function handleRefresh() {
+    setIsRefreshing(true);
+    setError(null);
+
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+      const result = await refreshData();
 
-      if (!apiUrl) {
-        setResult("NEXT_PUBLIC_API_URL manquant.");
+      if (!result) {
+        setError('Refresh indisponible. Le backend utilise probablement le fallback mock.');
         return;
       }
 
-      const response = await fetch(`${apiUrl}/admin/refresh-data`, {
-        method: "POST",
-      });
-
-      const data = await response.json();
-
-      setResult(JSON.stringify(data, null, 2));
-    } catch (error) {
-      setResult(String(error));
+      setRefreshInfo(result);
+    } catch {
+      setError('Refresh impossible pour le moment.');
+    } finally {
+      setIsRefreshing(false);
     }
   }
 
   return (
-    <main className="page-shell">
-      <section className="hero">
-        <div className="hero-badge">Administration</div>
-        <h1>Admin FootIQ Pro</h1>
-        <p className="hero-subtitle">
-          Lance une mise à jour des données et vérifie la connexion backend.
-        </p>
-
-        <div className="hero-actions">
-          <button className="btn btn-primary" onClick={refreshData}>
-            Refresh data
-          </button>
-        </div>
-
-        <pre className="glass-card" style={{ marginTop: 24, whiteSpace: "pre-wrap" }}>
-          {result}
-        </pre>
+    <Layout>
+      <section className="pageHeader">
+        <p className="eyebrow">Administration MVP</p>
+        <h1>Admin</h1>
+        <p>Controle du backend, du refresh football-data.org et de la source active.</p>
       </section>
-    </main>
+
+      <section className="sectionSplit">
+        <article className="card">
+          <h2>Backend health</h2>
+          <div className="dataList">
+            <span>
+              Status <strong>{health?.status ?? (health?.ok ? 'ok' : 'indisponible')}</strong>
+            </span>
+            <span>
+              API URL <strong>{process.env.NEXT_PUBLIC_API_URL ?? 'non configuree'}</strong>
+            </span>
+          </div>
+        </article>
+
+        <article className="card accent">
+          <h2>Refresh data</h2>
+          <p>Import Ligue 1 et Champions League, avec fallback mock automatique.</p>
+          <button className="button primary" type="button" onClick={handleRefresh} disabled={isRefreshing}>
+            {isRefreshing ? 'Refresh en cours...' : 'Refresh data'}
+          </button>
+        </article>
+      </section>
+
+      {error && <section className="notice">{error}</section>}
+
+      <section className="card">
+        <h2>Dernier refresh</h2>
+        <div className="dataList">
+          <span>
+            Status <strong>{refreshInfo?.status ?? 'unknown'}</strong>
+          </span>
+          <span>
+            Source <strong>{refreshInfo?.source ?? 'mock'}</strong>
+          </span>
+          <span>
+            Storage <strong>{refreshInfo?.storage ?? 'memory'}</strong>
+          </span>
+          <span>
+            Matches imported <strong>{refreshInfo?.matches_imported ?? 0}</strong>
+          </span>
+          <span>
+            Teams imported <strong>{refreshInfo?.teams_imported ?? 0}</strong>
+          </span>
+          <span>
+            Last refresh <strong>{refreshInfo?.last_refresh_at ?? 'N/A'}</strong>
+          </span>
+        </div>
+      </section>
+    </Layout>
   );
 }

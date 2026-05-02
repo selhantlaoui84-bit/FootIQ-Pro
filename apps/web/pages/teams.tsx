@@ -1,17 +1,54 @@
-﻿export default function Teams() {
+import type { GetStaticProps } from 'next';
+import Link from 'next/link';
+import { getTeams } from '~/lib/api';
+import { teamHref, type Team } from '~/lib/mock-data';
+import { Layout } from '~/src-layout';
+
+type TeamsProps = {
+  teams: Team[];
+};
+
+export const getStaticProps: GetStaticProps<TeamsProps> = async () => ({
+  props: { teams: await getTeams() },
+  revalidate: 120,
+});
+
+export default function TeamsPage({ teams }: TeamsProps) {
+  const competitions = [...new Set(teams.map((team) => team.competition))].join(' / ');
+
   return (
-    <main className="page-shell">
-      <h1>Équipes</h1>
-      <section className="grid-3">
-        {["PSG", "Marseille", "Lyon", "Monaco", "Lille", "Lens"].map((team) => (
-          <article className="glass-card" key={team}>
-            <h2>{team}</h2>
-            <p>Forme récente, Elo et tendances à venir.</p>
-          </article>
+    <Layout>
+      <section className="pageHeader">
+        <p className="eyebrow">Référentiel équipes</p>
+        <h1>Teams</h1>
+        <p>
+          {teams.length} équipes disponibles
+          {competitions ? ` sur ${competitions}` : ''}.
+        </p>
+      </section>
+
+      <section className="grid three">
+        {teams.map((team) => (
+          <Link className="card teamCard clickable-card" href={teamHref(team)} key={team.id}>
+            <div className="cardTop">
+              <span>{team.competition}</span>
+              <span className={`trend ${team.trend ?? 'stable'}`}>{team.trend ?? 'stable'}</span>
+            </div>
+            <h2>{team.name}</h2>
+            <div className="dataList">
+              <span>
+                Elo rating <strong>{team.elo ?? 'N/A'}</strong>
+              </span>
+              <span>
+                Recent form <strong>{team.form ?? 'N/A'}</strong>
+              </span>
+              <span>
+                Source <strong>{team.source ?? 'mock'}</strong>
+              </span>
+            </div>
+          </Link>
         ))}
       </section>
-    </main>
+    </Layout>
   );
 }
-
-
