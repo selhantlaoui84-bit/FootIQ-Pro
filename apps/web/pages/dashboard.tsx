@@ -144,6 +144,29 @@ export default function DashboardPage({ matches, predictions, summary, mlStatus,
         </div>
       </section>
 
+      <section className="card hybridEngineCard">
+        <p className="eyebrow">Moteur hybride</p>
+        <h2>D?cision consultative v1</h2>
+        <div className="compactDataGrid four">
+          <Link className="metric clickable-card" href="/performance#hybrid-engine">
+            <span>Version</span>
+            <strong>{summary.hybrid_engine_version ?? 'hybrid-engine-v1'}</strong>
+          </Link>
+          <Link className="metric clickable-card" href="/performance#hybrid-engine">
+            <span>Recommandation</span>
+            <strong>{summary.hybrid_engine_recommendation ?? 'insufficient_shadow_data'}</strong>
+          </Link>
+          <Link className="metric clickable-card" href="/performance#hybrid-engine">
+            <span>Signaux renforc?s</span>
+            <strong>{summary.hybrid_engine_strong_count ?? 0}</strong>
+          </Link>
+          <Link className="metric clickable-card" href="/performance#hybrid-engine">
+            <span>? ?viter</span>
+            <strong>{summary.hybrid_engine_avoid_count ?? 0}</strong>
+          </Link>
+        </div>
+      </section>
+
       <section className="card advisoryCard">
         <p className="eyebrow">Signal hybride</p>
         <h2>Lecture officielle avec signal consultatif</h2>

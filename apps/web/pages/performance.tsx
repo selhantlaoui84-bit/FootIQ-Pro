@@ -6,6 +6,7 @@ import {
   getBacktesting,
   getFeatureSummary,
   getMlFeatureImportance,
+  getHybridEngineSummary,
   getHybridSummary,
   getMlComparison,
   getMlStatus,
@@ -19,6 +20,7 @@ import type {
   BacktestingReport,
   FeatureImportanceRow,
   FeatureSummary,
+  HybridEngineSummary,
   HybridSummary,
   MlComparison,
   MlStatus,
@@ -41,6 +43,7 @@ type PerformanceProps = {
   shadowSummary: MlShadowSummary;
   shadowBacktesting: MlShadowBacktesting;
   hybridSummary: HybridSummary;
+  hybridEngineSummary: HybridEngineSummary;
   featureImportance: FeatureImportanceRow[];
 };
 
@@ -56,6 +59,7 @@ export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
     shadowSummary,
     shadowBacktesting,
     hybridSummary,
+    hybridEngineSummary,
     featureImportance,
   ] = await Promise.all([
     getPerformance(),
@@ -68,6 +72,7 @@ export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
     getMlShadowSummary(),
     getMlShadowBacktesting(1000),
     getHybridSummary(),
+    getHybridEngineSummary(),
     getMlFeatureImportance(),
   ]);
 
@@ -83,6 +88,7 @@ export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
       shadowSummary,
       shadowBacktesting,
       hybridSummary,
+      hybridEngineSummary,
       featureImportance,
     },
     revalidate: 120,
@@ -100,6 +106,7 @@ export default function PerformancePage({
   shadowSummary,
   shadowBacktesting,
   hybridSummary,
+  hybridEngineSummary,
   featureImportance,
 }: PerformanceProps) {
   const report = {
@@ -145,6 +152,7 @@ export default function PerformancePage({
   const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ?? 'https://footiq-pro-production.up.railway.app';
   const candidate = performance.ml_candidate ?? mlStatus.latest_candidate;
   const hybrid = performance.hybrid_summary ?? hybridSummary;
+  const hybridEngine = performance.hybrid_engine_summary ?? hybridEngineSummary;
   const candidateImportance = candidate.feature_importance?.length ? candidate.feature_importance : featureImportance;
 
   return (
@@ -353,6 +361,28 @@ export default function PerformancePage({
             <div className="metric"><span>Candidat production</span><strong>{(performance.ml_shadow_summary ?? shadowSummary).candidate_is_production ? 'oui' : 'non'}</strong></div>
           </div>
           <div className="banner info">Le modèle de production reste {models.current_model_version}. Le candidat ML reste en observation.</div>
+        </section>
+
+        <section className="card hybridEngineCard sectionAnchor" id="hybrid-engine">
+          <p className="eyebrow">Moteur hybride v1</p>
+          <h2>Moteur hybride v1</h2>
+          <p>Le moteur hybride v1 ne remplace pas le mod?le officiel. Il classe les matchs selon le niveau de consensus ou de d?saccord entre Elo/Poisson et le ML shadow.</p>
+          <div className="compactDataGrid four">
+            <div className="metric"><span>Version</span><strong>{hybridEngine.engine_version}</strong></div>
+            <div className="metric"><span>Recommandation</span><strong>{hybridEngine.recommendation}</strong></div>
+            <div className="metric"><span>Strong</span><strong>{hybridEngine.summary.strong_count}</strong></div>
+            <div className="metric"><span>Medium</span><strong>{hybridEngine.summary.medium_count}</strong></div>
+            <div className="metric"><span>Weak</span><strong>{hybridEngine.summary.weak_count}</strong></div>
+            <div className="metric"><span>? ?viter</span><strong>{hybridEngine.summary.avoid_count}</strong></div>
+            <div className="metric"><span>Unknown</span><strong>{hybridEngine.summary.unknown_count}</strong></div>
+            <div className="metric"><span>Candidat production</span><strong>{hybridEngine.candidate_is_production ? 'oui' : 'non'}</strong></div>
+            <div className="metric"><span>Officiel primaire</span><strong>{hybridEngine.official_prediction_stays_primary ? 'oui' : 'non'}</strong></div>
+          </div>
+          <div className="banner info">{hybridEngine.reason}</div>
+          <div className="quickActions">
+            <Link className="button secondary" href="/performance#shadow-backtesting">Backtesting shadow</Link>
+            <Link className="button secondary" href="/performance#shadow-ml">Shadow ML</Link>
+          </div>
         </section>
 
         <section className="card sectionAnchor" id="hybrid-review">

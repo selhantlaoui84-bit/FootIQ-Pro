@@ -13,7 +13,7 @@ type PredictionsProps = {
 };
 
 export const getStaticProps: GetStaticProps<PredictionsProps> = async () => ({
-  props: { predictions: await getPredictions() },
+  props: { predictions: await getPredictions({ includeHybridEngine: true }) },
   revalidate: 120,
 });
 
@@ -158,8 +158,21 @@ function PredictionCard({ prediction }: { prediction: Prediction }) {
           Pénalité <strong>{prediction.calibration?.confidence_penalty ?? 'N/A'}</strong>
         </span>
       </div>
+      {prediction.hybrid_engine && (
+        <span className={`decisionBadge ${prediction.hybrid_engine.decision_level}`}>
+          {hybridLabel(prediction.hybrid_engine.decision_label)}
+        </span>
+      )}
       <p>{prediction.explanation[0]}</p>
     </Link>
   );
 }
 
+
+function hybridLabel(label: string) {
+  if (label === 'signal_renforce') return 'signal renforc?';
+  if (label === 'prudence_confirmee') return 'prudence';
+  if (label === 'desaccord_modele') return 'd?saccord mod?le';
+  if (label === 'eviter') return '?viter';
+  return 'shadow indisponible';
+}

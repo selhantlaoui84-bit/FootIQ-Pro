@@ -32,6 +32,7 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
   const winner = winnerLabel(match.winner ?? prediction.winner, prediction.home_team, prediction.away_team);
   const shadow = prediction.shadow;
   const hybrid = prediction.hybrid;
+  const hybridEngine = prediction.hybrid_engine;
 
   return (
     <ProtectedRoute>
@@ -156,6 +157,29 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
                 <span>2 <strong>{shadow.prediction.probabilities.away}%</strong></span>
               </div>
             )}
+          </section>
+        )}
+
+        {hybridEngine && (
+          <section className="card hybridEngineCard">
+            <h2 className="metricHelp">
+              D?cision hybride v1
+              <InfoTooltip content="Le moteur hybride v1 classe le niveau de consensus entre Elo/Poisson et le ML shadow, sans remplacer la pr?diction officielle." />
+            </h2>
+            <h3>{hybridEngine.display_title}</h3>
+            <p>{hybridEngine.display_message}</p>
+            <div className="comparisonMiniTable">
+              <span className="metricHelp">Score de consensus <InfoTooltip content="Mesure le niveau de convergence entre le signal officiel et le ML shadow." /> <strong>{hybridEngine.consensus_score}/100</strong></span>
+              <span>Niveau de d?cision <strong className={`decisionBadge ${hybridEngine.decision_level}`}>{hybridEngine.decision_level}</strong></span>
+              <span className="metricHelp">Action recommand?e <InfoTooltip content="Action consultative: elle n'active jamais le ML en production." /> <strong>{hybridEngine.action}</strong></span>
+              <span>Signal officiel <strong>{translatePick(hybridEngine.production_pick)}</strong></span>
+              <span>Signal shadow <strong>{translatePick(hybridEngine.shadow_pick)}</strong></span>
+              <span>Accord <strong>{hybridEngine.agreement}</strong></span>
+              <span className="metricHelp">Ajustement du risque <InfoTooltip content="Variation consultative du niveau de risque selon le consensus ou le d?saccord mod?le." /> <strong>{hybridEngine.risk_adjustment}</strong></span>
+            </div>
+            <ul>{hybridEngine.explanation.map((item) => <li key={item}>{item}</li>)}</ul>
+            {hybridEngine.warnings.length > 0 && <div className="banner warning">{hybridEngine.warnings.join(' ')}</div>}
+            <div className="banner info">Le mod?le officiel reste Elo/Poisson. Le moteur hybride ajoute une lecture de prudence ou de renforcement, sans remplacer la pr?diction officielle.</div>
           </section>
         )}
 

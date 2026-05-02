@@ -18,6 +18,7 @@
   mockTrainingReport,
   mockMlShadowBacktesting,
   mockHybridSummary,
+  mockHybridEngineSummary,
   mockAdminWorkflowStatus,
   mockRefreshJobStatus,
   buildDashboardSummary,
@@ -44,6 +45,7 @@
   type DashboardSummary,
   type HealthResponse,
   type HybridSummary,
+  type HybridEngineSummary,
   type PerformanceMetrics,
   type Prediction,
   type RefreshJobStatus,
@@ -93,8 +95,9 @@ export async function getHealth() {
   return getBackendHealth();
 }
 
-export async function getPredictions(): Promise<Prediction[]> {
-  const data = await safeFetchJson<Prediction[]>('/predictions');
+export async function getPredictions(options?: { includeHybridEngine?: boolean }): Promise<Prediction[]> {
+  const query = options?.includeHybridEngine ? '?include_hybrid_engine=true' : '';
+  const data = await safeFetchJson<Prediction[]>(`/predictions${query}`);
 
   return Array.isArray(data) && data.length > 0 ? data : predictions;
 }
@@ -282,6 +285,13 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
 
 export async function getRefreshStatus(): Promise<RefreshResponse | null> {
   return safeFetchJson<RefreshResponse>('/admin/refresh-status');
+}
+
+
+export async function getHybridEngineSummary(): Promise<HybridEngineSummary> {
+  const data = await safeFetchJson<HybridEngineSummary>('/hybrid/engine-summary');
+
+  return data ?? mockHybridEngineSummary;
 }
 
 export async function getHybridSummary(): Promise<HybridSummary> {

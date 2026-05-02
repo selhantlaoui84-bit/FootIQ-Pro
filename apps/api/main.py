@@ -16,6 +16,7 @@ from data.mock_data import get_prediction as get_mock_prediction
 from data.mock_data import get_team as get_mock_team
 from services.feature_store import build_feature_snapshots, summarize_feature_store
 from services.hybrid_decision import build_hybrid_decision
+from services.hybrid_engine import build_hybrid_engine_decision
 from services.football_data_client import (
     get_champions_league_matches,
     get_champions_league_teams,
@@ -200,7 +201,7 @@ def _find_shadow(match_id: str):
     return next((row for row in _shadow_memory_rows() if row.get("match_id") == match_id), None)
 
 
-def _prediction_with_shadow(prediction: dict):
+def _prediction_with_shadow(prediction: dict, include_hybrid_engine: bool = True):
     match_id = prediction.get("match_id") or prediction.get("id") or prediction.get("slug")
     shadow = _find_shadow(match_id)
     enriched = dict(prediction)
@@ -210,6 +211,8 @@ def _prediction_with_shadow(prediction: dict):
             "comparison": shadow.get("comparison"),
         }
     enriched["hybrid"] = build_hybrid_decision(enriched, enriched.get("shadow"))
+    if include_hybrid_engine:
+        enriched["hybrid_engine"] = build_hybrid_engine_decision(enriched, enriched.get("shadow"), _shadow_backtesting_report())
     return enriched
 
 
@@ -315,6 +318,36 @@ def _hybrid_summary():
         "production_model_version": MODEL_VERSION,
         "shadow_summary": _shadow_summary(),
         "shadow_backtesting": shadow_backtesting,
+        "recommendation": recommendation,
+        "reason": reason,
+    }
+
+
+def _hybrid_engine_summary():
+    shadow_backtesting = _shadow_backtesting_report()
+    predictions = _available_predictions()
+    decisions = [
+        build_hybrid_engine_decision(_prediction_with_shadow(prediction, include_hybrid_engine=False), _prediction_with_shadow(prediction, include_hybrid_engine=False).get("shadow"), shadow_backtesting)
+        for prediction in predictions
+    ]
+    summary = {"strong_count": 0, "medium_count": 0, "weak_count": 0, "avoid_count": 0, "unknown_count": 0}
+    for decision in decisions:
+        level = decision.get("decision_level", "unknown")
+        key = f"{level}_count" if level in {"strong", "medium", "weak", "avoid", "unknown"} else "unknown_count"
+        summary[key] = summary.get(key, 0) + 1
+
+    shadow_count = _shadow_summary().get("shadow_predictions_count", 0)
+    recommendation = "hybrid_advisory_active" if shadow_count > 0 else "insufficient_shadow_data"
+    reason = "Le moteur hybride v1 est actif comme couche consultative." if shadow_count > 0 else "Aucune donn?e shadow suffisante pour alimenter le moteur hybride."
+
+    return {
+        "engine_version": "hybrid-engine-v1",
+        "mode": "official_with_hybrid_advisory",
+        "candidate_is_production": False,
+        "official_prediction_stays_primary": True,
+        "production_model_version": MODEL_VERSION,
+        "shadow_backtesting": shadow_backtesting,
+        "summary": summary,
         "recommendation": recommendation,
         "reason": reason,
     }
@@ -444,6 +477,10 @@ def _dashboard_summary():
         "hybrid_recommendation": hybrid_summary.get("recommendation"),
         "hybrid_mode": hybrid_summary.get("mode"),
         "hybrid_candidate_is_production": hybrid_summary.get("candidate_is_production", False),
+        "hybrid_engine_version": _hybrid_engine_summary().get("engine_version"),
+        "hybrid_engine_recommendation": _hybrid_engine_summary().get("recommendation"),
+        "hybrid_engine_strong_count": _hybrid_engine_summary().get("summary", {}).get("strong_count", 0),
+        "hybrid_engine_avoid_count": _hybrid_engine_summary().get("summary", {}).get("avoid_count", 0),
         "evaluated_matches": backtest["evaluated_matches"],
         "result_accuracy": backtest["result_accuracy"],
         "average_brier_score": backtest["average_brier_score"],
@@ -503,11 +540,11 @@ def match_detail(match_id: str):
 
 
 @app.get("/predictions")
-def list_predictions(include_hybrid: bool = False):
+def list_predictions(include_hybrid: bool = False, include_hybrid_engine: bool = False):
     predictions = _available_predictions()
-    if not include_hybrid:
+    if not include_hybrid and not include_hybrid_engine:
         return predictions
-    return [_prediction_with_shadow(prediction) for prediction in predictions]
+    return [_prediction_with_shadow(prediction, include_hybrid_engine=include_hybrid_engine) for prediction in predictions]
 
 
 
@@ -659,6 +696,11 @@ def ml_comparison():
     return _ml_comparison()
 
 
+@app.get("/hybrid/engine-summary")
+def hybrid_engine_summary():
+    return _hybrid_engine_summary()
+
+
 @app.get("/hybrid/summary")
 def hybrid_summary():
     return _hybrid_summary()
@@ -744,6 +786,7 @@ def model_performance():
         "ml_shadow_summary": _shadow_summary(),
         "ml_shadow_backtesting": shadow_backtesting,
         "hybrid_summary": _hybrid_summary(),
+        "hybrid_engine_summary": _hybrid_engine_summary(),
         "candidate_is_production": False,
         "predictions_tracked": len(predictions),
         "tracked": len(predictions) or PERFORMANCE["tracked"],

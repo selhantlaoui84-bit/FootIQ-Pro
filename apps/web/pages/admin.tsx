@@ -204,6 +204,9 @@ export default function AdminPage() {
             <Link className="button secondary" href="/performance#feature-store">
               Feature Store
             </Link>
+            <Link className="button secondary" href="/performance#hybrid-engine">
+              Moteur hybride
+            </Link>
           </div>
         </section>
 
@@ -218,6 +221,7 @@ export default function AdminPage() {
             <div className="metric"><span>Backtesting shadow disponible</span><strong>{workflowStatus?.shadow_backtesting.ready ? 'oui' : 'non'}</strong></div>
             <div className="metric"><span>Prochaine ?tape</span><strong>{workflowStatus?.next_step ?? 'refresh_data'}</strong></div>
           </div>
+        <div className="banner info">Le moteur hybride est consultatif : il ne remplace pas le mod?le officiel.</div>
         </section>
 
         <section className="sectionSplit">

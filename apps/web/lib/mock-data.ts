@@ -53,6 +53,7 @@ export type Prediction = {
   disclaimer: string;
   shadow?: { prediction?: MlShadowPrediction | null; comparison?: MlShadowComparison | null };
   hybrid?: HybridDecision;
+  hybrid_engine?: HybridEngineDecision;
 };
 
 export type MatchView = 'all' | 'upcoming' | 'history';
@@ -370,6 +371,7 @@ export type PerformanceMetrics = {
   ml_shadow_summary?: MlShadowSummary;
   ml_shadow_backtesting?: MlShadowBacktesting;
   hybrid_summary?: HybridSummary;
+  hybrid_engine_summary?: HybridEngineSummary;
   candidate_is_production?: boolean;
   model_versions?: Record<string, ModelComparisonRow>;
   best_model_by_brier?: string | null;
@@ -429,6 +431,10 @@ export type DashboardSummary = {
   hybrid_recommendation?: string;
   hybrid_mode?: string;
   hybrid_candidate_is_production?: boolean;
+  hybrid_engine_version?: string;
+  hybrid_engine_recommendation?: string;
+  hybrid_engine_strong_count?: number;
+  hybrid_engine_avoid_count?: number;
   best_model_by_brier?: string | null;
   evaluated_matches?: number;
   result_accuracy?: number;
@@ -464,6 +470,55 @@ export type HybridSummary = {
   shadow_summary: MlShadowSummary;
   shadow_backtesting: MlShadowBacktesting;
   recommendation: 'keep_official' | 'use_hybrid_advisory' | 'insufficient_data' | string;
+  reason: string;
+};
+
+export type HybridEngineDecision = {
+  engine_version: string;
+  mode: string;
+  candidate_is_production: boolean;
+  official_prediction_stays_primary: boolean;
+  production_model_version: string;
+  candidate_model_version: string | null;
+  production_pick: 'home' | 'draw' | 'away' | null;
+  shadow_pick: 'home' | 'draw' | 'away' | null;
+  agreement: 'agree' | 'disagree' | 'unknown' | string;
+  consensus_score: number;
+  risk_adjustment: number;
+  decision_level: 'strong' | 'medium' | 'weak' | 'avoid' | 'unknown' | string;
+  decision_label: string;
+  action: string;
+  display_title: string;
+  display_message: string;
+  explanation: string[];
+  warnings: string[];
+  evidence: {
+    production_confidence: number | null;
+    shadow_confidence: number | null;
+    confidence_delta: number | null;
+    disagreement_level: string | null;
+    shadow_backtesting_status: string | null;
+    shadow_accuracy: number | null;
+    production_accuracy: number | null;
+    activation_recommendation: string | null;
+  };
+};
+
+export type HybridEngineSummary = {
+  engine_version: string;
+  mode: string;
+  candidate_is_production: boolean;
+  official_prediction_stays_primary: boolean;
+  production_model_version: string;
+  shadow_backtesting: MlShadowBacktesting;
+  summary: {
+    strong_count: number;
+    medium_count: number;
+    weak_count: number;
+    avoid_count: number;
+    unknown_count: number;
+  };
+  recommendation: 'keep_official' | 'hybrid_advisory_active' | 'insufficient_shadow_data' | string;
   reason: string;
 };
 
@@ -1192,4 +1247,48 @@ export const mockAdminWorkflowStatus: AdminWorkflowStatus = {
   hybrid: { mode: 'official_with_shadow_advisory', recommendation: 'insufficient_data' },
   latest_refresh_job: mockRefreshJobStatus,
   next_step: 'refresh_data',
+};
+
+
+export const mockHybridEngineDecision: HybridEngineDecision = {
+  engine_version: 'hybrid-engine-v1',
+  mode: 'official_with_hybrid_advisory',
+  candidate_is_production: false,
+  official_prediction_stays_primary: true,
+  production_model_version: 'elo-poisson-calibrated-v1',
+  candidate_model_version: null,
+  production_pick: 'home',
+  shadow_pick: null,
+  agreement: 'unknown',
+  consensus_score: 45,
+  risk_adjustment: 0,
+  decision_level: 'unknown',
+  decision_label: 'shadow_indisponible',
+  action: 'insufficient_shadow_data',
+  display_title: 'Signal ML indisponible',
+  display_message: 'Le mod?le officiel Elo/Poisson reste la r?f?rence.',
+  explanation: ['Le moteur hybride ne remplace pas la pr?diction officielle.'],
+  warnings: ['Signal shadow indisponible.'],
+  evidence: {
+    production_confidence: null,
+    shadow_confidence: null,
+    confidence_delta: null,
+    disagreement_level: null,
+    shadow_backtesting_status: 'empty',
+    shadow_accuracy: null,
+    production_accuracy: null,
+    activation_recommendation: 'do_not_activate',
+  },
+};
+
+export const mockHybridEngineSummary: HybridEngineSummary = {
+  engine_version: 'hybrid-engine-v1',
+  mode: 'official_with_hybrid_advisory',
+  candidate_is_production: false,
+  official_prediction_stays_primary: true,
+  production_model_version: 'elo-poisson-calibrated-v1',
+  shadow_backtesting: mockMlShadowBacktesting,
+  summary: { strong_count: 0, medium_count: 0, weak_count: 0, avoid_count: 0, unknown_count: 0 },
+  recommendation: 'insufficient_shadow_data',
+  reason: 'Aucune donn?e shadow suffisante pour alimenter le moteur hybride.',
 };
