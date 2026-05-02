@@ -223,6 +223,25 @@ def get_teams() -> list[dict[str, Any]]:
     return runtime_store["teams"]
 
 
+@app.get("/teams/{team_id}")
+def get_team(team_id: str) -> dict[str, Any]:
+    normalized_team_id = team_id.lower().strip()
+
+    for team in runtime_store["teams"]:
+        candidates = {
+            str(team.get("id", "")).lower(),
+            str(team.get("slug", "")).lower(),
+            str(team.get("team_id", "")).lower(),
+            str(team.get("name", "")).lower().replace(" ", "-"),
+        }
+
+        if normalized_team_id in candidates:
+            return team
+
+    raise HTTPException(status_code=404, detail="Team not found")
+
+
+
 @app.get("/performance")
 def get_performance() -> dict[str, Any]:
     return {
