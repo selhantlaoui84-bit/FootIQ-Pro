@@ -1,4 +1,4 @@
-import os
+﻿import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Header, HTTPException
@@ -16,6 +16,7 @@ from services.football_data_client import (
     get_ligue1_matches,
     get_ligue1_teams,
 )
+from services.backtesting import calculate_backtest_report
 from services.elo_model import calculate_team_elos
 from services.prediction_engine import generate_prediction_from_match
 from services.prediction_engine import MODEL_VERSION
@@ -124,10 +125,11 @@ def _dashboard_summary():
     matches = _available_matches()
     teams = _available_teams()
     predictions = _available_predictions()
+    backtest = calculate_backtest_report(matches, predictions)
     total_matches = len(matches)
     reliable = [item for item in predictions if item["confidence"]["status"] == "FIABLE"]
     medium = [item for item in predictions if item["confidence"]["status"] == "MOYEN"]
-    avoid = [item for item in predictions if item["confidence"]["status"] in {"À ÉVITER", "A EVITER"}]
+    avoid = [item for item in predictions if item["confidence"]["status"] in {"Ã€ Ã‰VITER", "A EVITER"}]
     traps = [item for item in predictions if item["flags"]["trap_match"]]
     average_risk_score = 0
     if predictions:
@@ -155,6 +157,10 @@ def _dashboard_summary():
         "average_confidence": average_confidence,
         "average_risk_score": average_risk_score,
         "model_version": MODEL_VERSION,
+        "evaluated_matches": backtest["evaluated_matches"],
+        "result_accuracy": backtest["result_accuracy"],
+        "average_brier_score": backtest["average_brier_score"],
+        "calibration_score": backtest["calibration_score"],
         "competitions_breakdown": competitions,
         "top_reliable_matches": sorted(
             predictions,
@@ -232,9 +238,15 @@ def team_detail(team_id: str):
     return team
 
 
+@app.get("/backtesting")
+def backtesting_report():
+    return calculate_backtest_report(_available_matches(), _available_predictions())
+
+
 @app.get("/performance")
 def model_performance():
     predictions = _available_predictions()
+    backtest = calculate_backtest_report(_available_matches(), predictions)
     average_confidence = 0
     average_risk_score = 0
     if predictions:
@@ -242,11 +254,12 @@ def model_performance():
         average_risk_score = round(sum(item.get("risk_score", 0) for item in predictions) / len(predictions))
     reliable = [item for item in predictions if item["confidence"]["status"] == "FIABLE"]
     medium = [item for item in predictions if item["confidence"]["status"] == "MOYEN"]
-    avoid = [item for item in predictions if item["confidence"]["status"] in {"À ÉVITER", "A EVITER"}]
+    avoid = [item for item in predictions if item["confidence"]["status"] in {"Ã€ Ã‰VITER", "A EVITER"}]
     traps = [item for item in predictions if item["flags"]["trap_match"]]
 
     return {
         **PERFORMANCE,
+        **backtest,
         "model_version": MODEL_VERSION,
         "predictions_tracked": len(predictions),
         "tracked": len(predictions) or PERFORMANCE["tracked"],
@@ -257,7 +270,6 @@ def model_performance():
         "medium_count": len(medium),
         "avoid_count": len(avoid),
         "trap_match_count": len(traps),
-        "note": "Backtesting will be added in the next phase.",
         "latest_refresh": _refresh_status(),
     }
 
@@ -313,3 +325,6 @@ def refresh_data(x_admin_key: str | None = Header(default=None, alias="X-Admin-K
         "predictions_imported": status["predictions_imported"],
         "last_refresh_at": status["last_refresh_at"],
     }
+
+
+

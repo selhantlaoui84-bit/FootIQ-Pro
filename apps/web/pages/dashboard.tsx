@@ -69,6 +69,31 @@ export default function DashboardPage({ matches, predictions, summary }: Dashboa
         <Stat label="Competitions" value={competitions.length} href="/matches" />
       </section>
 
+      <section className="card modelReliabilityBlock">
+        <div>
+          <p className="eyebrow">Model reliability</p>
+          <h2>Backtesting snapshot</h2>
+          <p>Computed from finished matches with available final scores.</p>
+        </div>
+        <div className="compactDataGrid four">
+          <Link className="metric clickable-card" href="/performance">
+            <span>Evaluated</span>
+            <strong>{summary.evaluated_matches ?? 0}</strong>
+          </Link>
+          <Link className="metric clickable-card" href="/performance">
+            <span>Accuracy</span>
+            <strong>{summary.result_accuracy ?? 0}%</strong>
+          </Link>
+          <Link className="metric clickable-card" href="/performance">
+            <span>Brier</span>
+            <strong>{summary.average_brier_score ?? 0}</strong>
+          </Link>
+          <Link className="metric clickable-card" href="/performance">
+            <span>Calibration</span>
+            <strong>{summary.calibration_score ?? 0}/100</strong>
+          </Link>
+        </div>
+      </section>
       <section className="quickActions">
         <Link className="button secondary" href="/matches">
           Matchs
@@ -197,4 +222,5 @@ function Distribution({
     </article>
   );
 }
+
 

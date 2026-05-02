@@ -1,13 +1,15 @@
-import {
+﻿import {
   getMockPrediction,
   getMockMatch,
   getMockTeam,
+  mockBacktestingReport,
   buildDashboardSummary,
   matches,
   performanceMetrics,
   predictions,
   teams,
   type Match,
+  type BacktestingReport,
   type DashboardSummary,
   type HealthResponse,
   type PerformanceMetrics,
@@ -91,6 +93,11 @@ export async function getTeam(teamId: string): Promise<Team> {
   return data ?? getMockTeam(teamId);
 }
 
+export async function getBacktesting(): Promise<BacktestingReport> {
+  const data = await safeFetchJson<BacktestingReport>('/backtesting');
+
+  return data ?? mockBacktestingReport;
+}
 export async function getPerformance(): Promise<PerformanceMetrics> {
   const data = await safeFetchJson<PerformanceMetrics>('/performance');
 
@@ -150,3 +157,5 @@ export async function refreshData(): Promise<RefreshResponse | null> {
     };
   }
 }
+
+

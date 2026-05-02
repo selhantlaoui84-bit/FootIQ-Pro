@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { getBackendHealth, getRefreshStatus, refreshData } from '~/lib/api';
@@ -75,6 +75,9 @@ export default function AdminPage() {
             <Link className="button secondary" href="/predictions">
               Predictions
             </Link>
+            <Link className="button secondary" href="/performance">
+              Backtesting
+            </Link>
           </div>
         </section>
 
@@ -137,8 +140,16 @@ export default function AdminPage() {
               Last refresh <strong>{refreshInfo?.last_refresh_at ?? 'N/A'}</strong>
             </span>
           </div>
+          <div className="banner info">
+            Backtesting updates automatically from finished matches with available scores. See the model report on{' '}
+            <Link className="textLink" href="/performance">
+              Performance
+            </Link>
+            .
+          </div>
         </section>
       </Layout>
     </ProtectedRoute>
   );
 }
+

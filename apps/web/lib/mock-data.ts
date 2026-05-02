@@ -87,6 +87,34 @@ export type RefreshResponse = {
   detail?: string;
 };
 
+export type ConfidenceBucket = {
+  bucket: string;
+  count: number;
+  accuracy: number;
+  average_brier_score: number;
+};
+
+export type CompetitionBacktest = {
+  count: number;
+  accuracy: number;
+  average_brier_score: number;
+};
+
+export type BacktestingReport = {
+  model_version: string;
+  evaluated_matches: number;
+  result_accuracy: number;
+  over_2_5_accuracy: number;
+  btts_accuracy: number;
+  average_brier_score: number;
+  average_confidence: number;
+  calibration_score: number;
+  confidence_buckets: ConfidenceBucket[];
+  competition_breakdown: Record<string, CompetitionBacktest>;
+  last_backtest_at?: string;
+  note: string;
+};
+
 export type PerformanceMetrics = {
   tracked: number;
   highConfidenceHitRate: string;
@@ -96,6 +124,14 @@ export type PerformanceMetrics = {
   modelVersion: string;
   model_version?: string;
   predictions_tracked?: number;
+  evaluated_matches?: number;
+  result_accuracy?: number;
+  over_2_5_accuracy?: number;
+  btts_accuracy?: number;
+  average_brier_score?: number;
+  calibration_score?: number;
+  confidence_buckets?: ConfidenceBucket[];
+  competition_breakdown?: Record<string, CompetitionBacktest>;
   average_confidence?: number;
   average_risk_score?: number;
   reliable_count?: number;
@@ -121,6 +157,10 @@ export type DashboardSummary = {
   average_confidence: number;
   average_risk_score?: number;
   model_version?: string;
+  evaluated_matches?: number;
+  result_accuracy?: number;
+  average_brier_score?: number;
+  calibration_score?: number;
   competitions_breakdown: Record<string, number>;
   top_reliable_matches: Prediction[];
   top_risky_matches: Prediction[];
@@ -377,6 +417,28 @@ export const teams: Team[] = [
   },
 ];
 
+export const mockBacktestingReport: BacktestingReport = {
+  model_version: 'elo-poisson-v1',
+  evaluated_matches: 0,
+  result_accuracy: 0,
+  over_2_5_accuracy: 0,
+  btts_accuracy: 0,
+  average_brier_score: 0,
+  average_confidence: 0,
+  calibration_score: 0,
+  confidence_buckets: [
+    { bucket: '0-49', count: 0, accuracy: 0, average_brier_score: 0 },
+    { bucket: '50-59', count: 0, accuracy: 0, average_brier_score: 0 },
+    { bucket: '60-69', count: 0, accuracy: 0, average_brier_score: 0 },
+    { bucket: '70-79', count: 0, accuracy: 0, average_brier_score: 0 },
+    { bucket: '80-89', count: 0, accuracy: 0, average_brier_score: 0 },
+    { bucket: '90-100', count: 0, accuracy: 0, average_brier_score: 0 },
+  ],
+  competition_breakdown: {},
+  last_backtest_at: '2026-05-02T08:00:00Z',
+  note: 'Backtesting is computed on finished matches with available scores.',
+};
+
 export const performanceMetrics: PerformanceMetrics = {
   tracked: 1248,
   highConfidenceHitRate: '64%',
@@ -384,6 +446,17 @@ export const performanceMetrics: PerformanceMetrics = {
   calibration: 'Stable',
   brierScore: '0.184',
   modelVersion: 'FootIQ-Pro v0.5',
+  model_version: mockBacktestingReport.model_version,
+  predictions_tracked: predictions.length,
+  evaluated_matches: mockBacktestingReport.evaluated_matches,
+  result_accuracy: mockBacktestingReport.result_accuracy,
+  over_2_5_accuracy: mockBacktestingReport.over_2_5_accuracy,
+  btts_accuracy: mockBacktestingReport.btts_accuracy,
+  average_brier_score: mockBacktestingReport.average_brier_score,
+  calibration_score: mockBacktestingReport.calibration_score,
+  confidence_buckets: mockBacktestingReport.confidence_buckets,
+  competition_breakdown: mockBacktestingReport.competition_breakdown,
+  note: mockBacktestingReport.note,
   lastUpdated: '2026-05-02T08:00:00Z',
   latest_refresh: null,
 };
@@ -414,6 +487,10 @@ export function buildDashboardSummary(source = 'mock'): DashboardSummary {
       predictions.reduce((sum, prediction) => sum + (prediction.risk_score ?? 50), 0) / predictions.length,
     ),
     model_version: 'elo-poisson-v1',
+    evaluated_matches: mockBacktestingReport.evaluated_matches,
+    result_accuracy: mockBacktestingReport.result_accuracy,
+    average_brier_score: mockBacktestingReport.average_brier_score,
+    calibration_score: mockBacktestingReport.calibration_score,
     competitions_breakdown: competitionsBreakdown,
     top_reliable_matches: [...predictions].sort((a, b) => b.confidence.score - a.confidence.score).slice(0, 5),
     top_risky_matches: predictions
@@ -474,5 +551,8 @@ export function statusClass(status: string) {
 
   return status.toLowerCase();
 }
+
+
+
 
 

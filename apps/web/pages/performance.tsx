@@ -1,76 +1,138 @@
 ﻿import type { GetStaticProps } from 'next';
 import Link from 'next/link';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
-import { getPerformance, getPredictions } from '~/lib/api';
-import type { PerformanceMetrics, Prediction } from '~/lib/mock-data';
+import { getBacktesting, getPerformance } from '~/lib/api';
+import type { BacktestingReport, PerformanceMetrics } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
 
 type PerformanceProps = {
   performance: PerformanceMetrics;
-  predictions: Prediction[];
+  backtesting: BacktestingReport;
 };
 
 export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
-  const [performance, predictions] = await Promise.all([getPerformance(), getPredictions()]);
+  const [performance, backtesting] = await Promise.all([getPerformance(), getBacktesting()]);
 
-  return { props: { performance, predictions }, revalidate: 120 };
+  return { props: { performance, backtesting }, revalidate: 120 };
 };
 
-export default function PerformancePage({ performance, predictions }: PerformanceProps) {
-  const reliable = predictions.filter((prediction) => prediction.confidence.status === 'FIABLE').length;
-  const averageConfidence = predictions.length
-    ? Math.round(predictions.reduce((sum, prediction) => sum + prediction.confidence.score, 0) / predictions.length)
-    : performance.averageConfidence ?? 0;
+export default function PerformancePage({ performance, backtesting }: PerformanceProps) {
+  const report = {
+    ...backtesting,
+    model_version: performance.model_version ?? backtesting.model_version,
+    evaluated_matches: performance.evaluated_matches ?? backtesting.evaluated_matches,
+    result_accuracy: performance.result_accuracy ?? backtesting.result_accuracy,
+    over_2_5_accuracy: performance.over_2_5_accuracy ?? backtesting.over_2_5_accuracy,
+    btts_accuracy: performance.btts_accuracy ?? backtesting.btts_accuracy,
+    average_brier_score: performance.average_brier_score ?? backtesting.average_brier_score,
+    calibration_score: performance.calibration_score ?? backtesting.calibration_score,
+    confidence_buckets: performance.confidence_buckets ?? backtesting.confidence_buckets,
+    competition_breakdown: performance.competition_breakdown ?? backtesting.competition_breakdown,
+    note: performance.note ?? backtesting.note,
+  };
+
   const items = [
-    ['Predictions tracked', performance.predictions_tracked ?? predictions.length ?? performance.tracked],
-    ['Reliable predictions', performance.reliable_count ?? reliable],
-    ['Average confidence', performance.average_confidence ?? averageConfidence],
-    ['Average risk', performance.average_risk_score ?? 'N/A'],
-    ['Trap matches', performance.trap_match_count ?? 0],
-    ['Model version', performance.model_version ?? performance.modelVersion],
+    ['Model version', report.model_version],
+    ['Predictions tracked', performance.predictions_tracked ?? performance.tracked],
+    ['Evaluated matches', report.evaluated_matches],
+    ['Result accuracy', `${report.result_accuracy}%`],
+    ['Over 2.5 accuracy', `${report.over_2_5_accuracy}%`],
+    ['BTTS accuracy', `${report.btts_accuracy}%`],
+    ['Average Brier', report.average_brier_score],
+    ['Calibration score', `${report.calibration_score}/100`],
   ];
+  const competitions = Object.entries(report.competition_breakdown ?? {});
 
   return (
     <ProtectedRoute>
       <Layout>
-      <section className="pageHeader">
-        <p className="eyebrow">Calibration modÃ¨le</p>
-        <h1>Performance</h1>
-        <p>Un bon modÃ¨le probabiliste n'a pas toujours raison. Il doit surtout Ãªtre bien calibrÃ©.</p>
-      </section>
+        <section className="pageHeader">
+          <p className="eyebrow">Model evaluation</p>
+          <h1>Performance</h1>
+          <p>A good probabilistic model is not always right; it must be well calibrated.</p>
+        </section>
 
-      <section className="metrics">
-        {items.map(([label, value]) => (
-          <Link className="metric clickable-card" href="/predictions" key={label}>
-            <span>{label}</span>
-            <strong>{value}</strong>
-          </Link>
-        ))}
-      </section>
+        <section className="metrics">
+          {items.map(([label, value]) => (
+            <Link className="metric clickable-card" href={label === 'Predictions tracked' ? '/predictions' : '/performance'} key={label}>
+              <span>{label}</span>
+              <strong>{value}</strong>
+            </Link>
+          ))}
+        </section>
 
-      <section className="sectionSplit">
-        <Link className="card clickable-card" href="/about">
-          <h2>Lecture responsable</h2>
-          <p>
-            Les taux de rÃ©ussite sont suivis par niveau de confiance. L'objectif est une calibration honnÃªte: lorsqu'un
-            Ã©vÃ©nement est annoncÃ© Ã  60%, il doit se produire environ 60% du temps sur un grand volume.
-          </p>
-          <p>{performance.note ?? 'Backtesting will be added in the next phase.'}</p>
-        </Link>
-        <Link className="card clickable-card" href="/admin">
-          <h2>Dernier refresh</h2>
-          <div className="dataList">
-            <span>
-              Source <strong>{performance.latest_refresh?.source ?? 'mock'}</strong>
-            </span>
-            <span>
-              Last refresh <strong>{performance.latest_refresh?.last_refresh_at ?? 'N/A'}</strong>
-            </span>
+        <section className="sectionSplit">
+          <article className="card accent">
+            <h2>Calibration reading</h2>
+            <p>{report.note}</p>
+            <div className="dataList">
+              <span>
+                Lower Brier score <strong>is better</strong>
+              </span>
+              <span>
+                Calibration <strong>closer to expected reliability is better</strong>
+              </span>
+              <span>
+                Sample size <strong>{report.evaluated_matches || 'No finished scored matches yet'}</strong>
+              </span>
+            </div>
+          </article>
+
+          <article className="card">
+            <h2>Interpretation</h2>
+            <p>
+              Small samples should be interpreted carefully. This report only evaluates finished matches with available
+              final scores, then compares the 1X2 probabilities, over 2.5 signal and BTTS signal against reality.
+            </p>
+          </article>
+        </section>
+
+        <section className="card">
+          <h2>Confidence buckets</h2>
+          <div className="metricTable">
+            <div className="metricTableRow header">
+              <span>Bucket</span>
+              <span>Count</span>
+              <span>Accuracy</span>
+              <span>Brier</span>
+            </div>
+            {report.confidence_buckets.map((bucket) => (
+              <div className="metricTableRow bucketRow" key={bucket.bucket}>
+                <span>{bucket.bucket}</span>
+                <strong>{bucket.count}</strong>
+                <strong>{bucket.accuracy}%</strong>
+                <strong>{bucket.average_brier_score}</strong>
+              </div>
+            ))}
           </div>
-        </Link>
-      </section>
+        </section>
+
+        <section className="card">
+          <h2>Competition breakdown</h2>
+          {competitions.length === 0 ? (
+            <div className="emptyState">No finished scored matches available for competition analysis yet.</div>
+          ) : (
+            <div className="compactDataGrid">
+              {competitions.map(([competition, row]) => (
+                <Link className="card clickable-card" href={`/matches?competition=${encodeURIComponent(competition)}`} key={competition}>
+                  <h3>{competition}</h3>
+                  <div className="dataList">
+                    <span>
+                      Evaluated <strong>{row.count}</strong>
+                    </span>
+                    <span>
+                      Accuracy <strong>{row.accuracy}%</strong>
+                    </span>
+                    <span>
+                      Brier <strong>{row.average_brier_score}</strong>
+                    </span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </section>
       </Layout>
     </ProtectedRoute>
   );
 }
-

@@ -872,3 +872,72 @@ input::placeholder {
     flex-direction: column;
   }
 }
+
+.banner.info {
+  color: #cdefff;
+  background: rgba(98, 216, 255, 0.1);
+  border-color: rgba(98, 216, 255, 0.28);
+}
+
+.modelReliabilityBlock {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) 2fr;
+  gap: 18px;
+  align-items: center;
+}
+
+.metricTable {
+  display: grid;
+  gap: 8px;
+}
+
+.metricTableRow {
+  display: grid;
+  grid-template-columns: 1.1fr 0.7fr 0.8fr 0.8fr;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 14px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+.metricTableRow.header {
+  color: var(--text);
+  background: rgba(98, 216, 255, 0.08);
+  border-color: rgba(98, 216, 255, 0.22);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.metricTableRow strong {
+  color: var(--text);
+}
+
+.bucketRow:hover {
+  border-color: rgba(98, 216, 255, 0.28);
+  box-shadow: 0 12px 32px rgba(98, 216, 255, 0.08);
+}
+
+.compactDataGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 14px;
+}
+
+.compactDataGrid.four {
+  grid-template-columns: repeat(4, minmax(130px, 1fr));
+}
+
+@media (max-width: 940px) {
+  .modelReliabilityBlock,
+  .compactDataGrid.four {
+    grid-template-columns: 1fr;
+  }
+
+  .metricTableRow {
+    grid-template-columns: 1fr 0.7fr;
+  }
+}
