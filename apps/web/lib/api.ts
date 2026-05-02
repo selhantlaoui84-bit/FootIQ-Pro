@@ -16,6 +16,7 @@
   mockModelsMetadata,
   mockPredictionSnapshots,
   mockTrainingReport,
+  mockMlShadowBacktesting,
   buildDashboardSummary,
   matches,
   performanceMetrics,
@@ -331,4 +332,12 @@ export async function buildFeatureStore(options?: { limit?: number; force?: bool
       detail: error instanceof Error ? error.message : 'Feature Store request failed',
     };
   }
+}
+
+export async function getMlShadowBacktesting(limit = 500) {
+  const data = await safeFetchJson<typeof mockMlShadowBacktesting>(
+    `/ml/shadow-backtesting?limit=${encodeURIComponent(String(limit))}`
+  );
+
+  return data ?? mockMlShadowBacktesting;
 }

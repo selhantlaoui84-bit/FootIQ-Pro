@@ -8,6 +8,7 @@ import {
   getMlFeatureImportance,
   getMlComparison,
   getMlStatus,
+  getMlShadowBacktesting,
   getMlShadowSummary,
   getModelComparison,
   getModels,
@@ -20,6 +21,7 @@ import type {
   MlComparison,
   MlStatus,
   MlShadowSummary,
+  MlShadowBacktesting,
   ModelComparison,
   ModelsMetadata,
   PerformanceMetrics,
@@ -35,11 +37,23 @@ type PerformanceProps = {
   mlStatus: MlStatus;
   mlComparison: MlComparison;
   shadowSummary: MlShadowSummary;
+  shadowBacktesting: MlShadowBacktesting;
   featureImportance: FeatureImportanceRow[];
 };
 
 export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
-  const [performance, backtesting, models, comparison, featureSummary, mlStatus, mlComparison, shadowSummary, featureImportance] = await Promise.all([
+  const [
+    performance,
+    backtesting,
+    models,
+    comparison,
+    featureSummary,
+    mlStatus,
+    mlComparison,
+    shadowSummary,
+    shadowBacktesting,
+    featureImportance,
+  ] = await Promise.all([
     getPerformance(),
     getBacktesting(),
     getModels(),
@@ -48,13 +62,39 @@ export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
     getMlStatus(),
     getMlComparison(),
     getMlShadowSummary(),
+    getMlShadowBacktesting(1000),
     getMlFeatureImportance(),
   ]);
 
-  return { props: { performance, backtesting, models, comparison, featureSummary, mlStatus, mlComparison, shadowSummary, featureImportance }, revalidate: 120 };
+  return {
+    props: {
+      performance,
+      backtesting,
+      models,
+      comparison,
+      featureSummary,
+      mlStatus,
+      mlComparison,
+      shadowSummary,
+      shadowBacktesting,
+      featureImportance,
+    },
+    revalidate: 120,
+  };
 };
 
-export default function PerformancePage({ performance, backtesting, models, comparison, featureSummary, mlStatus, mlComparison, shadowSummary, featureImportance }: PerformanceProps) {
+export default function PerformancePage({
+  performance,
+  backtesting,
+  models,
+  comparison,
+  featureSummary,
+  mlStatus,
+  mlComparison,
+  shadowSummary,
+  shadowBacktesting,
+  featureImportance,
+}: PerformanceProps) {
   const report = {
     ...backtesting,
     model_version: performance.current_model_version ?? performance.model_version ?? models.current_model_version ?? backtesting.model_version,
@@ -294,18 +334,119 @@ export default function PerformancePage({ performance, backtesting, models, comp
 
         <section className="card shadowCard sectionAnchor" id="shadow-ml">
           <p className="eyebrow">Mode shadow</p>
-          <h2>Pr?dictions shadow ML</h2>
-          <p>Le mode shadow permet de comparer le ML au mod?le officiel sans influencer les pr?dictions affich?es.</p>
+          <h2>Prédictions shadow ML</h2>
+<p>Le mode shadow permet de comparer le ML au modèle officiel sans influencer les prédictions affichées.</p>
           <div className="compactDataGrid four">
-            <div className="metric"><span>G?n?r?es</span><strong>{(performance.ml_shadow_summary ?? shadowSummary).shadow_predictions_count}</strong></div>
+            <div className="metric"><span>Générées</span><strong>{(performance.ml_shadow_summary ?? shadowSummary).shadow_predictions_count}</strong></div>
             <div className="metric"><span>Disponibles</span><strong>{(performance.ml_shadow_summary ?? shadowSummary).available_count}</strong></div>
-            <div className="metric"><span>M?me choix</span><strong>{(performance.ml_shadow_summary ?? shadowSummary).same_pick_count}</strong></div>
-            <div className="metric"><span>D?saccords</span><strong>{(performance.ml_shadow_summary ?? shadowSummary).disagreement_count}</strong></div>
-            <div className="metric"><span>D?saccords ?lev?s</span><strong>{(performance.ml_shadow_summary ?? shadowSummary).high_disagreement_count}</strong></div>
+            <div className="metric"><span>Même choix</span><strong>{(performance.ml_shadow_summary ?? shadowSummary).same_pick_count}</strong></div>
+            <div className="metric"><span>Désaccords</span><strong>{(performance.ml_shadow_summary ?? shadowSummary).disagreement_count}</strong></div>
+            <div className="metric"><span>Désaccords élevés</span><strong>{(performance.ml_shadow_summary ?? shadowSummary).high_disagreement_count}</strong></div>
             <div className="metric"><span>Candidat production</span><strong>{(performance.ml_shadow_summary ?? shadowSummary).candidate_is_production ? 'oui' : 'non'}</strong></div>
           </div>
-          <div className="banner info">Le mod?le de production reste {models.current_model_version}. Le candidat ML reste en observation.</div>
+          <div className="banner info">Le modèle de production reste {models.current_model_version}. Le candidat ML reste en observation.</div>
         </section>
+
+        <section className="card sectionAnchor" id="shadow-backtesting">
+  <div className="cardTop">
+    <div>
+      <p className="eyebrow">Backtesting shadow ML</p>
+      <h2>Évaluation du modèle ML candidat</h2>
+    </div>
+    <span className="badge">
+      {shadowBacktesting.candidate_is_production ? 'Production' : 'Shadow'}
+    </span>
+  </div>
+
+  <p>
+    Le backtesting shadow compare le modèle ML candidat au modèle officiel sur des matchs terminés.
+    Il sert à décider si le ML doit rester en observation, être utilisé en hybride, ou être testé sur un périmètre limité.
+  </p>
+
+  <div className="compactDataGrid four">
+    <div className="metric">
+      <span>Matchs évalués</span>
+      <strong>{shadowBacktesting.evaluated_matches}</strong>
+    </div>
+
+    <div className="metric">
+      <span>Accuracy officielle</span>
+      <strong>{shadowBacktesting.production_accuracy}%</strong>
+    </div>
+
+    <div className="metric">
+      <span>Accuracy shadow</span>
+      <strong>{shadowBacktesting.shadow_accuracy}%</strong>
+    </div>
+
+    <div className="metric">
+      <span>Score d’activation</span>
+      <strong>{shadowBacktesting.activation_score}/100</strong>
+    </div>
+
+    <div className="metric">
+      <span>Désaccords</span>
+      <strong>{shadowBacktesting.disagreement_count}</strong>
+    </div>
+
+    <div className="metric">
+      <span>Désaccords forts</span>
+      <strong>{shadowBacktesting.high_disagreement_count}</strong>
+    </div>
+
+    <div className="metric">
+      <span>Shadow gagnant</span>
+      <strong>{shadowBacktesting.shadow_wins_on_disagreement}</strong>
+    </div>
+
+    <div className="metric">
+      <span>Officiel gagnant</span>
+      <strong>{shadowBacktesting.production_wins_on_disagreement}</strong>
+    </div>
+  </div>
+
+  <div className="dataList">
+    <span>
+      Brier officiel <strong>{shadowBacktesting.production_average_brier ?? 'N/A'}</strong>
+    </span>
+    <span>
+      Brier shadow <strong>{shadowBacktesting.shadow_average_brier ?? 'N/A'}</strong>
+    </span>
+    <span>
+      Même choix <strong>{shadowBacktesting.same_pick_count}</strong>
+    </span>
+    <span>
+      Deux modèles faux sur désaccord <strong>{shadowBacktesting.both_wrong_on_disagreement}</strong>
+    </span>
+  </div>
+
+  <div className="banner info">
+    <strong>Recommandation : </strong>
+    {shadowBacktesting.activation_recommendation} — {shadowBacktesting.recommendation_reason}
+  </div>
+
+  {shadowBacktesting.recent_evaluations?.length > 0 && (
+    <div className="metricTable">
+      <div className="metricTableRow header">
+        <span>Match</span>
+        <span>Réel</span>
+        <span>Officiel</span>
+        <span>Shadow</span>
+      </div>
+
+      {shadowBacktesting.recent_evaluations.slice(0, 8).map((item) => (
+        <div className="metricTableRow bucketRow" key={item.match_id}>
+          <span>
+            {item.home_team} - {item.away_team}
+          </span>
+          <strong>{item.actual_result}</strong>
+          <strong>{item.production_pick}</strong>
+          <strong>{item.shadow_pick}</strong>
+        </div>
+      ))}
+    </div>
+  )}
+</section>
 
         <section className="sectionSplit sectionAnchor" id="backtesting">
           <article className="card accent">

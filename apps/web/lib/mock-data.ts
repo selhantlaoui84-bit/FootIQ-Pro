@@ -351,6 +351,7 @@ export type PerformanceMetrics = {
   ml_candidate?: TrainingReport;
   ml_comparison?: MlComparison;
   ml_shadow_summary?: MlShadowSummary;
+  ml_shadow_backtesting?: MlShadowBacktesting;
   candidate_is_production?: boolean;
   model_versions?: Record<string, ModelComparisonRow>;
   best_model_by_brier?: string | null;
@@ -1008,6 +1009,76 @@ export function statusClass(status: string) {
 
   return status.toLowerCase();
 }
+
+export type MlShadowBacktestingEvaluation = {
+  match_id: string;
+  actual_result: 'home' | 'draw' | 'away' | string;
+  production_pick: 'home' | 'draw' | 'away' | null;
+  shadow_pick: 'home' | 'draw' | 'away' | null;
+  production_correct: boolean | null;
+  shadow_correct: boolean | null;
+  same_pick: boolean | null;
+  winner: 'production' | 'shadow' | 'both' | 'none' | 'unknown' | string;
+  disagreement_level: 'none' | 'low' | 'medium' | 'high' | 'unknown' | string;
+  production_brier_score: number | null;
+  shadow_brier_score: number | null;
+  competition?: string;
+  home_team?: string;
+  away_team?: string;
+  kickoff?: string;
+};
+
+export type MlShadowBacktesting = {
+  status: 'ok' | 'empty' | string;
+  evaluated_matches: number;
+  production_accuracy: number;
+  shadow_accuracy: number;
+  production_average_brier: number | null;
+  shadow_average_brier: number | null;
+  same_pick_count: number;
+  disagreement_count: number;
+  high_disagreement_count: number;
+  shadow_wins_on_disagreement: number;
+  production_wins_on_disagreement: number;
+  both_wrong_on_disagreement: number;
+  activation_score: number;
+  activation_recommendation:
+    | 'do_not_activate'
+    | 'keep_shadow'
+    | 'consider_hybrid'
+    | 'candidate_ready_for_limited_rollout'
+    | string;
+  recommendation_reason: string;
+  competition_breakdown: Record<string, unknown>;
+  recent_evaluations: MlShadowBacktestingEvaluation[];
+  candidate_is_production: boolean;
+  note: string;
+};
+
+export const mockMlShadowBacktesting = {
+  status: 'empty',
+  evaluated_matches: 0,
+  production_accuracy: 0,
+  shadow_accuracy: 0,
+  production_average_brier: null,
+  shadow_average_brier: null,
+  same_pick_count: 0,
+  disagreement_count: 0,
+  high_disagreement_count: 0,
+  shadow_wins_on_disagreement: 0,
+  production_wins_on_disagreement: 0,
+  both_wrong_on_disagreement: 0,
+  activation_score: 0,
+  activation_recommendation: 'do_not_activate',
+  recommendation_reason: "Aucune prédiction shadow évaluable pour le moment.",
+  competition_breakdown: {},
+  recent_evaluations: [],
+  candidate_is_production: false,
+  note: "Le backtesting shadow mesure le modèle ML candidat sans l'activer en production.",
+};
+
+
+
 
 
 
