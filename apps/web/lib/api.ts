@@ -152,16 +152,13 @@ export async function refreshData(): Promise<RefreshResponse | null> {
   }
 
   try {
-    const url = `${API_URL}/admin/refresh-data`;
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'X-Admin-Key': adminKey,
-      },
-    });
-
+    const response = await fetch(`${API_URL}/admin/refresh-data`, {
+  method: 'POST',
+  headers: {
+    Accept: 'application/json',
+    'X-Admin-Key': adminKey,
+  },
+});
     const text = await response.text();
 
     let body: any = null;
