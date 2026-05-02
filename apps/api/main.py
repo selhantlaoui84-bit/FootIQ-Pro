@@ -1,9 +1,12 @@
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+from data import repository
 from data import runtime_store
+from data.database import init_db
 from data.mock_data import MATCHES, PERFORMANCE, TEAMS, get_match as get_mock_match
 from data.mock_data import get_prediction as get_mock_prediction
 from data.mock_data import get_team as get_mock_team
@@ -15,7 +18,14 @@ from services.football_data_client import (
 )
 from services.prediction_engine import generate_prediction_from_match
 
-app = FastAPI(title="FootIQ Pro API", version="0.4.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="FootIQ Pro API", version="0.5.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -27,15 +37,23 @@ app.add_middleware(
 
 
 def _available_matches():
-    return runtime_store.get_matches() or MATCHES
+    return repository.get_matches() or runtime_store.get_matches() or MATCHES
 
 
 def _available_teams():
-    return runtime_store.get_teams() or TEAMS
+    return repository.get_teams() or runtime_store.get_teams() or TEAMS
+
+
+def _available_predictions():
+    return (
+        repository.get_predictions()
+        or runtime_store.get_predictions()
+        or [_prediction_for_match(match) for match in _available_matches()]
+    )
 
 
 def _find_match(match_id: str):
-    return next(
+    return repository.get_match(match_id) or next(
         (
             item
             for item in runtime_store.get_matches()
@@ -46,10 +64,33 @@ def _find_match(match_id: str):
 
 
 def _find_team(team_id: str):
-    return next(
+    return repository.get_team(team_id) or next(
         (item for item in runtime_store.get_teams() if item.get("id") == team_id or item.get("slug") == team_id),
         None,
     ) or get_mock_team(team_id)
+
+
+def _find_prediction(match_id: str):
+    prediction = repository.get_prediction(match_id)
+    if prediction:
+        return prediction
+
+    prediction = next(
+        (
+            item
+            for item in runtime_store.get_predictions()
+            if item.get("id") == match_id or item.get("match_id") == match_id or item.get("slug") == match_id
+        ),
+        None,
+    )
+    if prediction:
+        return prediction
+
+    match = _find_match(match_id)
+    if match is not None:
+        return _prediction_for_match(match)
+
+    return get_mock_prediction(match_id)
 
 
 def _prediction_for_match(match: dict):
@@ -59,15 +100,31 @@ def _prediction_for_match(match: dict):
     return generate_prediction_from_match(match)
 
 
+def _refresh_status():
+    latest_log = repository.get_latest_refresh_log()
+    if latest_log:
+        return {
+            "source": latest_log.get("source", "mock"),
+            "storage": latest_log.get("storage", "postgresql"),
+            "matches_imported": len(repository.get_matches()),
+            "teams_imported": len(repository.get_teams()),
+            "predictions_imported": len(repository.get_predictions()),
+            "last_refresh_at": latest_log.get("last_refresh_at"),
+        }
+
+    return runtime_store.get_refresh_status()
+
+
 def _dashboard_summary():
     matches = _available_matches()
-    predictions = [_prediction_for_match(match) for match in matches]
+    teams = _available_teams()
+    predictions = _available_predictions()
     total_matches = len(matches)
     reliable = [item for item in predictions if item["confidence"]["status"] == "FIABLE"]
     medium = [item for item in predictions if item["confidence"]["status"] == "MOYEN"]
     avoid = [item for item in predictions if item["confidence"]["status"] in {"À ÉVITER", "A EVITER"}]
     traps = [item for item in predictions if item["flags"]["trap_match"]]
-    status = runtime_store.get_refresh_status()
+    status = _refresh_status()
     competitions = {}
 
     for match in matches:
@@ -80,6 +137,8 @@ def _dashboard_summary():
 
     return {
         "total_matches": total_matches,
+        "teams_count": len(teams),
+        "predictions_count": len(predictions),
         "upcoming_matches_count": total_matches,
         "reliable_matches_count": len(reliable),
         "medium_matches_count": len(medium),
@@ -96,8 +155,9 @@ def _dashboard_summary():
             [item for item in predictions if item["flags"]["risk"] or item["flags"]["trap_match"]],
             key=lambda item: item["confidence"]["score"],
         )[:5],
-        "last_refresh_at": status["last_refresh_at"],
-        "source": status["source"],
+        "last_refresh_at": status.get("last_refresh_at"),
+        "source": status.get("source", "mock"),
+        "storage": status.get("storage", "memory"),
     }
 
 
@@ -136,16 +196,12 @@ def match_detail(match_id: str):
 
 @app.get("/predictions")
 def list_predictions():
-    return [_prediction_for_match(match) for match in _available_matches()]
+    return _available_predictions()
 
 
 @app.get("/predictions/{match_id}")
 def prediction_detail(match_id: str):
-    match = _find_match(match_id)
-    if match is not None:
-        return _prediction_for_match(match)
-
-    prediction = get_mock_prediction(match_id)
+    prediction = _find_prediction(match_id)
     if prediction is None:
         raise HTTPException(status_code=404, detail="Prediction not found")
 
@@ -168,7 +224,17 @@ def team_detail(team_id: str):
 
 @app.get("/performance")
 def model_performance():
-    return {**PERFORMANCE, "latest_refresh": runtime_store.get_refresh_status()}
+    predictions = _available_predictions()
+    average_confidence = 0
+    if predictions:
+        average_confidence = round(sum(item["confidence"]["score"] for item in predictions) / len(predictions))
+
+    return {
+        **PERFORMANCE,
+        "tracked": len(predictions) or PERFORMANCE["tracked"],
+        "averageConfidence": str(average_confidence or PERFORMANCE["averageConfidence"]),
+        "latest_refresh": _refresh_status(),
+    }
 
 
 @app.get("/dashboard/summary")
@@ -178,7 +244,7 @@ def dashboard_summary():
 
 @app.get("/admin/refresh-status")
 def refresh_status():
-    return {"status": "ok", **runtime_store.get_refresh_status()}
+    return {"status": "ok", **_refresh_status()}
 
 
 @app.post("/admin/refresh-data")
@@ -198,16 +264,26 @@ def refresh_data(x_admin_key: str | None = Header(default=None, alias="X-Admin-K
             matches = external_matches or MATCHES
             teams = external_teams or TEAMS
 
+    predictions = [_prediction_for_match(match) for match in matches]
+    storage = "memory"
+
+    if repository.save_matches(matches) and repository.save_teams(teams) and repository.save_predictions(predictions):
+        storage = "postgresql"
+        repository.save_refresh_log(source, storage, len(matches), len(teams))
+
     runtime_store.set_matches(matches)
     runtime_store.set_teams(teams)
+    runtime_store.set_predictions(predictions)
     runtime_store.set_source(source)
+    runtime_store.set_storage(storage)
     status = runtime_store.get_refresh_status()
 
     return {
         "status": "ok",
         "source": source,
-        "storage": status.get("storage", "memory"),
+        "storage": storage,
         "matches_imported": status["matches_imported"],
         "teams_imported": status["teams_imported"],
+        "predictions_imported": status["predictions_imported"],
         "last_refresh_at": status["last_refresh_at"],
     }

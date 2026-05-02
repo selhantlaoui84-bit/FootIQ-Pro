@@ -46,6 +46,7 @@ export default function DashboardPage({ matches, predictions, summary }: Dashboa
         </div>
         <div className="sourceStrip">
           <span>Source: {summary.source}</span>
+          <span>Storage: {summary.storage}</span>
           <span>
             Refresh: {summary.last_refresh_at ? new Date(summary.last_refresh_at).toLocaleString('fr-FR') : 'Non lancé'}
           </span>
@@ -61,6 +62,8 @@ export default function DashboardPage({ matches, predictions, summary }: Dashboa
           href="/predictions?trap=true"
         />
         <Stat label="Average confidence" value={summary.average_confidence} href="/performance" />
+        <Stat label="Teams" value={summary.teams_count} href="/teams" />
+        <Stat label="Predictions" value={summary.predictions_count} href="/predictions" />
         <Stat label="Competitions" value={competitions.length} href="/matches" />
       </section>
 

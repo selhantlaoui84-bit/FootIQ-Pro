@@ -62,6 +62,7 @@ export type RefreshResponse = {
   storage?: string;
   matches_imported?: number;
   teams_imported?: number;
+  predictions_imported?: number;
   last_refresh_at?: string | null;
   error?: string;
   detail?: string;
@@ -82,6 +83,8 @@ export type HealthResponse = { status?: string; ok?: boolean };
 
 export type DashboardSummary = {
   total_matches: number;
+  teams_count: number;
+  predictions_count: number;
   upcoming_matches_count: number;
   reliable_matches_count: number;
   medium_matches_count: number;
@@ -93,6 +96,7 @@ export type DashboardSummary = {
   top_risky_matches: Prediction[];
   last_refresh_at: string | null;
   source: string;
+  storage: string;
 };
 
 export const predictions: Prediction[] = [
@@ -366,6 +370,8 @@ export function buildDashboardSummary(source = 'mock'): DashboardSummary {
 
   return {
     total_matches: predictions.length,
+    teams_count: teams.length,
+    predictions_count: predictions.length,
     upcoming_matches_count: predictions.length,
     reliable_matches_count: reliable.length,
     medium_matches_count: medium.length,
@@ -381,11 +387,12 @@ export function buildDashboardSummary(source = 'mock'): DashboardSummary {
       .slice(0, 5),
     last_refresh_at: performanceMetrics.lastUpdated,
     source,
+    storage: 'memory',
   };
 }
 
 export function isAvoidStatus(status: string) {
-  return status === 'A EVITER' || status === '? ?VITER';
+  return status === 'A EVITER' || status === 'À ÉVITER';
 }
 
 export function getMockPrediction(id: string) {

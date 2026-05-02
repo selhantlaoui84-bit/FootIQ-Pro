@@ -28,6 +28,7 @@ Environment:
 ENV=production
 FOOTBALL_DATA_API_KEY=<football_data_org_key_optional>
 ADMIN_API_KEY=<admin_refresh_key>
+DATABASE_URL=postgresql://<user>:<password>@<host>:<port>/<database>
 ```
 
 Health:
@@ -97,6 +98,23 @@ Admin access is limited in the frontend to `NEXT_PUBLIC_ADMIN_EMAIL`, defaulting
 Admin refresh is protected by `ADMIN_API_KEY` on Railway and sent from the MVP admin UI through `NEXT_PUBLIC_ADMIN_API_KEY`. If `ENV=production` and `ADMIN_API_KEY` is missing or incorrect, `POST /admin/refresh-data` returns `401`.
 
 `NEXT_PUBLIC_ADMIN_API_KEY` is acceptable only for this MVP. Later, replace it with backend JWT role verification.
+
+## Railway PostgreSQL
+
+1. Add a PostgreSQL service to the Railway project.
+2. Link the generated `DATABASE_URL` to the backend service.
+3. Keep `ENV=production`, `FOOTBALL_DATA_API_KEY`, and `ADMIN_API_KEY` on the backend service.
+4. Redeploy the backend.
+5. Open `/admin` as the admin user and run refresh data.
+6. Confirm the refresh response shows:
+
+```json
+{
+  "storage": "postgresql"
+}
+```
+
+If `DATABASE_URL` is missing or PostgreSQL is unavailable, the backend continues with memory fallback and returns `"storage": "memory"`.
 
 ## Test Endpoints
 

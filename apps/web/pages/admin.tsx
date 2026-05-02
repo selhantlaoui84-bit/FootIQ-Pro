@@ -131,6 +131,9 @@ export default function AdminPage() {
               Teams imported <strong>{refreshInfo?.teams_imported ?? 0}</strong>
             </span>
             <span>
+              Predictions imported <strong>{refreshInfo?.predictions_imported ?? 0}</strong>
+            </span>
+            <span>
               Last refresh <strong>{refreshInfo?.last_refresh_at ?? 'N/A'}</strong>
             </span>
           </div>
