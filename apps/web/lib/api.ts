@@ -19,6 +19,7 @@
   mockMlShadowBacktesting,
   mockHybridSummary,
   mockAdminWorkflowStatus,
+  mockRefreshJobStatus,
   buildDashboardSummary,
   matches,
   performanceMetrics,
@@ -45,6 +46,7 @@
   type HybridSummary,
   type PerformanceMetrics,
   type Prediction,
+  type RefreshJobStatus,
   type RefreshResponse,
   type Team,
   type TrainingReport,
@@ -292,6 +294,27 @@ export async function getAdminWorkflowStatus(): Promise<AdminWorkflowStatus> {
   const data = await safeFetchJson<AdminWorkflowStatus>('/admin/workflow-status');
 
   return data ?? mockAdminWorkflowStatus;
+}
+
+
+export async function getRefreshJobStatus(jobId?: string): Promise<RefreshJobStatus> {
+  const query = jobId ? `?job_id=${encodeURIComponent(jobId)}` : '';
+  try {
+    const response = await fetch(`/api/admin/refresh-job-status${query}`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+    const contentType = response.headers.get('content-type') ?? '';
+    const body = contentType.includes('application/json') ? await response.json() : null;
+
+    if (!response.ok) {
+      return { ...mockRefreshJobStatus, status: 'error', error: body?.detail ?? `Job status failed with status ${response.status}` };
+    }
+
+    return (body as RefreshJobStatus) ?? mockRefreshJobStatus;
+  } catch (error) {
+    return { ...mockRefreshJobStatus, status: 'error', error: error instanceof Error ? error.message : 'Refresh job status failed' };
+  }
 }
 
 export async function refreshData(): Promise<RefreshResponse | null> {

@@ -1,10 +1,11 @@
 ﻿import os
 import time
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from data import repository
@@ -374,6 +375,7 @@ def _admin_workflow_status():
             "mode": hybrid.get("mode"),
             "recommendation": hybrid.get("recommendation"),
         },
+        "latest_refresh_job": runtime_store.get_latest_refresh_job(),
         "next_step": next_step,
     }
 
@@ -771,67 +773,102 @@ def admin_workflow_status():
     return _admin_workflow_status()
 
 
-@app.post("/admin/refresh-data")
-def refresh_data(x_admin_key: str | None = Header(default=None, alias="X-Admin-Key")):
+def run_refresh_data_job(job_id: str | None = None) -> dict:
     started_at = time.perf_counter()
+    if job_id:
+        runtime_store.update_refresh_job(job_id, status="running")
+
+    try:
+        source = "mock"
+        matches = MATCHES
+        teams = TEAMS
+
+        if os.getenv("FOOTBALL_DATA_API_KEY"):
+            external_matches = get_ligue1_matches() + get_champions_league_matches()
+            external_teams = get_ligue1_teams() + get_champions_league_teams()
+
+            if external_matches or external_teams:
+                source = "football-data.org"
+                matches = external_matches or MATCHES
+                teams = external_teams or TEAMS
+
+        elo_ratings = calculate_team_elos(matches)
+        predictions = [_prediction_for_match(match, matches, elo_ratings) for match in matches]
+        storage = "memory"
+        snapshots_saved = 0
+        warning = None
+
+        data_saved = repository.save_matches(matches) and repository.save_teams(teams) and repository.save_predictions(predictions)
+        if data_saved:
+            storage = "postgresql"
+            repository.save_refresh_log(source, storage, len(matches), len(teams))
+            try:
+                snapshots_saved = repository.save_prediction_snapshots(predictions)
+            except Exception:
+                snapshots_saved = 0
+                warning = "Les donn?es et pr?dictions ont ?t? actualis?es, mais la sauvegarde des snapshots a ?chou?."
+
+        runtime_store.set_matches(matches)
+        runtime_store.set_teams(teams)
+        runtime_store.set_predictions(predictions)
+        runtime_store.set_source(source)
+        runtime_store.set_storage(storage)
+        status = runtime_store.get_refresh_status()
+        duration_ms = round((time.perf_counter() - started_at) * 1000)
+
+        result = {
+            "status": "ok",
+            "source": source,
+            "storage": storage,
+            "matches_imported": status["matches_imported"],
+            "teams_imported": status["teams_imported"],
+            "predictions_imported": status["predictions_imported"],
+            "snapshots_saved": snapshots_saved,
+            "refresh_duration_ms": duration_ms,
+            "next_recommended_actions": [
+                "build_feature_store",
+                "train_candidate_model",
+                "generate_shadow_predictions",
+            ],
+            "last_refresh_at": status["last_refresh_at"],
+            "warning": warning,
+        }
+        if job_id:
+            runtime_store.finish_refresh_job(job_id, result)
+        return result
+    except Exception as exc:
+        if job_id:
+            runtime_store.fail_refresh_job(job_id, str(exc))
+        raise
+
+
+@app.post("/admin/refresh-data")
+def refresh_data(
+    background_tasks: BackgroundTasks,
+    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
+):
     _require_admin_key(x_admin_key)
-
-    source = "mock"
-    matches = MATCHES
-    teams = TEAMS
-
-    if os.getenv("FOOTBALL_DATA_API_KEY"):
-        external_matches = get_ligue1_matches() + get_champions_league_matches()
-        external_teams = get_ligue1_teams() + get_champions_league_teams()
-
-        if external_matches or external_teams:
-            source = "football-data.org"
-            matches = external_matches or MATCHES
-            teams = external_teams or TEAMS
-
-    elo_ratings = calculate_team_elos(matches)
-    predictions = [_prediction_for_match(match, matches, elo_ratings) for match in matches]
-    storage = "memory"
-    snapshots_saved = 0
-    warning = None
-
-    data_saved = repository.save_matches(matches) and repository.save_teams(teams) and repository.save_predictions(predictions)
-    if data_saved:
-        storage = "postgresql"
-        repository.save_refresh_log(source, storage, len(matches), len(teams))
-        try:
-            snapshots_saved = repository.save_prediction_snapshots(predictions)
-        except Exception:
-            snapshots_saved = 0
-            warning = "Les donn?es et pr?dictions ont ?t? actualis?es, mais la sauvegarde des snapshots a ?chou?."
-
-    runtime_store.set_matches(matches)
-    runtime_store.set_teams(teams)
-    runtime_store.set_predictions(predictions)
-    runtime_store.set_source(source)
-    runtime_store.set_storage(storage)
-    status = runtime_store.get_refresh_status()
-    duration_ms = round((time.perf_counter() - started_at) * 1000)
-
-    response = {
-        "status": "ok",
-        "source": source,
-        "storage": storage,
-        "matches_imported": status["matches_imported"],
-        "teams_imported": status["teams_imported"],
-        "predictions_imported": status["predictions_imported"],
-        "snapshots_saved": snapshots_saved,
-        "refresh_duration_ms": duration_ms,
-        "next_recommended_actions": [
-            "build_feature_store",
-            "train_candidate_model",
-            "generate_shadow_predictions",
-        ],
-        "last_refresh_at": status["last_refresh_at"],
+    job_id = str(uuid.uuid4())
+    runtime_store.start_refresh_job(job_id)
+    background_tasks.add_task(run_refresh_data_job, job_id)
+    return {
+        "status": "accepted",
+        "job_id": job_id,
+        "message": "Actualisation lanc?e. Consultez le statut du job.",
+        "next_check_endpoint": f"/admin/refresh-job-status?job_id={job_id}",
     }
-    if warning:
-        response["warning"] = warning
-    return response
+
+
+@app.post("/admin/refresh-data-sync")
+def refresh_data_sync(x_admin_key: str | None = Header(default=None, alias="X-Admin-Key")):
+    _require_admin_key(x_admin_key)
+    return run_refresh_data_job()
+
+
+@app.get("/admin/refresh-job-status")
+def refresh_job_status(job_id: str | None = None):
+    return runtime_store.get_refresh_job(job_id)
+
 
 @app.post("/admin/build-feature-store")
 def build_feature_store(

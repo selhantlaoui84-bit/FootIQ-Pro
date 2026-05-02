@@ -172,11 +172,24 @@ export type RefreshResponse = {
   feature_snapshots_saved?: number;
   training_rows_available?: number;
   last_refresh_at?: string | null;
+  job_id?: string;
+  message?: string;
+  next_check_endpoint?: string;
   error?: string;
   detail?: string;
 };
 
 
+
+export type RefreshJobStatus = {
+  job_id: string | null;
+  status: 'idle' | 'running' | 'success' | 'error' | string;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_ms: number | null;
+  result: RefreshResponse | null;
+  error: string | null;
+};
 
 export type FeatureSummary = {
   snapshots_count: number;
@@ -461,6 +474,7 @@ export type AdminWorkflowStatus = {
   shadow_predictions: { generated: boolean; count: number; disagreement_count: number };
   shadow_backtesting: { ready: boolean; evaluated_matches: number; shadow_accuracy: number; activation_recommendation: string };
   hybrid: { mode: string; recommendation: string };
+  latest_refresh_job?: RefreshJobStatus;
   next_step: 'refresh_data' | 'build_feature_store' | 'train_candidate_model' | 'generate_shadow_predictions' | 'review_shadow_backtesting' | 'ready_for_hybrid_review' | string;
 };
 
@@ -1157,6 +1171,18 @@ export const mockHybridSummary: HybridSummary = {
   reason: 'Donn?es shadow insuffisantes pour recommander un usage hybride.',
 };
 
+
+
+export const mockRefreshJobStatus: RefreshJobStatus = {
+  job_id: null,
+  status: 'idle',
+  started_at: null,
+  finished_at: null,
+  duration_ms: null,
+  result: null,
+  error: null,
+};
+
 export const mockAdminWorkflowStatus: AdminWorkflowStatus = {
   refresh: { last_refresh_at: null, storage: 'memory', matches_imported: 0, predictions_imported: 0 },
   feature_store: { ready: false, snapshots_count: 0, training_rows_available: 0, target_coverage: 0 },
@@ -1164,5 +1190,6 @@ export const mockAdminWorkflowStatus: AdminWorkflowStatus = {
   shadow_predictions: { generated: false, count: 0, disagreement_count: 0 },
   shadow_backtesting: { ready: false, evaluated_matches: 0, shadow_accuracy: 0, activation_recommendation: 'do_not_activate' },
   hybrid: { mode: 'official_with_shadow_advisory', recommendation: 'insufficient_data' },
+  latest_refresh_job: mockRefreshJobStatus,
   next_step: 'refresh_data',
 };

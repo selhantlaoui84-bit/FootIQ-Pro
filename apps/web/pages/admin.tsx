@@ -2,15 +2,17 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
-import { buildFeatureStore, generateShadowPredictions, getAdminWorkflowStatus, getBackendHealth, getRefreshStatus, refreshData, trainCandidateModel } from '~/lib/api';
+import { buildFeatureStore, generateShadowPredictions, getAdminWorkflowStatus, getBackendHealth, getRefreshJobStatus, getRefreshStatus, refreshData, trainCandidateModel } from '~/lib/api';
 import { useAuth } from '~/lib/auth';
-import type { AdminWorkflowStatus, BuildFeatureStoreResponse, GenerateShadowPredictionsResponse, HealthResponse, MatchView, RefreshResponse, TrainingReport } from '~/lib/mock-data';
+import type { AdminWorkflowStatus, BuildFeatureStoreResponse, GenerateShadowPredictionsResponse, HealthResponse, MatchView, RefreshJobStatus, RefreshResponse, TrainingReport } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
 
 export default function AdminPage() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [workflowStatus, setWorkflowStatus] = useState<AdminWorkflowStatus | null>(null);
   const [refreshInfo, setRefreshInfo] = useState<RefreshResponse | null>(null);
+  const [refreshJob, setRefreshJob] = useState<RefreshJobStatus | null>(null);
+  const [refreshJobId, setRefreshJobId] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isBuildingFeatures, setIsBuildingFeatures] = useState(false);
   const [featureBuildInfo, setFeatureBuildInfo] = useState<BuildFeatureStoreResponse | null>(null);
@@ -38,6 +40,41 @@ export default function AdminPage() {
       .catch(() => setWorkflowStatus(null));
   }, []);
 
+  useEffect(() => {
+    if (!refreshJobId) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    async function poll() {
+      const job = await getRefreshJobStatus(refreshJobId ?? undefined);
+      if (cancelled) return;
+      setRefreshJob(job);
+
+      if (job.status === 'success' && job.result) {
+        setRefreshInfo(job.result);
+        setIsRefreshing(false);
+        setRefreshJobId(null);
+        getAdminWorkflowStatus().then(setWorkflowStatus).catch(() => undefined);
+      }
+
+      if (job.status === 'error') {
+        setError(job.error ?? 'Actualisation en erreur.');
+        setIsRefreshing(false);
+        setRefreshJobId(null);
+      }
+    }
+
+    poll();
+    const interval = window.setInterval(poll, 2000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [refreshJobId]);
+
   async function handleRefresh() {
     setIsRefreshing(true);
     setError(null);
@@ -48,20 +85,38 @@ export default function AdminPage() {
 
       if (!result) {
         setError('Refresh unavailable. Check the admin key or backend.');
+        setIsRefreshing(false);
         return;
       }
 
       if (result.status === 'error') {
         setError(result.detail ?? result.error ?? 'Refresh refused.');
+        setIsRefreshing(false);
+        return;
+      }
+
+      if (result.status === 'accepted' && result.job_id) {
+        setRefreshJobId(result.job_id);
+        setRefreshJob({
+          job_id: result.job_id,
+          status: 'running',
+          started_at: new Date().toISOString(),
+          finished_at: null,
+          duration_ms: null,
+          result: null,
+          error: null,
+        });
         return;
       }
 
       setRefreshInfo(result);
+      setIsRefreshing(false);
       getAdminWorkflowStatus().then(setWorkflowStatus).catch(() => undefined);
     } catch {
       setError('Refresh impossible pour le moment.');
-    } finally {
       setIsRefreshing(false);
+    } finally {
+      // A background job keeps the running state until polling reports success or error.
     }
   }
 
