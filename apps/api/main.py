@@ -253,19 +253,49 @@ def get_performance() -> dict[str, Any]:
         "brier_score": None,
     }
 
+@app.get("/debug/env")
+def debug_env() -> dict[str, Any]:
+    return {
+        "env": settings.env,
+        "football_data_api_key_present": bool(settings.football_data_api_key),
+    }
+
 
 @app.post("/admin/refresh-data")
 def refresh_data() -> dict[str, Any]:
-    runtime_store["matches"] = MOCK_MATCHES
-    runtime_store["teams"] = MOCK_TEAMS
+    source = "mock"
+    matches = MOCK_MATCHES
+    teams = MOCK_TEAMS
+
+    try:
+        from services.football_data_client import (
+            get_champions_league_matches,
+            get_champions_league_teams,
+            get_ligue1_matches,
+            get_ligue1_teams,
+        )
+
+        imported_matches = get_ligue1_matches() + get_champions_league_matches()
+        imported_teams = get_ligue1_teams() + get_champions_league_teams()
+
+        if imported_matches or imported_teams:
+            source = "football-data.org"
+            matches = imported_matches or MOCK_MATCHES
+            teams = imported_teams or MOCK_TEAMS
+
+    except Exception as exc:
+        logger.warning("football-data.org refresh failed: %s", exc)
+
+    runtime_store["matches"] = matches
+    runtime_store["teams"] = teams
     runtime_store["last_refresh_at"] = datetime.now(timezone.utc).isoformat()
-    runtime_store["source"] = "mock"
+    runtime_store["source"] = source
 
     return {
         "status": "ok",
-        "source": runtime_store["source"],
-        "matches_imported": len(runtime_store["matches"]),
-        "teams_imported": len(runtime_store["teams"]),
+        "source": source,
+        "matches_imported": len(matches),
+        "teams_imported": len(teams),
         "last_refresh_at": runtime_store["last_refresh_at"],
-        "note": "Fallback mock utilisé. Connecteur football-data.org à brancher ensuite.",
     }
+    
