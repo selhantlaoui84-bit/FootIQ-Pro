@@ -487,7 +487,11 @@ def refresh_data(x_admin_key: str | None = Header(default=None, alias="X-Admin-K
         "last_refresh_at": status["last_refresh_at"],
     }
 @app.post("/admin/build-feature-store")
-def build_feature_store(x_admin_key: str | None = Header(default=None, alias="X-Admin-Key")) -> dict[str, Any]:
+def build_feature_store(
+    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
+    limit: int = Query(default=500, ge=1, le=2000),
+    force: bool = Query(default=False),
+) -> dict[str, Any]:
     _require_admin_key(x_admin_key)
 
     now = datetime.now(timezone.utc).isoformat()
@@ -495,32 +499,63 @@ def build_feature_store(x_admin_key: str | None = Header(default=None, alias="X-
     matches = _available_matches()
     predictions = _available_predictions()
 
-    feature_items = build_feature_snapshots(matches, predictions)
+    existing_keys = set()
+    if not force:
+        try:
+            existing_keys = repository.get_feature_snapshot_keys(model_version=MODEL_VERSION)
+        except Exception:
+            existing_keys = set()
 
-    saved_count = repository.save_feature_snapshots(feature_items)
+    all_feature_items = build_feature_snapshots(matches, predictions)
+
+    selected_items = []
+    skipped_count = 0
+
+    for item in all_feature_items:
+        match_id = item.get("match_id")
+        model_version = item.get("model_version") or MODEL_VERSION
+        key = f"{match_id}:{model_version}"
+
+        if not force and key in existing_keys:
+            skipped_count += 1
+            continue
+
+        selected_items.append(item)
+
+        if len(selected_items) >= limit:
+            break
+
+    saved_count = repository.save_feature_snapshots(selected_items)
+
+    if saved_count > 0:
+        storage = "postgresql"
+    else:
+        storage = "memory"
+
+    if storage == "memory" and selected_items:
+        runtime_store.set_feature_snapshots(selected_items)
 
     training_rows_available = sum(
-        1 for item in feature_items if item.get("target") is not None
+        1 for item in selected_items if item.get("target") is not None
     )
 
     target_coverage = (
-        round((training_rows_available / len(feature_items)) * 100)
-        if feature_items
+        round((training_rows_available / len(selected_items)) * 100)
+        if selected_items
         else 0
     )
-
-    storage = "postgresql" if saved_count > 0 else "memory"
-
-    if storage == "memory":
-        runtime_store.set_feature_snapshots(feature_items)
 
     return {
         "status": "ok",
         "storage": storage,
-        "feature_snapshots_built": len(feature_items),
+        "feature_snapshots_built": len(selected_items),
         "feature_snapshots_saved": saved_count,
+        "feature_snapshots_skipped": skipped_count,
         "training_rows_available": training_rows_available,
         "target_coverage": target_coverage,
         "model_version": MODEL_VERSION,
+        "limit": limit,
+        "force": force,
         "created_at": now,
+        "note": "Use force=true to rebuild existing snapshots.",
     }

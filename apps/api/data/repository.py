@@ -540,3 +540,19 @@ def get_feature_store_summary() -> dict:
         "feature_names": sorted(feature_names),
         "target_coverage": round((with_target_count / snapshots_count) * 100) if snapshots_count else 0,
     }
+def get_feature_snapshot_keys(model_version: str | None = None) -> set[str]:
+    try:
+        rows = get_feature_snapshots(model_version=model_version)
+
+        keys: set[str] = set()
+
+        for row in rows:
+            match_id = row.get("match_id")
+            version = row.get("model_version")
+
+            if match_id and version:
+                keys.add(f"{match_id}:{version}")
+
+        return keys
+    except Exception:
+        return set()
