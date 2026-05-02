@@ -6,6 +6,7 @@ import {
   getBacktesting,
   getFeatureSummary,
   getMlFeatureImportance,
+  getHybridSummary,
   getMlComparison,
   getMlStatus,
   getMlShadowBacktesting,
@@ -18,6 +19,7 @@ import type {
   BacktestingReport,
   FeatureImportanceRow,
   FeatureSummary,
+  HybridSummary,
   MlComparison,
   MlStatus,
   MlShadowSummary,
@@ -38,6 +40,7 @@ type PerformanceProps = {
   mlComparison: MlComparison;
   shadowSummary: MlShadowSummary;
   shadowBacktesting: MlShadowBacktesting;
+  hybridSummary: HybridSummary;
   featureImportance: FeatureImportanceRow[];
 };
 
@@ -52,6 +55,7 @@ export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
     mlComparison,
     shadowSummary,
     shadowBacktesting,
+    hybridSummary,
     featureImportance,
   ] = await Promise.all([
     getPerformance(),
@@ -63,6 +67,7 @@ export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
     getMlComparison(),
     getMlShadowSummary(),
     getMlShadowBacktesting(1000),
+    getHybridSummary(),
     getMlFeatureImportance(),
   ]);
 
@@ -77,6 +82,7 @@ export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
       mlComparison,
       shadowSummary,
       shadowBacktesting,
+      hybridSummary,
       featureImportance,
     },
     revalidate: 120,
@@ -93,6 +99,7 @@ export default function PerformancePage({
   mlComparison,
   shadowSummary,
   shadowBacktesting,
+  hybridSummary,
   featureImportance,
 }: PerformanceProps) {
   const report = {
@@ -137,6 +144,7 @@ export default function PerformancePage({
   const featureStoreReady = performance.feature_store_ready ?? featureStore.snapshots_count > 0;
   const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ?? 'https://footiq-pro-production.up.railway.app';
   const candidate = performance.ml_candidate ?? mlStatus.latest_candidate;
+  const hybrid = performance.hybrid_summary ?? hybridSummary;
   const candidateImportance = candidate.feature_importance?.length ? candidate.feature_importance : featureImportance;
 
   return (
@@ -345,6 +353,20 @@ export default function PerformancePage({
             <div className="metric"><span>Candidat production</span><strong>{(performance.ml_shadow_summary ?? shadowSummary).candidate_is_production ? 'oui' : 'non'}</strong></div>
           </div>
           <div className="banner info">Le modèle de production reste {models.current_model_version}. Le candidat ML reste en observation.</div>
+        </section>
+
+        <section className="card sectionAnchor" id="hybrid-review">
+          <p className="eyebrow">Signal consultatif</p>
+          <h2>Revue hybride</h2>
+          <p>Le mode hybride ne remplace pas le mod?le officiel. Il ajoute un signal de prudence ou de renforcement lorsque le ML shadow confirme ou contredit le mod?le Elo/Poisson.</p>
+          <div className="dataList">
+            <span>Mode <strong>{hybrid.mode}</strong></span>
+            <span>Recommandation <strong>{hybrid.recommendation}</strong></span>
+            <span>Candidat production <strong>{hybrid.candidate_is_production ? 'oui' : 'non'}</strong></span>
+            <span>Backtesting shadow <strong>{hybrid.shadow_backtesting.activation_recommendation}</strong></span>
+          </div>
+          <div className="banner info">{hybrid.reason}</div>
+          <Link className="textLink" href="/performance#shadow-backtesting">Voir le backtesting shadow</Link>
         </section>
 
         <section className="card sectionAnchor" id="shadow-backtesting">

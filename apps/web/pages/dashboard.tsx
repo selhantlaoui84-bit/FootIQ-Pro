@@ -143,6 +143,25 @@ export default function DashboardPage({ matches, predictions, summary, mlStatus,
           </Link>
         </div>
       </section>
+
+      <section className="card advisoryCard">
+        <p className="eyebrow">Signal hybride</p>
+        <h2>Lecture officielle avec signal consultatif</h2>
+        <div className="compactDataGrid four">
+          <Link className="metric clickable-card" href="/performance#hybrid-review">
+            <span>Mode</span>
+            <strong>{summary.hybrid_mode ?? 'official_with_shadow_advisory'}</strong>
+          </Link>
+          <Link className="metric clickable-card" href="/performance#hybrid-review">
+            <span>Recommandation</span>
+            <strong>{summary.hybrid_recommendation ?? 'insufficient_data'}</strong>
+          </Link>
+          <Link className="metric clickable-card" href="/performance#hybrid-review">
+            <span>Candidat production</span>
+            <strong>{summary.hybrid_candidate_is_production ? 'oui' : 'non'}</strong>
+          </Link>
+        </div>
+      </section>
       <section className="quickActions">
         <Link className="button secondary" href="/matches">
           Matchs

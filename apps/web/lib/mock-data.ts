@@ -52,6 +52,7 @@ export type Prediction = {
   risks: string[];
   disclaimer: string;
   shadow?: { prediction?: MlShadowPrediction | null; comparison?: MlShadowComparison | null };
+  hybrid?: HybridDecision;
 };
 
 export type MatchView = 'all' | 'upcoming' | 'history';
@@ -165,6 +166,9 @@ export type RefreshResponse = {
   teams_imported?: number;
   predictions_imported?: number;
   snapshots_saved?: number;
+  refresh_duration_ms?: number;
+  next_recommended_actions?: string[];
+  warning?: string;
   feature_snapshots_saved?: number;
   training_rows_available?: number;
   last_refresh_at?: string | null;
@@ -352,6 +356,7 @@ export type PerformanceMetrics = {
   ml_comparison?: MlComparison;
   ml_shadow_summary?: MlShadowSummary;
   ml_shadow_backtesting?: MlShadowBacktesting;
+  hybrid_summary?: HybridSummary;
   candidate_is_production?: boolean;
   model_versions?: Record<string, ModelComparisonRow>;
   best_model_by_brier?: string | null;
@@ -405,6 +410,12 @@ export type DashboardSummary = {
   ml_shadow_summary?: MlShadowSummary;
   shadow_disagreement_count?: number;
   shadow_high_disagreement_count?: number;
+  shadow_evaluated_matches?: number;
+  shadow_accuracy?: number;
+  shadow_activation_recommendation?: string;
+  hybrid_recommendation?: string;
+  hybrid_mode?: string;
+  hybrid_candidate_is_production?: boolean;
   best_model_by_brier?: string | null;
   evaluated_matches?: number;
   result_accuracy?: number;
@@ -416,6 +427,41 @@ export type DashboardSummary = {
   last_refresh_at: string | null;
   source: string;
   storage: string;
+};
+
+export type HybridDecision = {
+  mode: string;
+  official_model_version: string;
+  candidate_model_version: string | null;
+  candidate_is_production: boolean;
+  production_pick: 'home' | 'draw' | 'away' | null;
+  shadow_pick: 'home' | 'draw' | 'away' | null;
+  agreement: 'agree' | 'disagree' | 'unknown' | string;
+  consensus_score: number;
+  decision_label: 'signal_renforce' | 'prudence_shadow' | 'desaccord_modele' | 'shadow_indisponible' | string;
+  risk_adjustment: number;
+  display_message: string;
+  explanation: string[];
+};
+
+export type HybridSummary = {
+  mode: string;
+  candidate_is_production: boolean;
+  production_model_version: string;
+  shadow_summary: MlShadowSummary;
+  shadow_backtesting: MlShadowBacktesting;
+  recommendation: 'keep_official' | 'use_hybrid_advisory' | 'insufficient_data' | string;
+  reason: string;
+};
+
+export type AdminWorkflowStatus = {
+  refresh: { last_refresh_at: string | null; storage: string; matches_imported: number; predictions_imported: number };
+  feature_store: { ready: boolean; snapshots_count: number; training_rows_available: number; target_coverage: number };
+  candidate_model: { trained: boolean; status: string; model_version: string | null; accuracy: number | null };
+  shadow_predictions: { generated: boolean; count: number; disagreement_count: number };
+  shadow_backtesting: { ready: boolean; evaluated_matches: number; shadow_accuracy: number; activation_recommendation: string };
+  hybrid: { mode: string; recommendation: string };
+  next_step: 'refresh_data' | 'build_feature_store' | 'train_candidate_model' | 'generate_shadow_predictions' | 'review_shadow_backtesting' | 'ready_for_hybrid_review' | string;
 };
 
 export const predictions: Prediction[] = [
@@ -1084,3 +1130,39 @@ export const mockMlShadowBacktesting = {
 
 
 
+
+
+export const mockHybridDecision: HybridDecision = {
+  mode: 'official_with_shadow_advisory',
+  official_model_version: 'elo-poisson-calibrated-v1',
+  candidate_model_version: null,
+  candidate_is_production: false,
+  production_pick: 'home',
+  shadow_pick: null,
+  agreement: 'unknown',
+  consensus_score: 50,
+  decision_label: 'shadow_indisponible',
+  risk_adjustment: 0,
+  display_message: 'Signal ML shadow indisponible. La lecture officielle reste Elo/Poisson.',
+  explanation: ['Le mod?le officiel Elo/Poisson reste la seule pr?diction utilis?e.'],
+};
+
+export const mockHybridSummary: HybridSummary = {
+  mode: 'official_with_shadow_advisory',
+  candidate_is_production: false,
+  production_model_version: 'elo-poisson-calibrated-v1',
+  shadow_summary: mockMlShadowSummary,
+  shadow_backtesting: mockMlShadowBacktesting,
+  recommendation: 'insufficient_data',
+  reason: 'Donn?es shadow insuffisantes pour recommander un usage hybride.',
+};
+
+export const mockAdminWorkflowStatus: AdminWorkflowStatus = {
+  refresh: { last_refresh_at: null, storage: 'memory', matches_imported: 0, predictions_imported: 0 },
+  feature_store: { ready: false, snapshots_count: 0, training_rows_available: 0, target_coverage: 0 },
+  candidate_model: { trained: false, status: 'not_trained', model_version: null, accuracy: null },
+  shadow_predictions: { generated: false, count: 0, disagreement_count: 0 },
+  shadow_backtesting: { ready: false, evaluated_matches: 0, shadow_accuracy: 0, activation_recommendation: 'do_not_activate' },
+  hybrid: { mode: 'official_with_shadow_advisory', recommendation: 'insufficient_data' },
+  next_step: 'refresh_data',
+};

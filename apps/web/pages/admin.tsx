@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
-import { buildFeatureStore, generateShadowPredictions, getBackendHealth, getRefreshStatus, refreshData, trainCandidateModel } from '~/lib/api';
+import { buildFeatureStore, generateShadowPredictions, getAdminWorkflowStatus, getBackendHealth, getRefreshStatus, refreshData, trainCandidateModel } from '~/lib/api';
 import { useAuth } from '~/lib/auth';
-import type { BuildFeatureStoreResponse, GenerateShadowPredictionsResponse, HealthResponse, MatchView, RefreshResponse, TrainingReport } from '~/lib/mock-data';
+import type { AdminWorkflowStatus, BuildFeatureStoreResponse, GenerateShadowPredictionsResponse, HealthResponse, MatchView, RefreshResponse, TrainingReport } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
 
 export default function AdminPage() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
+  const [workflowStatus, setWorkflowStatus] = useState<AdminWorkflowStatus | null>(null);
   const [refreshInfo, setRefreshInfo] = useState<RefreshResponse | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isBuildingFeatures, setIsBuildingFeatures] = useState(false);
@@ -32,6 +33,9 @@ export default function AdminPage() {
     getRefreshStatus()
       .then(setRefreshInfo)
       .catch(() => setRefreshInfo(null));
+    getAdminWorkflowStatus()
+      .then(setWorkflowStatus)
+      .catch(() => setWorkflowStatus(null));
   }, []);
 
   async function handleRefresh() {
@@ -53,6 +57,7 @@ export default function AdminPage() {
       }
 
       setRefreshInfo(result);
+      getAdminWorkflowStatus().then(setWorkflowStatus).catch(() => undefined);
     } catch {
       setError('Refresh impossible pour le moment.');
     } finally {
@@ -147,6 +152,19 @@ export default function AdminPage() {
           </div>
         </section>
 
+        <section className="card workflowCard">
+          <p className="eyebrow">?tat du workflow</p>
+          <h2>Pipeline data et mod?le</h2>
+          <div className="compactDataGrid four">
+            <div className="metric"><span>Donn?es actualis?es</span><strong>{workflowStatus?.refresh.last_refresh_at ? 'oui' : 'non'}</strong></div>
+            <div className="metric"><span>Feature Store pr?t</span><strong>{workflowStatus?.feature_store.ready ? 'oui' : 'non'}</strong></div>
+            <div className="metric"><span>Mod?le candidat entra?n?</span><strong>{workflowStatus?.candidate_model.trained ? 'oui' : 'non'}</strong></div>
+            <div className="metric"><span>Pr?dictions shadow g?n?r?es</span><strong>{workflowStatus?.shadow_predictions.generated ? 'oui' : 'non'}</strong></div>
+            <div className="metric"><span>Backtesting shadow disponible</span><strong>{workflowStatus?.shadow_backtesting.ready ? 'oui' : 'non'}</strong></div>
+            <div className="metric"><span>Prochaine ?tape</span><strong>{workflowStatus?.next_step ?? 'refresh_data'}</strong></div>
+          </div>
+        </section>
+
         <section className="sectionSplit">
           <article className="card">
             <h2>Backend health</h2>
@@ -162,7 +180,7 @@ export default function AdminPage() {
 
           <article className="card accent">
             <h2>1. Actualiser les données</h2>
-            <p>Import Ligue 1 et Champions League, avec fallback mock automatique.</p>
+            <p>Cette action actualise uniquement les donn?es et les pr?dictions officielles. Le Feature Store, le ML et le shadow se lancent ensuite s?par?ment.</p>
             {!isAdmin && <div className="banner error">Accès admin requis.</div>}
             <button
               className="button primary"
@@ -297,7 +315,8 @@ export default function AdminPage() {
             </div>
           )}
           {shadowResult?.note && <div className="banner info">{shadowResult.note}</div>}
-          <Link className="textLink" href="/performance#shadow-ml">Voir la synth?se shadow ML</Link>
+          <p>Apr?s g?n?ration des pr?dictions shadow, consultez le backtesting shadow pour mesurer les d?saccords et la qualit? du candidat ML.</p>
+          <Link className="textLink" href="/performance#shadow-backtesting">Voir le backtesting shadow</Link>
         </section>
 
         <section className="card">

@@ -31,6 +31,7 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
   const scoreAvailable = homeScore !== undefined && homeScore !== null && awayScore !== undefined && awayScore !== null;
   const winner = winnerLabel(match.winner ?? prediction.winner, prediction.home_team, prediction.away_team);
   const shadow = prediction.shadow;
+  const hybrid = prediction.hybrid;
 
   return (
     <ProtectedRoute>
@@ -155,6 +156,26 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
                 <span>2 <strong>{shadow.prediction.probabilities.away}%</strong></span>
               </div>
             )}
+          </section>
+        )}
+
+        {hybrid && (
+          <section className="card advisoryCard">
+            <h2 className="metricHelp">
+              Signal hybride
+              <InfoTooltip content="Le mode hybride reste consultatif: le mod?le officiel demeure Elo/Poisson et le ML shadow sert uniquement ? renforcer ou nuancer la lecture." />
+            </h2>
+            <p>{hybrid.display_message}</p>
+            <div className="comparisonMiniTable">
+              <span>Label <strong>{hybrid.decision_label}</strong></span>
+              <span className="metricHelp">Consensus <InfoTooltip content="Score de consensus entre le mod?le officiel et le signal ML shadow. Plus il est haut, plus les signaux convergent." /> <strong>{hybrid.consensus_score}/100</strong></span>
+              <span>Accord <strong>{hybrid.agreement}</strong></span>
+              <span>Choix officiel <strong>{translatePick(hybrid.production_pick)}</strong></span>
+              <span>Choix shadow <strong>{translatePick(hybrid.shadow_pick)}</strong></span>
+              <span>Ajustement risque <strong>{hybrid.risk_adjustment}</strong></span>
+            </div>
+            <ul>{hybrid.explanation.map((item) => <li key={item}>{item}</li>)}</ul>
+            <div className="banner info">Le mod?le officiel reste Elo/Poisson. Le ML intervient uniquement comme signal d'observation.</div>
           </section>
         )}
 

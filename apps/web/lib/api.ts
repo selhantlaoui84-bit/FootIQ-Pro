@@ -17,12 +17,15 @@
   mockPredictionSnapshots,
   mockTrainingReport,
   mockMlShadowBacktesting,
+  mockHybridSummary,
+  mockAdminWorkflowStatus,
   buildDashboardSummary,
   matches,
   performanceMetrics,
   predictions,
   teams,
   type Match,
+  type AdminWorkflowStatus,
   type BacktestingReport,
   type BuildFeatureStoreResponse,
   type FeatureDatasetRow,
@@ -39,6 +42,7 @@
   type PredictionSnapshot,
   type DashboardSummary,
   type HealthResponse,
+  type HybridSummary,
   type PerformanceMetrics,
   type Prediction,
   type RefreshResponse,
@@ -276,6 +280,18 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
 
 export async function getRefreshStatus(): Promise<RefreshResponse | null> {
   return safeFetchJson<RefreshResponse>('/admin/refresh-status');
+}
+
+export async function getHybridSummary(): Promise<HybridSummary> {
+  const data = await safeFetchJson<HybridSummary>('/hybrid/summary');
+
+  return data ?? mockHybridSummary;
+}
+
+export async function getAdminWorkflowStatus(): Promise<AdminWorkflowStatus> {
+  const data = await safeFetchJson<AdminWorkflowStatus>('/admin/workflow-status');
+
+  return data ?? mockAdminWorkflowStatus;
 }
 
 export async function refreshData(): Promise<RefreshResponse | null> {
