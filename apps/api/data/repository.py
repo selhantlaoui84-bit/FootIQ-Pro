@@ -1,4 +1,4 @@
-import json
+﻿import json
 import logging
 import uuid
 from datetime import datetime
@@ -23,6 +23,26 @@ def _loads(value: str | None):
         return json.loads(value)
     except json.JSONDecodeError:
         return None
+
+
+
+
+def _match_payload_from_row(row: dict | None):
+    if not row:
+        return None
+
+    match = _loads(row.get("raw_json")) or {}
+    for key in (
+        "score_full_time_home",
+        "score_full_time_away",
+        "score_half_time_home",
+        "score_half_time_away",
+        "winner",
+    ):
+        value = row.get(key)
+        if value is not None:
+            match[key] = value
+    return match or None
 
 
 def _now() -> datetime:
@@ -75,7 +95,7 @@ def get_team(team_id: str) -> dict | None:
         text("SELECT raw_json FROM teams WHERE id = :team_id OR slug = :team_id LIMIT 1"),
         {"team_id": team_id},
     )
-    return _loads(row.get("raw_json")) if row else None
+    return _match_payload_from_row(row)
 
 
 def save_matches(matches: list[dict]) -> bool:
@@ -85,10 +105,14 @@ def save_matches(matches: list[dict]) -> bool:
     statement = text(
         """
         INSERT INTO matches (
-            id, match_id, slug, home_team, away_team, competition, kickoff, status, source, raw_json, updated_at
+            id, match_id, slug, home_team, away_team, competition, kickoff, status, source,
+            score_full_time_home, score_full_time_away, score_half_time_home, score_half_time_away, winner,
+            raw_json, updated_at
         )
         VALUES (
-            :id, :match_id, :slug, :home_team, :away_team, :competition, :kickoff, :status, :source, :raw_json, :updated_at
+            :id, :match_id, :slug, :home_team, :away_team, :competition, :kickoff, :status, :source,
+            :score_full_time_home, :score_full_time_away, :score_half_time_home, :score_half_time_away, :winner,
+            :raw_json, :updated_at
         )
         ON CONFLICT (id) DO UPDATE SET
             match_id = EXCLUDED.match_id,
@@ -99,6 +123,11 @@ def save_matches(matches: list[dict]) -> bool:
             kickoff = EXCLUDED.kickoff,
             status = EXCLUDED.status,
             source = EXCLUDED.source,
+            score_full_time_home = EXCLUDED.score_full_time_home,
+            score_full_time_away = EXCLUDED.score_full_time_away,
+            score_half_time_home = EXCLUDED.score_half_time_home,
+            score_half_time_away = EXCLUDED.score_half_time_away,
+            winner = EXCLUDED.winner,
             raw_json = EXCLUDED.raw_json,
             updated_at = EXCLUDED.updated_at
         """
@@ -119,6 +148,11 @@ def save_matches(matches: list[dict]) -> bool:
                 "kickoff": match.get("kickoff"),
                 "status": match.get("status"),
                 "source": match.get("source", "unknown"),
+                "score_full_time_home": match.get("score_full_time_home"),
+                "score_full_time_away": match.get("score_full_time_away"),
+                "score_half_time_home": match.get("score_half_time_home"),
+                "score_half_time_away": match.get("score_half_time_away"),
+                "winner": match.get("winner"),
                 "raw_json": _json(match),
                 "updated_at": _now(),
             },
@@ -128,16 +162,33 @@ def save_matches(matches: list[dict]) -> bool:
 
 
 def get_matches() -> list[dict]:
-    rows = fetch_all_safe(text("SELECT raw_json FROM matches ORDER BY kickoff"))
-    return [match for match in (_loads(row.get("raw_json")) for row in rows) if match]
+    rows = fetch_all_safe(
+        text(
+            """
+            SELECT raw_json, score_full_time_home, score_full_time_away, score_half_time_home,
+                   score_half_time_away, winner
+            FROM matches
+            ORDER BY kickoff
+            """
+        )
+    )
+    return [match for match in (_match_payload_from_row(row) for row in rows) if match]
 
 
 def get_match(match_id: str) -> dict | None:
     row = fetch_one_safe(
-        text("SELECT raw_json FROM matches WHERE id = :match_id OR match_id = :match_id OR slug = :match_id LIMIT 1"),
+        text(
+            """
+            SELECT raw_json, score_full_time_home, score_full_time_away, score_half_time_home,
+                   score_half_time_away, winner
+            FROM matches
+            WHERE id = :match_id OR match_id = :match_id OR slug = :match_id
+            LIMIT 1
+            """
+        ),
         {"match_id": match_id},
     )
-    return _loads(row.get("raw_json")) if row else None
+    return _match_payload_from_row(row)
 
 
 def save_predictions(predictions: list[dict]) -> bool:
@@ -239,3 +290,6 @@ def get_latest_refresh_log() -> dict | None:
         "teams_imported": row.get("teams_imported"),
         "last_refresh_at": created_at.isoformat() if hasattr(created_at, "isoformat") else created_at,
     }
+
+
+

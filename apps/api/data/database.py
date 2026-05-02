@@ -1,4 +1,4 @@
-import logging
+﻿import logging
 import os
 from datetime import datetime
 
@@ -34,6 +34,11 @@ matches_table = Table(
     Column("kickoff", Text),
     Column("status", Text),
     Column("source", Text),
+    Column("score_full_time_home", Integer, nullable=True),
+    Column("score_full_time_away", Integer, nullable=True),
+    Column("score_half_time_home", Integer, nullable=True),
+    Column("score_half_time_away", Integer, nullable=True),
+    Column("winner", Text, nullable=True),
     Column("raw_json", Text, nullable=True),
     Column("updated_at", TIMESTAMP(timezone=True)),
 )
@@ -105,6 +110,26 @@ def db_available() -> bool:
         return False
 
 
+
+
+def _ensure_match_score_columns(engine: Engine) -> None:
+    if engine.dialect.name != "postgresql":
+        return
+
+    statements = [
+        "ALTER TABLE matches ADD COLUMN IF NOT EXISTS score_full_time_home INTEGER",
+        "ALTER TABLE matches ADD COLUMN IF NOT EXISTS score_full_time_away INTEGER",
+        "ALTER TABLE matches ADD COLUMN IF NOT EXISTS score_half_time_home INTEGER",
+        "ALTER TABLE matches ADD COLUMN IF NOT EXISTS score_half_time_away INTEGER",
+        "ALTER TABLE matches ADD COLUMN IF NOT EXISTS winner TEXT",
+        "ALTER TABLE matches ADD COLUMN IF NOT EXISTS raw_json TEXT",
+    ]
+
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
+
+
 def init_db() -> bool:
     engine = get_engine()
 
@@ -114,6 +139,7 @@ def init_db() -> bool:
 
     try:
         metadata.create_all(engine)
+        _ensure_match_score_columns(engine)
         return True
     except Exception as exc:
         logger.warning("PostgreSQL schema init failed: %s", exc)
@@ -167,3 +193,6 @@ def fetch_one_safe(statement, params=None) -> dict | None:
 
 def utcnow() -> datetime:
     return datetime.utcnow()
+
+
+

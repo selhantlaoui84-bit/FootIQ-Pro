@@ -1,4 +1,4 @@
-import logging
+﻿import logging
 import os
 import re
 import unicodedata
@@ -39,10 +39,19 @@ def get_json(path: str):
         return None
 
 
+def _score_value(score_part, key):
+    if not isinstance(score_part, dict):
+        return None
+    return score_part.get(key)
+
+
 def normalize_match(raw_match, competition_label):
     home_team_name = raw_match.get("homeTeam", {}).get("name") or raw_match.get("homeTeam", {}).get("shortName") or "Home"
     away_team_name = raw_match.get("awayTeam", {}).get("name") or raw_match.get("awayTeam", {}).get("shortName") or "Away"
     slug = f"{slugify(home_team_name)}-{slugify(away_team_name)}"
+    score = raw_match.get("score") if isinstance(raw_match.get("score"), dict) else {}
+    full_time = score.get("fullTime") if isinstance(score, dict) else {}
+    half_time = score.get("halfTime") if isinstance(score, dict) else {}
 
     return {
         "id": slug,
@@ -54,7 +63,13 @@ def normalize_match(raw_match, competition_label):
         "kickoff": raw_match.get("utcDate"),
         "status": raw_match.get("status", "SCHEDULED"),
         "source": "football-data.org",
-        "score": raw_match.get("score"),
+        "score": score,
+        "score_full_time_home": _score_value(full_time, "home"),
+        "score_full_time_away": _score_value(full_time, "away"),
+        "score_half_time_home": _score_value(half_time, "home"),
+        "score_half_time_away": _score_value(half_time, "away"),
+        "winner": score.get("winner") if isinstance(score, dict) else None,
+        "raw_json": raw_match,
     }
 
 
@@ -101,3 +116,4 @@ def get_ligue1_teams():
 
 def get_champions_league_teams():
     return _get_teams("CL", "Champions League")
+

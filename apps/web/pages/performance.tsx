@@ -64,7 +64,7 @@ export default function PerformancePage({ performance, backtesting }: Performanc
         <section className="sectionSplit">
           <article className="card accent">
             <h2>Calibration reading</h2>
-            <p>{report.note}</p>
+            <p>{report.evaluated_matches === 0 ? 'No finished matches with scores available yet. Run admin refresh after score fields are enabled.' : report.note}</p>
             <div className="dataList">
               <span>
                 Lower Brier score <strong>is better</strong>
@@ -136,3 +136,4 @@ export default function PerformancePage({ performance, backtesting }: Performanc
     </ProtectedRoute>
   );
 }
+

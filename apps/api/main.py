@@ -16,7 +16,7 @@ from services.football_data_client import (
     get_ligue1_matches,
     get_ligue1_teams,
 )
-from services.backtesting import calculate_backtest_report
+from services.backtesting import calculate_backtest_report, get_match_result
 from services.elo_model import calculate_team_elos
 from services.prediction_engine import generate_prediction_from_match
 from services.prediction_engine import MODEL_VERSION
@@ -238,6 +238,31 @@ def team_detail(team_id: str):
     return team
 
 
+
+@app.get("/debug/finished-matches")
+def debug_finished_matches():
+    matches = _available_matches()
+    finished = [match for match in matches if str(match.get("status", "")).upper() == "FINISHED"]
+    finished_with_scores = [match for match in finished if get_match_result(match) is not None]
+    sample = [
+        {
+            "id": match.get("id") or match.get("match_id") or match.get("slug"),
+            "home_team": match.get("home_team"),
+            "away_team": match.get("away_team"),
+            "status": match.get("status"),
+            "score_full_time_home": match.get("score_full_time_home"),
+            "score_full_time_away": match.get("score_full_time_away"),
+            "winner": match.get("winner"),
+        }
+        for match in finished[:5]
+    ]
+
+    return {
+        "finished_matches": len(finished),
+        "finished_with_scores": len(finished_with_scores),
+        "sample": sample,
+    }
+
 @app.get("/backtesting")
 def backtesting_report():
     return calculate_backtest_report(_available_matches(), _available_predictions())
@@ -325,6 +350,7 @@ def refresh_data(x_admin_key: str | None = Header(default=None, alias="X-Admin-K
         "predictions_imported": status["predictions_imported"],
         "last_refresh_at": status["last_refresh_at"],
     }
+
 
 
 

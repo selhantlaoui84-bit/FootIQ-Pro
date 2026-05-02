@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any
 
@@ -18,7 +19,26 @@ def _as_number(value: Any) -> int | None:
         return None
 
 
+def _parse_raw_json(raw_json: Any) -> dict | None:
+    if isinstance(raw_json, dict):
+        return raw_json
+
+    if isinstance(raw_json, str):
+        try:
+            parsed = json.loads(raw_json)
+            return parsed if isinstance(parsed, dict) else None
+        except json.JSONDecodeError:
+            return None
+
+    return None
+
+
 def _extract_score(match: dict) -> tuple[int | None, int | None]:
+    home = _as_number(match.get("score_full_time_home"))
+    away = _as_number(match.get("score_full_time_away"))
+    if home is not None and away is not None:
+        return home, away
+
     score = match.get("score") or {}
     full_time = score.get("fullTime") if isinstance(score, dict) else None
     if isinstance(full_time, dict):
@@ -27,9 +47,11 @@ def _extract_score(match: dict) -> tuple[int | None, int | None]:
         if home is not None and away is not None:
             return home, away
 
-    raw_json = match.get("raw_json")
-    if isinstance(raw_json, dict):
-        return _extract_score(raw_json)
+    raw_json = _parse_raw_json(match.get("raw_json"))
+    if raw_json is not None:
+        nested_home, nested_away = _extract_score(raw_json)
+        if nested_home is not None and nested_away is not None:
+            return nested_home, nested_away
 
     home = _as_number(match.get("home_score"))
     away = _as_number(match.get("away_score"))
@@ -217,3 +239,5 @@ def calculate_backtest_report(matches: list[dict], predictions: list[dict]) -> d
         "last_backtest_at": datetime.now(timezone.utc).isoformat(),
         "note": "Backtesting is computed on finished matches with available scores.",
     }
+
+
