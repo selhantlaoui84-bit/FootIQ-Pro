@@ -1,7 +1,9 @@
 ﻿import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from typing import Any
 
-from fastapi import FastAPI, Header, HTTPException, Query, Response
+from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from data import repository
@@ -484,7 +486,41 @@ def refresh_data(x_admin_key: str | None = Header(default=None, alias="X-Admin-K
         "training_rows_available": sum(1 for item in feature_snapshots if item.get("target")),
         "last_refresh_at": status["last_refresh_at"],
     }
+@app.post("/admin/build-feature-store")
+def build_feature_store(x_admin_key: str | None = Header(default=None, alias="X-Admin-Key")) -> dict[str, Any]:
+    _require_admin_key(x_admin_key)
 
+    now = datetime.now(timezone.utc).isoformat()
 
+    matches = _available_matches()
+    predictions = _available_predictions()
 
+    feature_items = build_feature_snapshots(matches, predictions)
 
+    saved_count = repository.save_feature_snapshots(feature_items)
+
+    training_rows_available = sum(
+        1 for item in feature_items if item.get("target") is not None
+    )
+
+    target_coverage = (
+        round((training_rows_available / len(feature_items)) * 100)
+        if feature_items
+        else 0
+    )
+
+    storage = "postgresql" if saved_count > 0 else "memory"
+
+    if storage == "memory":
+        runtime_store.set_feature_snapshots(feature_items)
+
+    return {
+        "status": "ok",
+        "storage": storage,
+        "feature_snapshots_built": len(feature_items),
+        "feature_snapshots_saved": saved_count,
+        "training_rows_available": training_rows_available,
+        "target_coverage": target_coverage,
+        "model_version": MODEL_VERSION,
+        "created_at": now,
+    }
