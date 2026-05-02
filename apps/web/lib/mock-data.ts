@@ -11,6 +11,11 @@ export type Prediction = {
   kickoff: string;
   status?: string;
   source?: string;
+  score_full_time_home?: number | null;
+  score_full_time_away?: number | null;
+  score_half_time_home?: number | null;
+  score_half_time_away?: number | null;
+  winner?: string | null;
   model_version?: string;
   calibration?: {
     applied: boolean;
@@ -46,6 +51,71 @@ export type Prediction = {
   explanation: string[];
   risks: string[];
   disclaimer: string;
+  shadow?: { prediction?: MlShadowPrediction | null; comparison?: MlShadowComparison | null };
+};
+
+export type MatchView = 'all' | 'upcoming' | 'history';
+
+export type MlShadowPrediction = {
+  match_id: string;
+  model_version: string;
+  candidate_is_production: boolean;
+  available: boolean;
+  status: string;
+  predicted_result: 'home' | 'draw' | 'away' | null;
+  probabilities: { home: number; draw: number; away: number } | null;
+  confidence: number | null;
+  source: string;
+  note: string;
+};
+
+export type MlShadowComparison = {
+  same_pick: boolean | null;
+  production_pick: 'home' | 'draw' | 'away' | null;
+  shadow_pick: 'home' | 'draw' | 'away' | null;
+  confidence_delta: number | null;
+  disagreement_level: 'none' | 'low' | 'medium' | 'high' | 'unknown' | string;
+  note: string;
+};
+
+export type MlShadowRow = {
+  id?: string;
+  match_id: string;
+  production_model_version?: string;
+  candidate_model_version?: string;
+  production_prediction?: Prediction;
+  shadow_prediction: MlShadowPrediction;
+  comparison: MlShadowComparison;
+  created_at?: string;
+};
+
+export type MlShadowSummary = {
+  shadow_predictions_count: number;
+  available_count: number;
+  unavailable_count: number;
+  same_pick_count: number;
+  disagreement_count: number;
+  high_disagreement_count: number;
+  candidate_model_version: string | null;
+  candidate_is_production?: boolean;
+  production_model_version?: string;
+};
+
+export type GenerateShadowPredictionsResponse = {
+  status: string;
+  storage?: string;
+  view?: MatchView;
+  shadow_predictions_generated?: number;
+  shadow_predictions_saved?: number;
+  available_count?: number;
+  unavailable_count?: number;
+  same_pick_count?: number;
+  disagreement_count?: number;
+  high_disagreement_count?: number;
+  candidate_is_production?: boolean;
+  created_at?: string;
+  note?: string;
+  detail?: string;
 };
 
 export type Match = {
@@ -58,6 +128,11 @@ export type Match = {
   kickoff: string;
   status?: string;
   source?: string;
+  score_full_time_home?: number | null;
+  score_full_time_away?: number | null;
+  score_half_time_home?: number | null;
+  score_half_time_away?: number | null;
+  winner?: string | null;
   probabilities?: Prediction['probabilities'];
   goals?: Prediction['goals'];
   confidence?: Prediction['confidence'];
@@ -275,6 +350,7 @@ export type PerformanceMetrics = {
   feature_store_ready?: boolean;
   ml_candidate?: TrainingReport;
   ml_comparison?: MlComparison;
+  ml_shadow_summary?: MlShadowSummary;
   candidate_is_production?: boolean;
   model_versions?: Record<string, ModelComparisonRow>;
   best_model_by_brier?: string | null;
@@ -307,6 +383,7 @@ export type DashboardSummary = {
   teams_count: number;
   predictions_count: number;
   upcoming_matches_count: number;
+  historical_matches_count?: number;
   reliable_matches_count: number;
   medium_matches_count: number;
   avoid_matches_count: number;
@@ -324,6 +401,9 @@ export type DashboardSummary = {
   ml_candidate_status?: string;
   ml_candidate_accuracy?: number | null;
   ml_candidate_model_version?: string;
+  ml_shadow_summary?: MlShadowSummary;
+  shadow_disagreement_count?: number;
+  shadow_high_disagreement_count?: number;
   best_model_by_brier?: string | null;
   evaluated_matches?: number;
   result_accuracy?: number;
@@ -470,7 +550,25 @@ export const predictions: Prediction[] = [
   },
 ];
 
-export const matches: Match[] = predictions;
+export const matches: Match[] = [
+  ...predictions,
+  {
+    id: 'psg-marseille-historique',
+    match_id: 'psg-marseille-historique',
+    slug: 'psg-marseille-historique',
+    home_team: 'PSG',
+    away_team: 'Marseille',
+    competition: 'Ligue 1',
+    kickoff: '2026-04-18T19:00:00Z',
+    status: 'FINISHED',
+    source: 'mock',
+    score_full_time_home: 2,
+    score_full_time_away: 1,
+    score_half_time_home: 1,
+    score_half_time_away: 0,
+    winner: 'HOME_TEAM',
+  },
+];
 
 export const teams: Team[] = [
   {
@@ -670,6 +768,36 @@ export const mockMlStatus: MlStatus = {
   candidate_is_production: false,
 };
 
+
+export const mockMlShadowSummary: MlShadowSummary = {
+  shadow_predictions_count: 0,
+  available_count: 0,
+  unavailable_count: 0,
+  same_pick_count: 0,
+  disagreement_count: 0,
+  high_disagreement_count: 0,
+  candidate_model_version: 'ml-candidate-v1',
+  candidate_is_production: false,
+  production_model_version: 'elo-poisson-calibrated-v1',
+};
+
+export const mockMlShadowPredictions: MlShadowRow[] = [];
+
+export const mockGenerateShadowPredictionsResponse: GenerateShadowPredictionsResponse = {
+  status: 'not_run',
+  storage: 'memory',
+  view: 'upcoming',
+  shadow_predictions_generated: 0,
+  shadow_predictions_saved: 0,
+  available_count: 0,
+  unavailable_count: 0,
+  same_pick_count: 0,
+  disagreement_count: 0,
+  high_disagreement_count: 0,
+  candidate_is_production: false,
+  note: "Les pr?dictions ML shadow seront calcul?es en parall?le du mod?le officiel.",
+};
+
 export const mockMlComparison: MlComparison = {
   production_model_version: 'elo-poisson-calibrated-v1',
   candidate_model_version: 'ml-candidate-v1',
@@ -755,6 +883,7 @@ export const performanceMetrics: PerformanceMetrics = {
   feature_store_ready: mockFeatureSummary.snapshots_count > 0,
   ml_candidate: mockTrainingReport,
   ml_comparison: mockMlComparison,
+  ml_shadow_summary: mockMlShadowSummary,
   candidate_is_production: false,
   model_versions: mockModelComparison.model_versions,
   best_model_by_brier: mockModelComparison.best_model_by_brier,
@@ -788,7 +917,8 @@ export function buildDashboardSummary(source = 'mock'): DashboardSummary {
     total_matches: predictions.length,
     teams_count: teams.length,
     predictions_count: predictions.length,
-    upcoming_matches_count: predictions.length,
+    upcoming_matches_count: matches.filter((match) => match.status !== 'FINISHED').length,
+    historical_matches_count: matches.filter((match) => match.status === 'FINISHED').length,
     reliable_matches_count: reliable.length,
     medium_matches_count: medium.length,
     avoid_matches_count: avoid.length,
@@ -810,6 +940,9 @@ export function buildDashboardSummary(source = 'mock'): DashboardSummary {
     ml_candidate_status: mockMlStatus.status,
     ml_candidate_accuracy: mockTrainingReport.accuracy,
     ml_candidate_model_version: mockTrainingReport.model_version,
+    ml_shadow_summary: mockMlShadowSummary,
+    shadow_disagreement_count: mockMlShadowSummary.disagreement_count,
+    shadow_high_disagreement_count: mockMlShadowSummary.high_disagreement_count,
     best_model_by_brier: mockModelComparison.best_model_by_brier,
     evaluated_matches: mockBacktestingReport.evaluated_matches,
     result_accuracy: mockBacktestingReport.result_accuracy,

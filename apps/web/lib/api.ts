@@ -8,6 +8,9 @@
   mockFeatureSummary,
   mockMlFeatureImportance,
   mockMlComparison,
+  mockMlShadowPredictions,
+  mockMlShadowSummary,
+  mockGenerateShadowPredictionsResponse,
   mockMlStatus,
   mockModelComparison,
   mockModelsMetadata,
@@ -26,6 +29,10 @@
   type FeatureSummary,
   type MlStatus,
   type MlComparison,
+  type MlShadowRow,
+  type MlShadowSummary,
+  type GenerateShadowPredictionsResponse,
+  type MatchView,
   type ModelComparison,
   type ModelsMetadata,
   type PredictionSnapshot,
@@ -91,8 +98,14 @@ export async function getPrediction(matchId: string): Promise<Prediction> {
   return data ?? getMockPrediction(matchId);
 }
 
-export async function getMatches(): Promise<Match[]> {
-  const data = await safeFetchJson<Match[]>('/matches');
+export async function getMatches(options?: { view?: MatchView; q?: string; status?: string; includeFinished?: boolean }): Promise<Match[]> {
+  const params = new URLSearchParams();
+  if (options?.view) params.set('view', options.view);
+  if (options?.q) params.set('q', options.q);
+  if (options?.status) params.set('status', options.status);
+  if (typeof options?.includeFinished === 'boolean') params.set('include_finished', String(options.includeFinished));
+  const query = params.toString();
+  const data = await safeFetchJson<Match[]>(`/matches${query ? `?${query}` : ''}`);
 
   return Array.isArray(data) && data.length > 0 ? data : matches;
 }
@@ -169,6 +182,50 @@ export async function getMlComparison(): Promise<MlComparison> {
   const data = await safeFetchJson<MlComparison>('/ml/comparison');
 
   return data ?? mockMlComparison;
+}
+
+export async function getMlShadowSummary(): Promise<MlShadowSummary> {
+  const data = await safeFetchJson<MlShadowSummary>('/ml/shadow-summary');
+
+  return data ?? mockMlShadowSummary;
+}
+
+export async function getMlShadowPredictions(limit = 100, view: MatchView = 'all'): Promise<MlShadowRow[]> {
+  const safeLimit = Math.min(Math.max(Math.round(limit), 1), 500);
+  const data = await safeFetchJson<MlShadowRow[]>(`/ml/shadow-predictions?limit=${safeLimit}&view=${encodeURIComponent(view)}`);
+
+  return Array.isArray(data) ? data : mockMlShadowPredictions;
+}
+
+export async function generateShadowPredictions(options?: { limit?: number; force?: boolean; view?: MatchView }): Promise<GenerateShadowPredictionsResponse> {
+  const limit = Math.min(Math.max(Math.round(options?.limit ?? 500), 1), 2000);
+  const force = options?.force ?? false;
+  const view = options?.view ?? 'upcoming';
+
+  try {
+    const response = await fetch(`/api/admin/generate-shadow-predictions?limit=${limit}&force=${force}&view=${encodeURIComponent(view)}`, {
+      method: 'POST',
+      headers: { Accept: 'application/json' },
+    });
+    const contentType = response.headers.get('content-type') ?? '';
+    const body = contentType.includes('application/json') ? await response.json() : null;
+
+    if (!response.ok) {
+      return {
+        ...mockGenerateShadowPredictionsResponse,
+        status: 'error',
+        detail: body?.detail ?? `Shadow generation failed with status ${response.status}`,
+      };
+    }
+
+    return (body as GenerateShadowPredictionsResponse) ?? mockGenerateShadowPredictionsResponse;
+  } catch (error) {
+    return {
+      ...mockGenerateShadowPredictionsResponse,
+      status: 'error',
+      detail: error instanceof Error ? error.message : 'Shadow generation request failed',
+    };
+  }
 }
 
 export async function trainCandidateModel(options?: { modelType?: string; limit?: number }): Promise<TrainingReport> {

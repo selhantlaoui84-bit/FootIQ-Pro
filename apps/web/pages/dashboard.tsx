@@ -3,8 +3,8 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
-import { getDashboardSummary, getMatches, getMlStatus, getPredictions } from '~/lib/api';
-import { matchHref, statusClass, type DashboardSummary, type Match, type MlStatus, type Prediction } from '~/lib/mock-data';
+import { getDashboardSummary, getMatches, getMlShadowSummary, getMlStatus, getPredictions } from '~/lib/api';
+import { matchHref, statusClass, type DashboardSummary, type Match, type MlShadowSummary, type MlStatus, type Prediction } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
 
 type DashboardProps = {
@@ -12,16 +12,18 @@ type DashboardProps = {
   predictions: Prediction[];
   summary: DashboardSummary;
   mlStatus: MlStatus;
+  shadowSummary: MlShadowSummary;
 };
 
 export const getStaticProps: GetStaticProps<DashboardProps> = async () => {
-  const [matches, predictions, summary, mlStatus] = await Promise.all([getMatches(), getPredictions(), getDashboardSummary(), getMlStatus()]);
+  const [matches, predictions, summary, mlStatus, shadowSummary] = await Promise.all([getMatches(), getPredictions(), getDashboardSummary(), getMlStatus(), getMlShadowSummary()]);
 
-  return { props: { matches, predictions, summary, mlStatus }, revalidate: 120 };
+  return { props: { matches, predictions, summary, mlStatus, shadowSummary }, revalidate: 120 };
 };
 
-export default function DashboardPage({ matches, predictions, summary, mlStatus }: DashboardProps) {
+export default function DashboardPage({ matches, predictions, summary, mlStatus, shadowSummary }: DashboardProps) {
   const upcoming = [...matches]
+    .filter((match) => String(match.status ?? '').toUpperCase() !== 'FINISHED')
     .sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime())
     .slice(0, 5);
   const statusDistribution = [
@@ -126,6 +128,18 @@ export default function DashboardPage({ matches, predictions, summary, mlStatus 
           <Link className="metric clickable-card" href="/performance#candidate-ml">
             <span>Accuracy ML</span>
             <strong>{summary.ml_candidate_accuracy ?? candidate.accuracy ?? 0}%</strong>
+          </Link>
+          <Link className="metric clickable-card" href="/performance#shadow-ml">
+            <span>Matchs historiques</span>
+            <strong>{summary.historical_matches_count ?? matches.filter((match) => String(match.status ?? '').toUpperCase() === 'FINISHED').length}</strong>
+          </Link>
+          <Link className="metric clickable-card" href="/performance#shadow-ml">
+            <span>D?saccords shadow</span>
+            <strong>{summary.shadow_disagreement_count ?? summary.ml_shadow_summary?.disagreement_count ?? shadowSummary.disagreement_count}</strong>
+          </Link>
+          <Link className="metric clickable-card" href="/performance#shadow-ml">
+            <span>D?saccords ?lev?s</span>
+            <strong>{summary.shadow_high_disagreement_count ?? summary.ml_shadow_summary?.high_disagreement_count ?? shadowSummary.high_disagreement_count}</strong>
           </Link>
         </div>
       </section>

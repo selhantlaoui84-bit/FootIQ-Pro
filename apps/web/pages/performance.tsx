@@ -8,6 +8,7 @@ import {
   getMlFeatureImportance,
   getMlComparison,
   getMlStatus,
+  getMlShadowSummary,
   getModelComparison,
   getModels,
   getPerformance,
@@ -18,6 +19,7 @@ import type {
   FeatureSummary,
   MlComparison,
   MlStatus,
+  MlShadowSummary,
   ModelComparison,
   ModelsMetadata,
   PerformanceMetrics,
@@ -32,11 +34,12 @@ type PerformanceProps = {
   featureSummary: FeatureSummary;
   mlStatus: MlStatus;
   mlComparison: MlComparison;
+  shadowSummary: MlShadowSummary;
   featureImportance: FeatureImportanceRow[];
 };
 
 export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
-  const [performance, backtesting, models, comparison, featureSummary, mlStatus, mlComparison, featureImportance] = await Promise.all([
+  const [performance, backtesting, models, comparison, featureSummary, mlStatus, mlComparison, shadowSummary, featureImportance] = await Promise.all([
     getPerformance(),
     getBacktesting(),
     getModels(),
@@ -44,13 +47,14 @@ export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
     getFeatureSummary(),
     getMlStatus(),
     getMlComparison(),
+    getMlShadowSummary(),
     getMlFeatureImportance(),
   ]);
 
-  return { props: { performance, backtesting, models, comparison, featureSummary, mlStatus, mlComparison, featureImportance }, revalidate: 120 };
+  return { props: { performance, backtesting, models, comparison, featureSummary, mlStatus, mlComparison, shadowSummary, featureImportance }, revalidate: 120 };
 };
 
-export default function PerformancePage({ performance, backtesting, models, comparison, featureSummary, mlStatus, mlComparison, featureImportance }: PerformanceProps) {
+export default function PerformancePage({ performance, backtesting, models, comparison, featureSummary, mlStatus, mlComparison, shadowSummary, featureImportance }: PerformanceProps) {
   const report = {
     ...backtesting,
     model_version: performance.current_model_version ?? performance.model_version ?? models.current_model_version ?? backtesting.model_version,
@@ -286,6 +290,21 @@ export default function PerformancePage({ performance, backtesting, models, comp
             <span>Meilleur Brier <strong>{mlComparison.winner_by_brier ?? 'N/A'}</strong></span>
           </div>
           <p>{mlComparison.note}</p>
+        </section>
+
+        <section className="card shadowCard sectionAnchor" id="shadow-ml">
+          <p className="eyebrow">Mode shadow</p>
+          <h2>Pr?dictions shadow ML</h2>
+          <p>Le mode shadow permet de comparer le ML au mod?le officiel sans influencer les pr?dictions affich?es.</p>
+          <div className="compactDataGrid four">
+            <div className="metric"><span>G?n?r?es</span><strong>{(performance.ml_shadow_summary ?? shadowSummary).shadow_predictions_count}</strong></div>
+            <div className="metric"><span>Disponibles</span><strong>{(performance.ml_shadow_summary ?? shadowSummary).available_count}</strong></div>
+            <div className="metric"><span>M?me choix</span><strong>{(performance.ml_shadow_summary ?? shadowSummary).same_pick_count}</strong></div>
+            <div className="metric"><span>D?saccords</span><strong>{(performance.ml_shadow_summary ?? shadowSummary).disagreement_count}</strong></div>
+            <div className="metric"><span>D?saccords ?lev?s</span><strong>{(performance.ml_shadow_summary ?? shadowSummary).high_disagreement_count}</strong></div>
+            <div className="metric"><span>Candidat production</span><strong>{(performance.ml_shadow_summary ?? shadowSummary).candidate_is_production ? 'oui' : 'non'}</strong></div>
+          </div>
+          <div className="banner info">Le mod?le de production reste {models.current_model_version}. Le candidat ML reste en observation.</div>
         </section>
 
         <section className="sectionSplit sectionAnchor" id="backtesting">

@@ -556,3 +556,121 @@ def get_feature_snapshot_keys(model_version: str | None = None) -> set[str]:
         return keys
     except Exception:
         return set()
+
+
+def _shadow_from_row(row: dict) -> dict:
+    created_at = row.get("created_at")
+    return {
+        "id": row.get("id"),
+        "match_id": row.get("match_id"),
+        "production_model_version": row.get("production_model_version"),
+        "candidate_model_version": row.get("candidate_model_version"),
+        "production_prediction": _loads(row.get("production_prediction_json")) or {},
+        "shadow_prediction": _loads(row.get("shadow_prediction_json")) or {},
+        "comparison": _loads(row.get("comparison_json")) or {},
+        "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else created_at,
+    }
+
+
+def save_ml_shadow_prediction(match_id: str, production_prediction: dict, shadow_prediction: dict, comparison: dict) -> str | None:
+    if not match_id or not db_available():
+        return None
+
+    row_id = str(uuid.uuid4())
+    ok = execute_safe(
+        text(
+            """
+            INSERT INTO ml_shadow_predictions (
+                id, match_id, production_model_version, candidate_model_version,
+                production_prediction_json, shadow_prediction_json, comparison_json, created_at
+            )
+            VALUES (
+                :id, :match_id, :production_model_version, :candidate_model_version,
+                :production_prediction_json, :shadow_prediction_json, :comparison_json, :created_at
+            )
+            """
+        ),
+        {
+            "id": row_id,
+            "match_id": match_id,
+            "production_model_version": production_prediction.get("model_version", MODEL_VERSION),
+            "candidate_model_version": shadow_prediction.get("model_version"),
+            "production_prediction_json": _json(production_prediction),
+            "shadow_prediction_json": _json(shadow_prediction),
+            "comparison_json": _json(comparison),
+            "created_at": _now(),
+        },
+    )
+    return row_id if ok else None
+
+
+def save_ml_shadow_predictions(items: list[dict]) -> int:
+    saved = 0
+    for item in items or []:
+        if save_ml_shadow_prediction(
+            item.get("match_id"),
+            item.get("production_prediction") or {},
+            item.get("shadow_prediction") or {},
+            item.get("comparison") or {},
+        ):
+            saved += 1
+    return saved
+
+
+def get_ml_shadow_predictions(limit: int = 100) -> list[dict]:
+    if not db_available():
+        return []
+    rows = fetch_all_safe(
+        text(
+            """
+            SELECT id, match_id, production_model_version, candidate_model_version,
+                   production_prediction_json, shadow_prediction_json, comparison_json, created_at
+            FROM ml_shadow_predictions
+            ORDER BY created_at DESC
+            LIMIT :limit
+            """
+        ),
+        {"limit": max(1, min(int(limit or 100), 500))},
+    )
+    return [_shadow_from_row(row) for row in rows]
+
+
+def get_ml_shadow_prediction(match_id: str) -> dict | None:
+    if not match_id or not db_available():
+        return None
+    row = fetch_one_safe(
+        text(
+            """
+            SELECT id, match_id, production_model_version, candidate_model_version,
+                   production_prediction_json, shadow_prediction_json, comparison_json, created_at
+            FROM ml_shadow_predictions
+            WHERE match_id = :match_id
+            ORDER BY created_at DESC
+            LIMIT 1
+            """
+        ),
+        {"match_id": match_id},
+    )
+    return _shadow_from_row(row) if row else None
+
+
+def get_ml_shadow_summary() -> dict:
+    rows = get_ml_shadow_predictions(limit=500)
+    available = [row for row in rows if (row.get("shadow_prediction") or {}).get("available")]
+    disagreements = [row for row in rows if (row.get("comparison") or {}).get("same_pick") is False]
+    high = [row for row in rows if (row.get("comparison") or {}).get("disagreement_level") == "high"]
+    same = [row for row in rows if (row.get("comparison") or {}).get("same_pick") is True]
+    candidate_versions = [
+        (row.get("shadow_prediction") or {}).get("model_version") or row.get("candidate_model_version")
+        for row in rows
+        if (row.get("shadow_prediction") or {}).get("model_version") or row.get("candidate_model_version")
+    ]
+    return {
+        "shadow_predictions_count": len(rows),
+        "available_count": len(available),
+        "unavailable_count": len(rows) - len(available),
+        "same_pick_count": len(same),
+        "disagreement_count": len(disagreements),
+        "high_disagreement_count": len(high),
+        "candidate_model_version": candidate_versions[0] if candidate_versions else None,
+    }

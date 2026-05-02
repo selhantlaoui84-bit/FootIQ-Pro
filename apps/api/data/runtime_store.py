@@ -4,6 +4,7 @@ _matches = []
 _teams = []
 _predictions = []
 _feature_snapshots = []
+_ml_shadow_predictions = []
 _last_refresh_at = None
 _source = "mock"
 _storage = "memory"
@@ -68,4 +69,14 @@ def get_feature_snapshots():
 def set_feature_snapshots(feature_snapshots):
     global _feature_snapshots, _last_refresh_at
     _feature_snapshots = feature_snapshots
+    _last_refresh_at = datetime.now(timezone.utc).isoformat()
+
+
+def get_ml_shadow_predictions():
+    return _ml_shadow_predictions
+
+
+def set_ml_shadow_predictions(predictions):
+    global _ml_shadow_predictions, _last_refresh_at
+    _ml_shadow_predictions = predictions
     _last_refresh_at = datetime.now(timezone.utc).isoformat()

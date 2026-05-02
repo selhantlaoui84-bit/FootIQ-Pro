@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
-import { buildFeatureStore, getBackendHealth, getRefreshStatus, refreshData, trainCandidateModel } from '~/lib/api';
+import { buildFeatureStore, generateShadowPredictions, getBackendHealth, getRefreshStatus, refreshData, trainCandidateModel } from '~/lib/api';
 import { useAuth } from '~/lib/auth';
-import type { BuildFeatureStoreResponse, HealthResponse, RefreshResponse, TrainingReport } from '~/lib/mock-data';
+import type { BuildFeatureStoreResponse, GenerateShadowPredictionsResponse, HealthResponse, MatchView, RefreshResponse, TrainingReport } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
 
 export default function AdminPage() {
@@ -17,6 +17,11 @@ export default function AdminPage() {
   const [modelType, setModelType] = useState('random_forest');
   const [trainingLimit, setTrainingLimit] = useState(5000);
   const [trainingReport, setTrainingReport] = useState<TrainingReport | null>(null);
+  const [isGeneratingShadow, setIsGeneratingShadow] = useState(false);
+  const [shadowLimit, setShadowLimit] = useState(500);
+  const [shadowForce, setShadowForce] = useState(false);
+  const [shadowView, setShadowView] = useState<MatchView>('upcoming');
+  const [shadowResult, setShadowResult] = useState<GenerateShadowPredictionsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { user, isAdmin } = useAuth();
 
@@ -70,6 +75,24 @@ export default function AdminPage() {
       setError('Candidate training unavailable for the moment.');
     } finally {
       setIsTraining(false);
+    }
+  }
+
+  async function handleGenerateShadowPredictions() {
+    setIsGeneratingShadow(true);
+    setError(null);
+
+    try {
+      const result = await generateShadowPredictions({ limit: shadowLimit, force: shadowForce, view: shadowView });
+      setShadowResult(result);
+
+      if (result.status === 'error') {
+        setError(result.detail ?? 'G?n?ration des pr?dictions shadow impossible.');
+      }
+    } catch {
+      setError('G?n?ration des pr?dictions shadow indisponible pour le moment.');
+    } finally {
+      setIsGeneratingShadow(false);
     }
   }
 
@@ -237,6 +260,46 @@ export default function AdminPage() {
           {trainingReport?.note && <div className="banner info">{trainingReport.note}</div>}
         </section>
 
+        <section className="card shadowCard">
+          <p className="eyebrow">Mode shadow ML</p>
+          <h2>4. G?n?rer les pr?dictions shadow</h2>
+          <p>Calcule les pr?dictions du mod?le ML candidat en parall?le du mod?le officiel, sans les activer en production.</p>
+          <div className="formGrid">
+            <label className="formField">
+              <span>Limite</span>
+              <input min={1} max={2000} type="number" value={shadowLimit} onChange={(event) => setShadowLimit(Number(event.target.value))} />
+            </label>
+            <label className="formField">
+              <span>Vue</span>
+              <select value={shadowView} onChange={(event) => setShadowView(event.target.value as MatchView)}>
+                <option value="upcoming">? venir</option>
+                <option value="history">Historique</option>
+                <option value="all">Tous</option>
+              </select>
+            </label>
+            <label className="formField checkboxField">
+              <span>Forcer la r?g?n?ration</span>
+              <input type="checkbox" checked={shadowForce} onChange={(event) => setShadowForce(event.target.checked)} />
+            </label>
+          </div>
+          <button className="button primary" type="button" onClick={handleGenerateShadowPredictions} disabled={isGeneratingShadow || !isAdmin}>
+            {isGeneratingShadow ? 'G?n?ration...' : 'G?n?rer les pr?dictions shadow'}
+          </button>
+          {shadowResult && (
+            <div className="dataList">
+              <span>Vue <strong>{shadowResult.view ?? shadowView}</strong></span>
+              <span>G?n?r?es <strong>{shadowResult.shadow_predictions_generated ?? 0}</strong></span>
+              <span>Sauvegard?es <strong>{shadowResult.shadow_predictions_saved ?? 0}</strong></span>
+              <span>Disponibles <strong>{shadowResult.available_count ?? 0}</strong></span>
+              <span>D?saccords <strong>{shadowResult.disagreement_count ?? 0}</strong></span>
+              <span>D?saccords ?lev?s <strong>{shadowResult.high_disagreement_count ?? 0}</strong></span>
+              <span>Candidat production <strong>{shadowResult.candidate_is_production ? 'oui' : 'non'}</strong></span>
+            </div>
+          )}
+          {shadowResult?.note && <div className="banner info">{shadowResult.note}</div>}
+          <Link className="textLink" href="/performance#shadow-ml">Voir la synth?se shadow ML</Link>
+        </section>
+
         <section className="card">
           <h2>Dernier refresh</h2>
           <div className="dataList">
@@ -273,7 +336,7 @@ export default function AdminPage() {
           </div>
           <div className="banner info">
             Le backtesting et les snapshots se mettent à jour depuis les matchs terminés avec score disponible. Voir le rapport modèle dans{' '}
-            <Link className="textLink" href="/performance#feature-store">
+            <Link className="textLink" href="/performance#shadow-ml">
               Performance
             </Link>
             .

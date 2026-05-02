@@ -27,6 +27,7 @@ from services.ml_training import (
     load_latest_candidate_metadata,
     train_candidate_model,
 )
+from services.ml_shadow import compare_shadow_to_production, generate_shadow_prediction
 from services.model_registry import get_model_metadata
 from services.prediction_engine import generate_prediction_from_match
 from services.prediction_engine import MODEL_VERSION
@@ -116,6 +117,98 @@ def _prediction_for_match(match: dict, all_matches: list[dict] | None = None, el
     return generate_prediction_from_match(match, all_matches or _available_matches(), elo_ratings)
 
 
+def _is_finished(match: dict) -> bool:
+    return str(match.get("status", "")).upper() == "FINISHED"
+
+
+def _kickoff_ts(match: dict) -> float:
+    value = match.get("kickoff") or ""
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp()
+    except Exception:
+        return 0
+
+
+def _filter_matches(matches: list[dict], status: str | None = None, q: str | None = None, include_finished: bool = True, view: str = "all"):
+    result = list(matches or [])
+    normalized_view = (view or "all").lower()
+    if normalized_view == "upcoming":
+        result = [match for match in result if not _is_finished(match)]
+        result.sort(key=_kickoff_ts)
+    elif normalized_view == "history":
+        result = [match for match in result if _is_finished(match)]
+        result.sort(key=_kickoff_ts, reverse=True)
+    else:
+        if not include_finished:
+            result = [match for match in result if not _is_finished(match)]
+        result.sort(key=lambda match: (_is_finished(match), _kickoff_ts(match)))
+
+    if status:
+        wanted = status.upper()
+        if wanted == "UPCOMING":
+            result = [match for match in result if not _is_finished(match)]
+        elif wanted == "FINISHED":
+            result = [match for match in result if _is_finished(match)]
+        else:
+            result = [match for match in result if str(match.get("status", "")).upper() == wanted]
+
+    if q:
+        needle = q.strip().lower()
+        result = [
+            match
+            for match in result
+            if needle in " ".join(
+                str(match.get(key, ""))
+                for key in ("home_team", "away_team", "competition", "slug", "match_id", "id")
+            ).lower()
+        ]
+    return result
+
+
+def _shadow_memory_rows():
+    return runtime_store.get_ml_shadow_predictions()
+
+
+def _shadow_summary():
+    stored = repository.get_ml_shadow_summary()
+    if stored.get("shadow_predictions_count"):
+        return stored
+    rows = _shadow_memory_rows()
+    available = [row for row in rows if (row.get("shadow_prediction") or {}).get("available")]
+    same = [row for row in rows if (row.get("comparison") or {}).get("same_pick") is True]
+    disagreements = [row for row in rows if (row.get("comparison") or {}).get("same_pick") is False]
+    high = [row for row in rows if (row.get("comparison") or {}).get("disagreement_level") == "high"]
+    return {
+        "shadow_predictions_count": len(rows),
+        "available_count": len(available),
+        "unavailable_count": len(rows) - len(available),
+        "same_pick_count": len(same),
+        "disagreement_count": len(disagreements),
+        "high_disagreement_count": len(high),
+        "candidate_model_version": ML_CANDIDATE_VERSION if rows else None,
+    }
+
+
+def _find_shadow(match_id: str):
+    stored = repository.get_ml_shadow_prediction(match_id)
+    if stored:
+        return stored
+    return next((row for row in _shadow_memory_rows() if row.get("match_id") == match_id), None)
+
+
+def _prediction_with_shadow(prediction: dict):
+    match_id = prediction.get("match_id") or prediction.get("id") or prediction.get("slug")
+    shadow = _find_shadow(match_id)
+    if not shadow:
+        return prediction
+    return {
+        **prediction,
+        "shadow": {
+            "prediction": shadow.get("shadow_prediction"),
+            "comparison": shadow.get("comparison"),
+        },
+    }
+
 
 
 def _available_feature_snapshots():
@@ -200,6 +293,8 @@ def _dashboard_summary():
     medium = [item for item in predictions if item["confidence"]["status"] == "MOYEN"]
     avoid = [item for item in predictions if item["confidence"]["status"] in {"Ã€ Ã‰VITER", "A EVITER"}]
     traps = [item for item in predictions if item["flags"]["trap_match"]]
+    finished_matches_count = len([item for item in matches if _is_finished(item)])
+    upcoming_matches_count = len(matches) - finished_matches_count
     average_risk_score = 0
     if predictions:
         average_risk_score = round(sum(item.get("risk_score", 0) for item in predictions) / len(predictions))
@@ -222,7 +317,8 @@ def _dashboard_summary():
         "total_matches": total_matches,
         "teams_count": len(teams),
         "predictions_count": len(predictions),
-        "upcoming_matches_count": total_matches,
+        "upcoming_matches_count": upcoming_matches_count,
+        "historical_matches_count": finished_matches_count,
         "reliable_matches_count": len(reliable),
         "medium_matches_count": len(medium),
         "avoid_matches_count": len(avoid),
@@ -240,6 +336,9 @@ def _dashboard_summary():
         "ml_candidate_status": candidate_metadata.get("status", "not_trained"),
         "ml_candidate_accuracy": candidate_metadata.get("accuracy"),
         "ml_candidate_model_version": candidate_metadata.get("model_version", "ml-candidate-v1"),
+        "ml_shadow_summary": _shadow_summary(),
+        "shadow_disagreement_count": _shadow_summary().get("disagreement_count", 0),
+        "shadow_high_disagreement_count": _shadow_summary().get("high_disagreement_count", 0),
         "evaluated_matches": backtest["evaluated_matches"],
         "result_accuracy": backtest["result_accuracy"],
         "average_brier_score": backtest["average_brier_score"],
@@ -280,8 +379,13 @@ def health():
 
 
 @app.get("/matches")
-def list_matches():
-    return _available_matches()
+def list_matches(
+    status: str | None = None,
+    q: str | None = None,
+    include_finished: bool = True,
+    view: str = Query(default="all", pattern="^(all|upcoming|history)$"),
+):
+    return _filter_matches(_available_matches(), status=status, q=q, include_finished=include_finished, view=view)
 
 
 @app.get("/matches/{match_id}")
@@ -310,7 +414,7 @@ def prediction_detail(match_id: str):
     if prediction is None:
         raise HTTPException(status_code=404, detail="Prediction not found")
 
-    return prediction
+    return _prediction_with_shadow(prediction)
 
 
 @app.get("/teams")
@@ -415,6 +519,27 @@ def ml_feature_importance():
     return metadata.get("feature_importance") or []
 
 
+@app.get("/ml/shadow-summary")
+def ml_shadow_summary():
+    return {
+        **_shadow_summary(),
+        "candidate_is_production": False,
+        "production_model_version": MODEL_VERSION,
+    }
+
+
+@app.get("/ml/shadow-predictions")
+def ml_shadow_predictions(limit: int = Query(default=100, ge=1, le=500), view: str = Query(default="all", pattern="^(all|upcoming|history)$")):
+    rows = repository.get_ml_shadow_predictions(limit=limit) or _shadow_memory_rows()
+    match_ids = {
+        match.get("match_id") or match.get("id") or match.get("slug")
+        for match in _filter_matches(_available_matches(), view=view)
+    }
+    if view != "all":
+        rows = [row for row in rows if row.get("match_id") in match_ids]
+    return rows[:limit]
+
+
 @app.get("/ml/comparison")
 def ml_comparison():
     return _ml_comparison()
@@ -496,6 +621,7 @@ def model_performance():
         "feature_store_ready": feature_summary["snapshots_count"] > 0,
         "ml_candidate": load_latest_candidate_metadata(),
         "ml_comparison": _ml_comparison(),
+        "ml_shadow_summary": _shadow_summary(),
         "candidate_is_production": False,
         "predictions_tracked": len(predictions),
         "tracked": len(predictions) or PERFORMANCE["tracked"],
@@ -642,6 +768,81 @@ def build_feature_store(
         "force": force,
         "created_at": now,
         "note": "Use force=true to rebuild existing snapshots.",
+    }
+
+
+@app.post("/admin/generate-shadow-predictions")
+def generate_shadow_predictions_endpoint(
+    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
+    limit: int = Query(default=500, ge=1, le=2000),
+    force: bool = Query(default=False),
+    view: str = Query(default="upcoming", pattern="^(all|upcoming|history)$"),
+) -> dict[str, Any]:
+    _require_admin_key(x_admin_key)
+
+    now = datetime.now(timezone.utc).isoformat()
+    all_matches = _available_matches()
+    target_matches = _filter_matches(all_matches, view=view)
+    predictions = _available_predictions()
+    predictions_by_id = {
+        item.get("match_id") or item.get("id") or item.get("slug"): item
+        for item in predictions
+    }
+
+    existing_ids = set()
+    if not force:
+        existing_rows = repository.get_ml_shadow_predictions(limit=2000) or _shadow_memory_rows()
+        existing_ids = {row.get("match_id") for row in existing_rows if row.get("match_id")}
+
+    items = []
+    elo_ratings = calculate_team_elos(all_matches)
+
+    for match in target_matches:
+        match_id = match.get("match_id") or match.get("id") or match.get("slug")
+        if not match_id or (not force and match_id in existing_ids):
+            continue
+
+        production_prediction = predictions_by_id.get(match_id) or _prediction_for_match(match, all_matches, elo_ratings)
+        shadow_prediction = generate_shadow_prediction(match, production_prediction)
+        comparison = compare_shadow_to_production(production_prediction, shadow_prediction)
+        items.append(
+            {
+                "match_id": match_id,
+                "production_prediction": production_prediction,
+                "shadow_prediction": shadow_prediction,
+                "comparison": comparison,
+                "created_at": now,
+            }
+        )
+
+        if len(items) >= limit:
+            break
+
+    saved_count = repository.save_ml_shadow_predictions(items)
+    storage = "postgresql" if saved_count > 0 else "memory"
+    if storage == "memory" and items:
+        previous_rows = [] if force else _shadow_memory_rows()
+        runtime_store.set_ml_shadow_predictions(items + previous_rows)
+
+    available_count = sum(1 for item in items if item["shadow_prediction"].get("available"))
+    same_pick_count = sum(1 for item in items if item["comparison"].get("same_pick") is True)
+    disagreement_count = sum(1 for item in items if item["comparison"].get("same_pick") is False)
+    high_disagreement_count = sum(1 for item in items if item["comparison"].get("disagreement_level") == "high")
+
+    return {
+        "status": "ok",
+        "storage": storage,
+        "view": view,
+        "shadow_predictions_generated": len(items),
+        "shadow_predictions_saved": saved_count if storage == "postgresql" else len(items),
+        "available_count": available_count,
+        "unavailable_count": len(items) - available_count,
+        "same_pick_count": same_pick_count,
+        "disagreement_count": disagreement_count,
+        "high_disagreement_count": high_disagreement_count,
+        "candidate_is_production": False,
+        "created_at": now,
+        "note": "Les pr?dictions ML shadow sont calcul?es en parall?le et ne remplacent pas le mod?le officiel.",
     }
 
 

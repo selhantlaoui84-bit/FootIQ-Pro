@@ -1,10 +1,10 @@
-import type { GetStaticProps } from 'next';
+﻿import type { GetStaticProps } from 'next';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useEffect, useMemo, useState } from 'react';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { getMatches } from '~/lib/api';
-import { matchHref, statusClass, type Match } from '~/lib/mock-data';
+import { matchHref, statusClass, type Match, type MatchView } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
 
 type MatchesProps = {
@@ -16,28 +16,41 @@ export const getStaticProps: GetStaticProps<MatchesProps> = async () => ({
   revalidate: 120,
 });
 
+const viewLabels: Record<MatchView, string> = {
+  upcoming: 'À venir',
+  all: 'Tous',
+  history: 'Historique',
+};
+
 export default function MatchesPage({ matches }: MatchesProps) {
   const router = useRouter();
   const [query, setQuery] = useState('');
   const [competition, setCompetition] = useState('');
+  const [view, setView] = useState<MatchView>('upcoming');
+  const [status, setStatus] = useState('');
   const [sort, setSort] = useState('date');
-  const competitions = [...new Set(matches.map((match) => match.competition))].sort();
+  const competitions = [...new Set(matches.map((match) => match.competition).filter(Boolean))].sort();
 
   useEffect(() => {
     if (typeof router.query.competition === 'string') {
       setCompetition(router.query.competition);
     }
-  }, [router.query.competition]);
+    if (router.query.view === 'all' || router.query.view === 'upcoming' || router.query.view === 'history') {
+      setView(router.query.view);
+    }
+  }, [router.query.competition, router.query.view]);
 
   const filteredMatches = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     const result = matches.filter((match) => {
-      const matchesQuery =
-        !normalizedQuery ||
-        `${match.home_team} ${match.away_team} ${match.competition}`.toLowerCase().includes(normalizedQuery);
+      const finished = isFinished(match);
+      const searchHaystack = `${match.home_team} ${match.away_team} ${match.competition} ${match.slug} ${match.match_id}`.toLowerCase();
+      const matchesQuery = !normalizedQuery || searchHaystack.includes(normalizedQuery);
       const matchesCompetition = !competition || match.competition === competition;
+      const matchesView = view === 'all' || (view === 'history' ? finished : !finished);
+      const matchesStatus = !status || (status === 'upcoming' ? !finished : status === 'finished' ? finished : match.status === status);
 
-      return matchesQuery && matchesCompetition;
+      return matchesQuery && matchesCompetition && matchesView && matchesStatus;
     });
 
     return result.sort((a, b) => {
@@ -49,54 +62,83 @@ export default function MatchesPage({ matches }: MatchesProps) {
         return a.competition.localeCompare(b.competition);
       }
 
-      return new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime();
+      const aDate = new Date(a.kickoff).getTime();
+      const bDate = new Date(b.kickoff).getTime();
+      return view === 'history' ? bDate - aDate : aDate - bDate;
     });
-  }, [competition, matches, query, sort]);
+  }, [competition, matches, query, sort, status, view]);
+
+  const upcomingCount = matches.filter((match) => !isFinished(match)).length;
+  const historyCount = matches.filter(isFinished).length;
 
   return (
     <ProtectedRoute>
       <Layout>
-      <section className="pageHeader">
-        <p className="eyebrow">Calendrier prédictif</p>
-        <h1>Matchs à venir</h1>
-        <p>{matches.length} matchs disponibles depuis l'API ou le fallback mock.</p>
-      </section>
+        <section className="pageHeader">
+          <p className="eyebrow">Calendrier dynamique</p>
+          <h1>Matchs</h1>
+          <p>
+            Les matchs à venir sont affichés en priorité. L'historique reste consultable pour l'analyse, le backtesting et le Feature Store.
+          </p>
+          <div className="sourceStrip">
+            <span>À venir: {upcomingCount}</span>
+            <span>Historique: {historyCount}</span>
+            <span>Total: {matches.length}</span>
+          </div>
+        </section>
 
-      <section className="filters">
-        <input
-          aria-label="Rechercher des matchs"
-          placeholder="Rechercher une équipe..."
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-        <select aria-label="Compétition" value={competition} onChange={(event) => setCompetition(event.target.value)}>
-          <option value="">Toutes compétitions</option>
-          {competitions.map((item) => (
-            <option key={item} value={item}>
-              {item}
-            </option>
-          ))}
-        </select>
-        <select aria-label="Tri" value={sort} onChange={(event) => setSort(event.target.value)}>
-          <option value="date">Date du match</option>
-          <option value="confidence">Confiance</option>
-          <option value="competition">Compétition</option>
-        </select>
-      </section>
+        <section className="filters searchFilterBar">
+          <input
+            aria-label="Rechercher des matchs"
+            placeholder="Rechercher une équipe, une compétition ou un match..."
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <select aria-label="Vue" value={view} onChange={(event) => setView(event.target.value as MatchView)}>
+            {Object.entries(viewLabels).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <select aria-label="Statut" value={status} onChange={(event) => setStatus(event.target.value)}>
+            <option value="">Tous les statuts</option>
+            <option value="upcoming">À venir</option>
+            <option value="finished">Terminés</option>
+          </select>
+          <select aria-label="Compétition" value={competition} onChange={(event) => setCompetition(event.target.value)}>
+            <option value="">Toutes compétitions</option>
+            {competitions.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+          <select aria-label="Tri" value={sort} onChange={(event) => setSort(event.target.value)}>
+            <option value="date">Date du match</option>
+            <option value="confidence">Confiance</option>
+            <option value="competition">Compétition</option>
+          </select>
+        </section>
 
-      <section className="stack">
-        {filteredMatches.length > 0 ? (
-          filteredMatches.map((match) => <MatchRow match={match} key={match.id} />)
-        ) : (
-          <div className="emptyState">Aucun match ne correspond aux filtres.</div>
-        )}
-      </section>
+        <section className="stack">
+          {filteredMatches.length > 0 ? (
+            filteredMatches.map((match) => <MatchRow match={match} key={match.id} />)
+          ) : view === 'upcoming' ? (
+            <div className="emptyState">Aucun match à venir disponible. Utilisez l'historique pour consulter les matchs terminés.</div>
+          ) : (
+            <div className="emptyState">Aucun match ne correspond aux filtres.</div>
+          )}
+        </section>
       </Layout>
     </ProtectedRoute>
   );
 }
 
 function MatchRow({ match }: { match: Match }) {
+  const finished = isFinished(match);
+  const scoreAvailable = match.score_full_time_home !== undefined && match.score_full_time_home !== null && match.score_full_time_away !== undefined && match.score_full_time_away !== null;
+
   return (
     <Link className="rowCard clickable-card" href={matchHref(match)}>
       <div>
@@ -105,31 +147,46 @@ function MatchRow({ match }: { match: Match }) {
           {match.home_team} vs {match.away_team}
         </h2>
         <p>{new Date(match.kickoff).toLocaleString('fr-FR', { dateStyle: 'full', timeStyle: 'short' })}</p>
+        <div className="cardTop compact">
+          <span className={`badge status-badge ${finished ? 'historicalBadge' : ''}`}>{finished ? 'Terminé' : match.status ?? 'À venir'}</span>
+          <span className="badge">{match.source ?? 'api'}</span>
+        </div>
       </div>
-      <div className="probGrid">
-        <span>
-          1 <strong>{match.probabilities?.home ? `${match.probabilities.home}%` : 'N/A'}</strong>
-        </span>
-        <span>
-          N <strong>{match.probabilities?.draw ? `${match.probabilities.draw}%` : 'N/A'}</strong>
-        </span>
-        <span>
-          2 <strong>{match.probabilities?.away ? `${match.probabilities.away}%` : 'N/A'}</strong>
-        </span>
-      </div>
+
+      {finished ? (
+        <div className="scoreDisplay" aria-label="Score final">
+          {scoreAvailable ? (
+            <>
+              <span>{match.home_team}</span>
+              <strong>{match.score_full_time_home} - {match.score_full_time_away}</strong>
+              <span>{match.away_team}</span>
+            </>
+          ) : (
+            <strong>Score non disponible</strong>
+          )}
+        </div>
+      ) : (
+        <div className="probGrid">
+          <span>
+            1 <strong>{match.probabilities?.home ? `${match.probabilities.home}%` : 'N/A'}</strong>
+          </span>
+          <span>
+            N <strong>{match.probabilities?.draw ? `${match.probabilities.draw}%` : 'N/A'}</strong>
+          </span>
+          <span>
+            2 <strong>{match.probabilities?.away ? `${match.probabilities.away}%` : 'N/A'}</strong>
+          </span>
+        </div>
+      )}
+
       <div>
         {match.confidence ? (
           <>
-            <span className={`badge status-badge ${statusClass(match.confidence.status)}`}>
-              {match.confidence.status}
-            </span>
+            <span className={`badge status-badge ${statusClass(match.confidence.status)}`}>{match.confidence.status}</span>
             <strong className="score">{match.confidence.score}</strong>
           </>
         ) : (
-          <>
-            <span className="badge status-badge moyen">{match.status ?? 'SCHEDULED'}</span>
-            <strong className="score">{match.source ?? 'api'}</strong>
-          </>
+          <span className="badge status-badge moyen">{finished ? 'Terminé' : match.status ?? 'À venir'}</span>
         )}
       </div>
       <span className="button secondary small">Voir analyse</span>
@@ -137,3 +194,6 @@ function MatchRow({ match }: { match: Match }) {
   );
 }
 
+function isFinished(match: Match) {
+  return String(match.status ?? '').toUpperCase() === 'FINISHED';
+}

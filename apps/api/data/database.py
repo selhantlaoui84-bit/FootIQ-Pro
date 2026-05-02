@@ -81,6 +81,19 @@ feature_snapshots_table = Table(
     Column("created_at", TIMESTAMP(timezone=True)),
 )
 
+ml_shadow_predictions_table = Table(
+    "ml_shadow_predictions",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("match_id", Text),
+    Column("production_model_version", Text),
+    Column("candidate_model_version", Text),
+    Column("production_prediction_json", Text),
+    Column("shadow_prediction_json", Text),
+    Column("comparison_json", Text),
+    Column("created_at", TIMESTAMP(timezone=True)),
+)
+
 refresh_logs_table = Table(
     "refresh_logs",
     metadata,
