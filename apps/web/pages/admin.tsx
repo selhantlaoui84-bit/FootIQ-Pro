@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
-import { buildFeatureStore, generateShadowPredictions, getAdminWorkflowStatus, getBackendHealth, getRefreshJobStatus, getRefreshStatus, refreshData, trainCandidateModel } from '~/lib/api';
+import { buildFeatureStore, generateShadowPredictions, getAdminWorkflowStatus, getBackendHealth, getFeatureQualityReport, getRefreshJobStatus, getRefreshStatus, refreshData, trainCandidateModel } from '~/lib/api';
 import { useAuth } from '~/lib/auth';
-import type { AdminWorkflowStatus, BuildFeatureStoreResponse, GenerateShadowPredictionsResponse, HealthResponse, MatchView, RefreshJobStatus, RefreshResponse, TrainingReport } from '~/lib/mock-data';
+import type { AdminWorkflowStatus, BuildFeatureStoreResponse, DatasetQualityReport, GenerateShadowPredictionsResponse, HealthResponse, MatchView, RefreshJobStatus, RefreshResponse, TrainingReport } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
 
 export default function AdminPage() {
@@ -16,6 +16,7 @@ export default function AdminPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isBuildingFeatures, setIsBuildingFeatures] = useState(false);
   const [featureBuildInfo, setFeatureBuildInfo] = useState<BuildFeatureStoreResponse | null>(null);
+  const [featureQuality, setFeatureQuality] = useState<DatasetQualityReport | null>(null);
   const [isTraining, setIsTraining] = useState(false);
   const [modelType, setModelType] = useState('random_forest');
   const [trainingLimit, setTrainingLimit] = useState(5000);
@@ -38,6 +39,9 @@ export default function AdminPage() {
     getAdminWorkflowStatus()
       .then(setWorkflowStatus)
       .catch(() => setWorkflowStatus(null));
+    getFeatureQualityReport()
+      .then(setFeatureQuality)
+      .catch(() => setFeatureQuality(null));
   }, []);
 
   useEffect(() => {
@@ -57,6 +61,7 @@ export default function AdminPage() {
         setIsRefreshing(false);
         setRefreshJobId(null);
         getAdminWorkflowStatus().then(setWorkflowStatus).catch(() => undefined);
+        getFeatureQualityReport().then(setFeatureQuality).catch(() => undefined);
       }
 
       if (job.status === 'error') {
@@ -112,6 +117,7 @@ export default function AdminPage() {
       setRefreshInfo(result);
       setIsRefreshing(false);
       getAdminWorkflowStatus().then(setWorkflowStatus).catch(() => undefined);
+      getFeatureQualityReport().then(setFeatureQuality).catch(() => undefined);
     } catch {
       setError('Refresh impossible pour le moment.');
       setIsRefreshing(false);
@@ -130,6 +136,11 @@ export default function AdminPage() {
 
       if (result.status === 'error') {
         setError(result.detail ?? 'Candidate training failed.');
+      } else if (result.status === 'blocked') {
+        setError(result.reason ?? result.dataset_quality?.recommendation_reason ?? 'Entraînement bloqué pour éviter une fuite de données.');
+      }
+      if (result.dataset_quality) {
+        setFeatureQuality(result.dataset_quality);
       }
     } catch {
       setError('Candidate training unavailable for the moment.');
@@ -167,6 +178,7 @@ export default function AdminPage() {
       if (result.status === 'error') {
         setError(result.detail ?? 'Construction du Feature Store impossible.');
       }
+      getFeatureQualityReport().then(setFeatureQuality).catch(() => undefined);
     } catch {
       setError('Construction du Feature Store indisponible pour le moment.');
     } finally {
@@ -222,6 +234,31 @@ export default function AdminPage() {
             <div className="metric"><span>Prochaine ?tape</span><strong>{workflowStatus?.next_step ?? 'refresh_data'}</strong></div>
           </div>
         <div className="banner info">Le moteur hybride est consultatif : il ne remplace pas le mod?le officiel.</div>
+        </section>
+
+        <section className="card qualityCard">
+          <p className="eyebrow">Anti-leakage</p>
+          <h2>
+            <span className="metricHelp">
+              Qualité du dataset
+              <InfoTooltip content="Vérifie que les variables d'entraînement ne contiennent pas d'information disponible uniquement après le match." />
+            </span>
+          </h2>
+          <p>Ce contrôle vérifie que les variables d'entraînement ne contiennent pas d'information post-match comme le score final ou le vainqueur.</p>
+          <div className="compactDataGrid four">
+            <div className="metric"><span>Lignes contrôlées</span><strong>{featureQuality?.rows_checked ?? 0}</strong></div>
+            <div className="metric"><span>Training autorisé</span><strong>{featureQuality?.safe_for_training ? 'oui' : 'non'}</strong></div>
+            <div className="metric"><span>Recommandation</span><strong>{featureQuality?.recommendation ?? 'insufficient_data'}</strong></div>
+            <div className="metric"><span>Score qualité</span><strong>{featureQuality?.average_quality_score ?? 0}/100</strong></div>
+            <div className="metric"><span>Lignes bloquées</span><strong>{featureQuality?.blocked_rows ?? 0}</strong></div>
+            <div className="metric"><span>Alertes</span><strong>{featureQuality?.warning_rows ?? 0}</strong></div>
+          </div>
+          {(featureQuality?.leakage_features_detected?.length ?? 0) > 0 && (
+            <div className="banner error leakageWarning">
+              Fuites détectées: {featureQuality?.leakage_features_detected.join(', ')}
+            </div>
+          )}
+          <Link className="textLink" href="/performance#dataset-quality">Voir le rapport qualité complet</Link>
         </section>
 
         <section className="sectionSplit">
@@ -334,6 +371,13 @@ export default function AdminPage() {
               <span>Entraîné le <strong>{trainingReport.trained_at ?? 'N/A'}</strong></span>
             </div>
           )}
+          {trainingReport?.status === 'blocked' && (
+            <div className="banner error">
+              Entraînement bloqué pour éviter une fuite de données. {trainingReport.reason ?? trainingReport.dataset_quality?.recommendation_reason}
+              {' '}<Link className="textLink" href="/performance#dataset-quality">Voir le diagnostic</Link>
+            </div>
+          )}
+          {trainingReport?.warning && <div className="banner warning">{trainingReport.warning}</div>}
           {trainingReport?.note && <div className="banner info">{trainingReport.note}</div>}
         </section>
 

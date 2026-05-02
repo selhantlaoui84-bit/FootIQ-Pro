@@ -1,0 +1,205 @@
+from __future__ import annotations
+
+from typing import Any
+
+
+LEAKAGE_KEYWORDS = [
+    "score",
+    "winner",
+    "result",
+    "full_time",
+    "half_time",
+    "home_goals",
+    "away_goals",
+    "actual",
+    "target",
+]
+
+ALLOWED_TARGET_FIELDS = [
+    "result",
+    "home_goals",
+    "away_goals",
+    "over_2_5",
+    "btts",
+]
+
+CORE_FEATURES = [
+    "elo_delta",
+    "form_delta",
+    "attack_delta",
+    "defense_delta",
+    "draw_risk_score",
+    "data_quality_score",
+    "home_probability",
+    "draw_probability",
+    "away_probability",
+]
+
+SAFE_SCORE_FEATURES = {
+    "data_quality_score",
+    "draw_risk_score",
+    "risk_score",
+    "trap_match_score",
+}
+
+
+def is_potential_leakage_feature(feature_name: str) -> bool:
+    normalized = str(feature_name or "").lower()
+    if normalized in SAFE_SCORE_FEATURES:
+        return False
+    return any(keyword in normalized for keyword in LEAKAGE_KEYWORDS)
+
+
+def _quality_score(leakage_features: list[str], missing_core_features: list[str], feature_count: int, has_target: bool) -> int:
+    score = 100
+    score -= min(len(leakage_features) * 35, 100)
+    score -= min(len(missing_core_features) * 6, 45)
+    if feature_count <= 0:
+        score -= 40
+    if not has_target:
+        score -= 8
+    return max(0, min(100, score))
+
+
+def inspect_feature_row(row: dict[str, Any]) -> dict[str, Any]:
+    try:
+        features = row.get("features") or {}
+        target = row.get("target") or {}
+        if not isinstance(features, dict):
+            features = {}
+        if not isinstance(target, dict):
+            target = {}
+
+        feature_names = [str(name) for name in features.keys()]
+        leakage_features = sorted({name for name in feature_names if is_potential_leakage_feature(name)})
+        missing_core_features = [name for name in CORE_FEATURES if name not in features]
+        target_fields = sorted(str(name) for name in target.keys())
+        warnings = []
+
+        if leakage_features:
+            warnings.append("Variables suspectes de fuite post-match detectees dans les features.")
+        if len(missing_core_features) >= 4:
+            warnings.append("Plusieurs variables coeur sont absentes.")
+        elif missing_core_features:
+            warnings.append("Certaines variables coeur sont absentes.")
+        unknown_target_fields = [name for name in target_fields if name not in ALLOWED_TARGET_FIELDS]
+        if unknown_target_fields:
+            warnings.append("Le target contient des champs non standards.")
+
+        status = "ok"
+        if leakage_features:
+            status = "blocked"
+        elif warnings:
+            status = "warning"
+
+        quality_score = _quality_score(leakage_features, missing_core_features, len(feature_names), bool(target))
+
+        return {
+            "match_id": row.get("match_id", ""),
+            "model_version": row.get("model_version"),
+            "feature_count": len(feature_names),
+            "has_target": bool(target),
+            "target_fields": target_fields,
+            "leakage_features": leakage_features,
+            "missing_core_features": missing_core_features,
+            "quality_score": quality_score,
+            "status": status,
+            "warnings": warnings,
+        }
+    except Exception as exc:
+        return {
+            "match_id": row.get("match_id", "") if isinstance(row, dict) else "",
+            "model_version": row.get("model_version") if isinstance(row, dict) else None,
+            "feature_count": 0,
+            "has_target": False,
+            "target_fields": [],
+            "leakage_features": [],
+            "missing_core_features": CORE_FEATURES,
+            "quality_score": 0,
+            "status": "warning",
+            "warnings": [f"Ligne impossible a inspecter: {exc}"],
+        }
+
+
+def build_dataset_quality_report(rows: list[dict[str, Any]], limit: int = 1000) -> dict[str, Any]:
+    checked_rows = list(rows or [])[: max(1, int(limit or 1000))]
+    inspections = [inspect_feature_row(row) for row in checked_rows]
+    rows_checked = len(inspections)
+
+    if rows_checked == 0:
+        return {
+            "status": "empty",
+            "rows_checked": 0,
+            "rows_with_target": 0,
+            "rows_without_target": 0,
+            "blocked_rows": 0,
+            "warning_rows": 0,
+            "ok_rows": 0,
+            "average_quality_score": 0,
+            "leakage_features_detected": [],
+            "missing_core_features": {},
+            "target_field_coverage": {},
+            "safe_for_training": False,
+            "recommendation": "insufficient_data",
+            "recommendation_reason": "Aucune ligne de Feature Store disponible pour le controle qualite.",
+            "sample_issues": [],
+        }
+
+    rows_with_target = sum(1 for item in inspections if item["has_target"])
+    blocked_rows = sum(1 for item in inspections if item["status"] == "blocked")
+    warning_rows = sum(1 for item in inspections if item["status"] == "warning")
+    ok_rows = sum(1 for item in inspections if item["status"] == "ok")
+    average_quality_score = round(sum(item["quality_score"] for item in inspections) / rows_checked)
+
+    leakage_features = sorted({name for item in inspections for name in item["leakage_features"]})
+    missing_core_features: dict[str, int] = {}
+    target_field_coverage: dict[str, int] = {field: 0 for field in ALLOWED_TARGET_FIELDS}
+
+    for item in inspections:
+        for name in item["missing_core_features"]:
+            missing_core_features[name] = missing_core_features.get(name, 0) + 1
+        for name in item["target_fields"]:
+            target_field_coverage[name] = target_field_coverage.get(name, 0) + 1
+
+    sample_issues = [
+        item
+        for item in inspections
+        if item["status"] in {"warning", "blocked"}
+    ][:20]
+
+    status = "ok"
+    recommendation = "safe_to_train"
+    reason = "Le dataset ne presente pas de fuite evidente et contient assez de targets pour entrainer."
+    safe_for_training = True
+
+    if blocked_rows > 0:
+        status = "blocked"
+        recommendation = "blocked_leakage_detected"
+        reason = "Des features semblent contenir des informations post-match. Entrainement bloque."
+        safe_for_training = False
+    elif rows_with_target < 30:
+        recommendation = "insufficient_data"
+        reason = "Moins de 30 lignes supervisees sont disponibles pour l'entrainement."
+        safe_for_training = False
+    elif warning_rows > 0:
+        recommendation = "review_warnings"
+        reason = "Aucune fuite bloquante detectee, mais certaines lignes ont des variables coeur manquantes."
+        safe_for_training = True
+
+    return {
+        "status": status,
+        "rows_checked": rows_checked,
+        "rows_with_target": rows_with_target,
+        "rows_without_target": rows_checked - rows_with_target,
+        "blocked_rows": blocked_rows,
+        "warning_rows": warning_rows,
+        "ok_rows": ok_rows,
+        "average_quality_score": average_quality_score,
+        "leakage_features_detected": leakage_features,
+        "missing_core_features": missing_core_features,
+        "target_field_coverage": target_field_coverage,
+        "safe_for_training": safe_for_training,
+        "recommendation": recommendation,
+        "recommendation_reason": reason,
+        "sample_issues": sample_issues,
+    }

@@ -14,6 +14,7 @@ from data.database import init_db
 from data.mock_data import MATCHES, PERFORMANCE, TEAMS, get_match as get_mock_match
 from data.mock_data import get_prediction as get_mock_prediction
 from data.mock_data import get_team as get_mock_team
+from services.data_quality import build_dataset_quality_report
 from services.feature_store import build_feature_snapshots, summarize_feature_store
 from services.hybrid_decision import build_hybrid_decision
 from services.hybrid_engine import build_hybrid_engine_decision
@@ -278,6 +279,14 @@ def _training_dataset(model_version: str | None = None, limit: int = 100):
     return [item for item in snapshots if item.get("target")][:limit]
 
 
+def _dataset_quality_report(limit: int = 1000):
+    safe_limit = max(1, min(int(limit or 1000), 5000))
+    rows = repository.get_training_dataset(limit=safe_limit)
+    if not rows:
+        rows = [item for item in _available_feature_snapshots() if item.get("target")][:safe_limit]
+    return build_dataset_quality_report(rows, limit=safe_limit)
+
+
 def _feature_csv(rows: list[dict]) -> str:
     feature_names = sorted({name for row in rows for name in (row.get("features") or {}).keys()})
     headers = [
@@ -411,11 +420,14 @@ def _admin_workflow_status():
     shadow = _shadow_summary()
     shadow_backtesting = _shadow_backtesting_report()
     hybrid = _hybrid_summary()
+    dataset_quality = _dataset_quality_report(limit=1000)
 
     if not refresh.get("last_refresh_at"):
         next_step = "refresh_data"
     elif feature.get("snapshots_count", 0) <= 0:
         next_step = "build_feature_store"
+    elif not dataset_quality.get("safe_for_training", False):
+        next_step = "review_dataset_quality"
     elif candidate.get("status", "not_trained") in {"not_trained", "insufficient_data", "error"}:
         next_step = "train_candidate_model"
     elif shadow.get("shadow_predictions_count", 0) <= 0:
@@ -459,6 +471,13 @@ def _admin_workflow_status():
             "mode": hybrid.get("mode"),
             "recommendation": hybrid.get("recommendation"),
         },
+        "dataset_quality": {
+            "safe_for_training": dataset_quality.get("safe_for_training", False),
+            "recommendation": dataset_quality.get("recommendation", "insufficient_data"),
+            "average_quality_score": dataset_quality.get("average_quality_score", 0),
+            "blocked_rows": dataset_quality.get("blocked_rows", 0),
+            "warning_rows": dataset_quality.get("warning_rows", 0),
+        },
         "latest_refresh_job": runtime_store.get_latest_refresh_job(),
         "next_step": next_step,
     }
@@ -496,6 +515,7 @@ def _dashboard_summary():
     hybrid_summary = _hybrid_summary()
     hybrid_engine = _hybrid_engine_summary(limit=100, view="upcoming")
     candidate_metadata = load_latest_candidate_metadata()
+    dataset_quality = _dataset_quality_report(limit=1000)
 
     return {
         "total_matches": total_matches,
@@ -533,6 +553,9 @@ def _dashboard_summary():
         "hybrid_engine_recommendation": hybrid_engine.get("recommendation"),
         "hybrid_engine_strong_count": hybrid_engine.get("summary", {}).get("strong_count", 0),
         "hybrid_engine_avoid_count": hybrid_engine.get("summary", {}).get("avoid_count", 0),
+        "dataset_quality_safe_for_training": dataset_quality.get("safe_for_training", False),
+        "dataset_quality_score": dataset_quality.get("average_quality_score", 0),
+        "dataset_quality_recommendation": dataset_quality.get("recommendation", "insufficient_data"),
         "evaluated_matches": backtest["evaluated_matches"],
         "result_accuracy": backtest["result_accuracy"],
         "average_brier_score": backtest["average_brier_score"],
@@ -669,6 +692,11 @@ def feature_export(model_version: str | None = None):
     return Response(content=_feature_csv(rows), media_type="text/csv")
 
 
+@app.get("/features/quality-report")
+def feature_quality_report(limit: int = Query(default=1000, ge=1, le=5000)):
+    return _dataset_quality_report(limit=limit)
+
+
 @app.get("/ml/status")
 def ml_status():
     metadata = load_latest_candidate_metadata()
@@ -676,6 +704,7 @@ def ml_status():
         "status": metadata.get("status", "not_trained"),
         "latest_candidate": metadata,
         "feature_store": _feature_summary(),
+        "dataset_quality": _dataset_quality_report(limit=1000),
         "candidate_model_exists": candidate_model_exists(),
         "production_model_version": MODEL_VERSION,
         "candidate_is_production": False,
@@ -837,6 +866,7 @@ def model_performance():
     snapshots_count = sum(item.get("snapshots", 0) for item in comparison["model_versions"].values())
     feature_summary = _feature_summary()
     shadow_backtesting = _shadow_backtesting_report()
+    dataset_quality = _dataset_quality_report(limit=1000)
 
     return {
         **PERFORMANCE,
@@ -858,6 +888,7 @@ def model_performance():
         "ml_shadow_backtesting": shadow_backtesting,
         "hybrid_summary": _hybrid_summary(),
         "hybrid_engine_summary": _hybrid_engine_summary(limit=200, view="upcoming"),
+        "dataset_quality": dataset_quality,
         "candidate_is_production": False,
         "predictions_tracked": len(predictions),
         "tracked": len(predictions) or PERFORMANCE["tracked"],
@@ -1139,6 +1170,7 @@ def train_candidate_model_endpoint(
     x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
     model_type: str = Query(default="random_forest"),
     limit: int = Query(default=5000, ge=1, le=10000),
+    bypass_quality_gate: bool = Query(default=False),
 ) -> dict[str, Any]:
     _require_admin_key(x_admin_key)
 
@@ -1146,4 +1178,17 @@ def train_candidate_model_endpoint(
     if not feature_rows:
         feature_rows = _training_dataset(limit=limit)
 
-    return train_candidate_model(feature_rows, model_type=model_type)
+    dataset_quality = build_dataset_quality_report(feature_rows, limit=limit)
+    if not dataset_quality.get("safe_for_training", False) and not bypass_quality_gate:
+        return {
+            "status": "blocked",
+            "reason": dataset_quality.get("recommendation_reason"),
+            "dataset_quality": dataset_quality,
+            "note": "Entraînement bloqué pour éviter une fuite de données.",
+        }
+
+    report = train_candidate_model(feature_rows, model_type=model_type)
+    report["dataset_quality"] = dataset_quality
+    if bypass_quality_gate and not dataset_quality.get("safe_for_training", False):
+        report["warning"] = "Quality gate bypassed by admin request. Dataset quality alerts were ignored."
+    return report

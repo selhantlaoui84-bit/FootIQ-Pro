@@ -4,6 +4,7 @@ import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import {
   getBacktesting,
+  getFeatureQualityReport,
   getFeatureSummary,
   getMlFeatureImportance,
   getHybridEngineSummary,
@@ -18,6 +19,7 @@ import {
 } from '~/lib/api';
 import type {
   BacktestingReport,
+  DatasetQualityReport,
   FeatureImportanceRow,
   FeatureSummary,
   HybridEngineSummary,
@@ -38,6 +40,7 @@ type PerformanceProps = {
   models: ModelsMetadata;
   comparison: ModelComparison;
   featureSummary: FeatureSummary;
+  featureQuality: DatasetQualityReport;
   mlStatus: MlStatus;
   mlComparison: MlComparison;
   shadowSummary: MlShadowSummary;
@@ -54,6 +57,7 @@ export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
     models,
     comparison,
     featureSummary,
+    featureQuality,
     mlStatus,
     mlComparison,
     shadowSummary,
@@ -67,6 +71,7 @@ export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
     getModels(),
     getModelComparison(),
     getFeatureSummary(),
+    getFeatureQualityReport(1000),
     getMlStatus(),
     getMlComparison(),
     getMlShadowSummary(),
@@ -83,6 +88,7 @@ export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
       models,
       comparison,
       featureSummary,
+      featureQuality,
       mlStatus,
       mlComparison,
       shadowSummary,
@@ -101,6 +107,7 @@ export default function PerformancePage({
   models,
   comparison,
   featureSummary,
+  featureQuality,
   mlStatus,
   mlComparison,
   shadowSummary,
@@ -153,6 +160,7 @@ export default function PerformancePage({
   const candidate = performance.ml_candidate ?? mlStatus.latest_candidate;
   const hybrid = performance.hybrid_summary ?? hybridSummary;
   const hybridEngine = performance.hybrid_engine_summary ?? hybridEngineSummary;
+  const datasetQuality = performance.dataset_quality ?? featureQuality;
   const candidateImportance = candidate.feature_importance?.length ? candidate.feature_importance : featureImportance;
 
   return (
@@ -271,6 +279,60 @@ export default function PerformancePage({
               ))}
             </div>
           </article>
+        </section>
+
+        <section className="card sectionAnchor qualityCard" id="dataset-quality">
+          <p className="eyebrow">Anti-leakage</p>
+          <h2>
+            <span className="metricHelp">
+              Qualité du dataset & anti-leakage
+              <InfoTooltip content="L'anti-leakage vérifie que les features ne contiennent pas d'information connue seulement après le match." />
+            </span>
+          </h2>
+          <p>L’anti-leakage vérifie que le modèle n’apprend pas avec des informations qui n’existent qu’après le match.</p>
+          <div className="compactDataGrid four">
+            <div className="metric"><span>Training sûr</span><strong>{datasetQuality.safe_for_training ? 'oui' : 'non'}</strong></div>
+            <div className="metric"><span>Lignes contrôlées</span><strong>{datasetQuality.rows_checked}</strong></div>
+            <div className="metric"><span>Lignes avec cible</span><strong>{datasetQuality.rows_with_target}</strong></div>
+            <div className="metric"><span>Score qualité</span><strong>{datasetQuality.average_quality_score}/100</strong></div>
+            <div className="metric"><span>Lignes bloquées</span><strong>{datasetQuality.blocked_rows}</strong></div>
+            <div className="metric"><span>Alertes</span><strong>{datasetQuality.warning_rows}</strong></div>
+            <div className="metric"><span>Recommandation</span><strong>{datasetQuality.recommendation}</strong></div>
+          </div>
+          <div className={`banner ${datasetQuality.safe_for_training ? 'success' : 'warning'}`}>
+            {datasetQuality.recommendation_reason}
+          </div>
+          {(datasetQuality.leakage_features_detected?.length ?? 0) > 0 && (
+            <div className="banner error leakageWarning">Fuites détectées: {datasetQuality.leakage_features_detected.join(', ')}</div>
+          )}
+          <div className="metricTable issueTable">
+            <div className="metricTableRow header">
+              <span>Champ cible</span>
+              <span>Couverture</span>
+            </div>
+            {Object.entries(datasetQuality.target_field_coverage ?? {}).map(([field, count]) => (
+              <div className="metricTableRow" key={field}>
+                <span>{field}</span>
+                <strong>{count}</strong>
+              </div>
+            ))}
+          </div>
+          {datasetQuality.sample_issues.length > 0 && (
+            <div className="metricTable issueTable">
+              <div className="metricTableRow header">
+                <span>Match</span>
+                <span>Statut</span>
+                <span>Score</span>
+              </div>
+              {datasetQuality.sample_issues.slice(0, 8).map((issue) => (
+                <div className="metricTableRow" key={`${issue.match_id}-${issue.status}`}>
+                  <span>{issue.match_id}</span>
+                  <strong>{issue.status}</strong>
+                  <strong>{issue.quality_score}/100</strong>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         <section className="sectionSplit sectionAnchor" id="candidate-ml">

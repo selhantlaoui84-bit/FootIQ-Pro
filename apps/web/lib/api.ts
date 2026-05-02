@@ -5,6 +5,7 @@
   mockBacktestingReport,
   mockBuildFeatureStoreResponse,
   mockFeatureDataset,
+  mockFeatureQualityReport,
   mockFeatureSummary,
   mockMlFeatureImportance,
   mockMlComparison,
@@ -30,6 +31,7 @@
   type AdminWorkflowStatus,
   type BacktestingReport,
   type BuildFeatureStoreResponse,
+  type DatasetQualityReport,
   type FeatureDatasetRow,
   type FeatureImportanceRow,
   type FeatureSummary,
@@ -180,6 +182,13 @@ export async function getFeatureDataset(limit = 100): Promise<FeatureDatasetRow[
   return Array.isArray(data) ? data : mockFeatureDataset;
 }
 
+export async function getFeatureQualityReport(limit = 1000): Promise<DatasetQualityReport> {
+  const safeLimit = Math.min(Math.max(Math.round(limit), 1), 5000);
+  const data = await safeFetchJson<DatasetQualityReport>(`/features/quality-report?limit=${safeLimit}`);
+
+  return data ?? mockFeatureQualityReport;
+}
+
 export async function getMlStatus(): Promise<MlStatus> {
   const data = await safeFetchJson<MlStatus>('/ml/status');
 
@@ -242,13 +251,14 @@ export async function generateShadowPredictions(options?: { limit?: number; forc
   }
 }
 
-export async function trainCandidateModel(options?: { modelType?: string; limit?: number }): Promise<TrainingReport> {
+export async function trainCandidateModel(options?: { modelType?: string; limit?: number; bypassQualityGate?: boolean }): Promise<TrainingReport> {
   const modelType = options?.modelType ?? 'random_forest';
   const limit = Math.min(Math.max(Math.round(options?.limit ?? 5000), 1), 10000);
+  const bypassQualityGate = options?.bypassQualityGate ?? false;
 
   try {
     const response = await fetch(
-      `/api/admin/train-candidate-model?model_type=${encodeURIComponent(modelType)}&limit=${encodeURIComponent(String(limit))}`,
+      `/api/admin/train-candidate-model?model_type=${encodeURIComponent(modelType)}&limit=${encodeURIComponent(String(limit))}&bypass_quality_gate=${encodeURIComponent(String(bypassQualityGate))}`,
       {
         method: 'POST',
         headers: { Accept: 'application/json' },

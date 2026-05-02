@@ -210,13 +210,44 @@ export type FeatureDatasetRow = {
   created_at?: string | null;
 };
 
+export type DatasetQualityRowIssue = {
+  match_id: string;
+  model_version: string | null;
+  feature_count: number;
+  has_target: boolean;
+  target_fields: string[];
+  leakage_features: string[];
+  missing_core_features: string[];
+  quality_score: number;
+  status: 'ok' | 'warning' | 'blocked' | string;
+  warnings: string[];
+};
+
+export type DatasetQualityReport = {
+  status: 'ok' | 'empty' | 'blocked' | string;
+  rows_checked: number;
+  rows_with_target: number;
+  rows_without_target: number;
+  blocked_rows: number;
+  warning_rows: number;
+  ok_rows: number;
+  average_quality_score: number;
+  leakage_features_detected: string[];
+  missing_core_features: Record<string, number>;
+  target_field_coverage: Record<string, number>;
+  safe_for_training: boolean;
+  recommendation: 'safe_to_train' | 'review_warnings' | 'blocked_leakage_detected' | 'insufficient_data' | string;
+  recommendation_reason: string;
+  sample_issues: DatasetQualityRowIssue[];
+};
+
 export type FeatureImportanceRow = {
   feature: string;
   importance: number;
 };
 
 export type TrainingReport = {
-  status: 'ok' | 'insufficient_data' | 'error' | 'not_trained' | string;
+  status: 'ok' | 'insufficient_data' | 'error' | 'not_trained' | 'blocked' | string;
   model_type?: 'random_forest' | 'xgboost' | string;
   fallback_used?: boolean;
   model_version?: string;
@@ -234,6 +265,9 @@ export type TrainingReport = {
   metadata_path?: string;
   note?: string;
   detail?: string;
+  reason?: string;
+  warning?: string;
+  dataset_quality?: DatasetQualityReport;
 };
 
 export type BuildFeatureStoreResponse = {
@@ -254,6 +288,7 @@ export type MlStatus = {
   status: string;
   latest_candidate: TrainingReport;
   feature_store: FeatureSummary;
+  dataset_quality?: DatasetQualityReport;
   candidate_model_exists: boolean;
   production_model_version: string;
   candidate_is_production: boolean;
@@ -372,6 +407,7 @@ export type PerformanceMetrics = {
   ml_shadow_backtesting?: MlShadowBacktesting;
   hybrid_summary?: HybridSummary;
   hybrid_engine_summary?: HybridEngineSummary;
+  dataset_quality?: DatasetQualityReport;
   candidate_is_production?: boolean;
   model_versions?: Record<string, ModelComparisonRow>;
   best_model_by_brier?: string | null;
@@ -435,6 +471,9 @@ export type DashboardSummary = {
   hybrid_engine_recommendation?: string;
   hybrid_engine_strong_count?: number;
   hybrid_engine_avoid_count?: number;
+  dataset_quality_safe_for_training?: boolean;
+  dataset_quality_score?: number;
+  dataset_quality_recommendation?: string;
   best_model_by_brier?: string | null;
   evaluated_matches?: number;
   result_accuracy?: number;
@@ -536,6 +575,13 @@ export type AdminWorkflowStatus = {
   shadow_predictions: { generated: boolean; count: number; disagreement_count: number };
   shadow_backtesting: { ready: boolean; evaluated_matches: number; shadow_accuracy: number; activation_recommendation: string };
   hybrid: { mode: string; recommendation: string };
+  dataset_quality?: {
+    safe_for_training: boolean;
+    recommendation: string;
+    average_quality_score: number;
+    blocked_rows: number;
+    warning_rows: number;
+  };
   latest_refresh_job?: RefreshJobStatus;
   next_step: 'refresh_data' | 'build_feature_store' | 'train_candidate_model' | 'generate_shadow_predictions' | 'review_shadow_backtesting' | 'ready_for_hybrid_review' | string;
 };
@@ -845,6 +891,30 @@ export const mockFeatureSummary: FeatureSummary = {
 
 export const mockFeatureDataset: FeatureDatasetRow[] = [];
 
+export const mockFeatureQualityReport: DatasetQualityReport = {
+  status: 'empty',
+  rows_checked: 0,
+  rows_with_target: 0,
+  rows_without_target: 0,
+  blocked_rows: 0,
+  warning_rows: 0,
+  ok_rows: 0,
+  average_quality_score: 0,
+  leakage_features_detected: [],
+  missing_core_features: {},
+  target_field_coverage: {
+    result: 0,
+    home_goals: 0,
+    away_goals: 0,
+    over_2_5: 0,
+    btts: 0,
+  },
+  safe_for_training: false,
+  recommendation: 'insufficient_data',
+  recommendation_reason: 'Aucune ligne supervisee disponible pour le controle qualite.',
+  sample_issues: [],
+};
+
 export const mockBuildFeatureStoreResponse: BuildFeatureStoreResponse = {
   status: 'not_run',
   storage: 'memory',
@@ -886,6 +956,7 @@ export const mockMlStatus: MlStatus = {
   status: mockTrainingReport.status,
   latest_candidate: mockTrainingReport,
   feature_store: mockFeatureSummary,
+  dataset_quality: mockFeatureQualityReport,
   candidate_model_exists: false,
   production_model_version: 'elo-poisson-calibrated-v1',
   candidate_is_production: false,
@@ -1008,6 +1079,7 @@ export const performanceMetrics: PerformanceMetrics = {
   ml_comparison: mockMlComparison,
   ml_shadow_summary: mockMlShadowSummary,
   candidate_is_production: false,
+  dataset_quality: mockFeatureQualityReport,
   model_versions: mockModelComparison.model_versions,
   best_model_by_brier: mockModelComparison.best_model_by_brier,
   best_model_by_accuracy: mockModelComparison.best_model_by_accuracy,
@@ -1066,6 +1138,9 @@ export function buildDashboardSummary(source = 'mock'): DashboardSummary {
     ml_shadow_summary: mockMlShadowSummary,
     shadow_disagreement_count: mockMlShadowSummary.disagreement_count,
     shadow_high_disagreement_count: mockMlShadowSummary.high_disagreement_count,
+    dataset_quality_safe_for_training: mockFeatureQualityReport.safe_for_training,
+    dataset_quality_score: mockFeatureQualityReport.average_quality_score,
+    dataset_quality_recommendation: mockFeatureQualityReport.recommendation,
     best_model_by_brier: mockModelComparison.best_model_by_brier,
     evaluated_matches: mockBacktestingReport.evaluated_matches,
     result_accuracy: mockBacktestingReport.result_accuracy,
@@ -1252,6 +1327,13 @@ export const mockAdminWorkflowStatus: AdminWorkflowStatus = {
   shadow_predictions: { generated: false, count: 0, disagreement_count: 0 },
   shadow_backtesting: { ready: false, evaluated_matches: 0, shadow_accuracy: 0, activation_recommendation: 'do_not_activate' },
   hybrid: { mode: 'official_with_shadow_advisory', recommendation: 'insufficient_data' },
+  dataset_quality: {
+    safe_for_training: mockFeatureQualityReport.safe_for_training,
+    recommendation: mockFeatureQualityReport.recommendation,
+    average_quality_score: mockFeatureQualityReport.average_quality_score,
+    blocked_rows: mockFeatureQualityReport.blocked_rows,
+    warning_rows: mockFeatureQualityReport.warning_rows,
+  },
   latest_refresh_job: mockRefreshJobStatus,
   next_step: 'refresh_data',
 };

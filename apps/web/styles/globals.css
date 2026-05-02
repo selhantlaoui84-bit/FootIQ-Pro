@@ -1113,3 +1113,12 @@ input::placeholder {
   border-radius: inherit;
   background: linear-gradient(90deg, #38bdf8, #22c55e);
 }
+
+.qualityCard { border-color: rgba(69, 211, 156, 0.24); }
+.qualityBadge { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 6px 10px; font-size: 0.78rem; font-weight: 700; border: 1px solid rgba(255,255,255,0.14); }
+.qualityBadge.ok { color: #9ff5cc; background: rgba(69, 211, 156, 0.12); }
+.qualityBadge.warning { color: #ffd98a; background: rgba(245, 185, 66, 0.12); }
+.qualityBadge.blocked { color: #ffb0b0; background: rgba(255, 91, 91, 0.12); }
+.issueTable { margin-top: 16px; }
+.leakageWarning { border-color: rgba(255, 91, 91, 0.35); }
+

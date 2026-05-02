@@ -23,12 +23,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const rawModelType = Array.isArray(req.query.model_type) ? req.query.model_type[0] : req.query.model_type;
   const rawLimit = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
+  const rawBypass = Array.isArray(req.query.bypass_quality_gate) ? req.query.bypass_quality_gate[0] : req.query.bypass_quality_gate;
   const modelType = rawModelType ?? "random_forest";
   const limit = rawLimit ?? "5000";
+  const bypass = rawBypass ?? "false";
 
   try {
     const response = await fetch(
-      `${API_URL}/admin/train-candidate-model?model_type=${encodeURIComponent(modelType)}&limit=${encodeURIComponent(limit)}`,
+      `${API_URL}/admin/train-candidate-model?model_type=${encodeURIComponent(modelType)}&limit=${encodeURIComponent(limit)}&bypass_quality_gate=${encodeURIComponent(bypass)}`,
       {
         method: "POST",
         headers: {

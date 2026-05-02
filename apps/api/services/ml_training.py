@@ -11,6 +11,8 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, confusion_matrix, log_loss
 from sklearn.model_selection import train_test_split
 
+from services.data_quality import is_potential_leakage_feature
+
 try:
     from xgboost import XGBClassifier
 except Exception:
@@ -68,6 +70,15 @@ def _empty_report(status: str, detail: str | None = None) -> dict[str, Any]:
     if detail:
         report["detail"] = detail
     return report
+
+
+def validate_feature_columns() -> dict[str, Any]:
+    suspicious = [column for column in FEATURE_COLUMNS if is_potential_leakage_feature(column)]
+    return {
+        "valid": len(suspicious) == 0,
+        "suspicious_columns": suspicious,
+        "reason": None if not suspicious else "Feature column may leak post-match information",
+    }
 
 
 def _to_float(value: Any) -> float:
@@ -166,6 +177,13 @@ def _model_for_type(model_type: str) -> tuple[Any, str, bool]:
 
 
 def train_candidate_model(feature_rows: list[dict], model_type: str = "random_forest") -> dict[str, Any]:
+    column_validation = validate_feature_columns()
+    if not column_validation["valid"]:
+        report = _empty_report("blocked", column_validation["reason"])
+        report["reason"] = column_validation["reason"]
+        report["suspicious_columns"] = column_validation["suspicious_columns"]
+        return report
+
     prepared = prepare_training_rows(feature_rows)
     x = prepared["X"]
     y = prepared["y"]

@@ -167,6 +167,25 @@ export default function DashboardPage({ matches, predictions, summary, mlStatus,
         </div>
       </section>
 
+      <section className="card qualityCard">
+        <p className="eyebrow">Qualité dataset</p>
+        <h2>Anti-leakage</h2>
+        <div className="compactDataGrid four">
+          <Link className="metric clickable-card" href="/performance#dataset-quality">
+            <span>Training sûr</span>
+            <strong>{summary.dataset_quality_safe_for_training ? 'oui' : 'non'}</strong>
+          </Link>
+          <Link className="metric clickable-card" href="/performance#dataset-quality">
+            <span>Score qualité</span>
+            <strong>{summary.dataset_quality_score ?? 0}/100</strong>
+          </Link>
+          <Link className="metric clickable-card" href="/performance#dataset-quality">
+            <span>Recommandation</span>
+            <strong>{summary.dataset_quality_recommendation ?? 'insufficient_data'}</strong>
+          </Link>
+        </div>
+      </section>
+
       <section className="card advisoryCard">
         <p className="eyebrow">Signal hybride</p>
         <h2>Lecture officielle avec signal consultatif</h2>
