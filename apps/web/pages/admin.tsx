@@ -1,15 +1,19 @@
 ﻿import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
-import { getBackendHealth, getRefreshStatus, refreshData } from '~/lib/api';
+import { getBackendHealth, getRefreshStatus, refreshData, trainCandidateModel } from '~/lib/api';
 import { useAuth } from '~/lib/auth';
-import type { HealthResponse, RefreshResponse } from '~/lib/mock-data';
+import type { HealthResponse, RefreshResponse, TrainingReport } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
 
 export default function AdminPage() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [refreshInfo, setRefreshInfo] = useState<RefreshResponse | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isTraining, setIsTraining] = useState(false);
+  const [modelType, setModelType] = useState('random_forest');
+  const [trainingLimit, setTrainingLimit] = useState(5000);
+  const [trainingReport, setTrainingReport] = useState<TrainingReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { user, isAdmin } = useAuth();
 
@@ -45,6 +49,24 @@ export default function AdminPage() {
       setError('Refresh impossible pour le moment.');
     } finally {
       setIsRefreshing(false);
+    }
+  }
+
+  async function handleTrainCandidate() {
+    setIsTraining(true);
+    setError(null);
+
+    try {
+      const result = await trainCandidateModel({ modelType, limit: trainingLimit });
+      setTrainingReport(result);
+
+      if (result.status === 'error') {
+        setError(result.detail ?? 'Candidate training failed.');
+      }
+    } catch {
+      setError('Candidate training unavailable for the moment.');
+    } finally {
+      setIsTraining(false);
     }
   }
 
@@ -110,6 +132,55 @@ export default function AdminPage() {
         </section>
 
         {error && <section className="banner error">{error}</section>}
+
+        <section className="card">
+          <p className="eyebrow">Machine learning candidate</p>
+          <h2>Train Candidate ML Model</h2>
+          <p>This trains an offline candidate from the Feature Store. It does not replace production predictions.</p>
+          <div className="formGrid">
+            <label className="formField">
+              <span>Model type</span>
+              <select value={modelType} onChange={(event) => setModelType(event.target.value)}>
+                <option value="random_forest">random_forest</option>
+                <option value="xgboost">xgboost</option>
+              </select>
+            </label>
+            <label className="formField">
+              <span>Training row limit</span>
+              <input
+                min={1}
+                max={10000}
+                type="number"
+                value={trainingLimit}
+                onChange={(event) => setTrainingLimit(Number(event.target.value))}
+              />
+            </label>
+          </div>
+          <button
+            className="button primary"
+            type="button"
+            onClick={handleTrainCandidate}
+            disabled={isTraining || !isAdmin}
+          >
+            {isTraining ? 'Training...' : 'Train model'}
+          </button>
+
+          {trainingReport && (
+            <div className="dataList">
+              <span>Status <strong>{trainingReport.status}</strong></span>
+              <span>Model type <strong>{trainingReport.model_type ?? 'random_forest'}</strong></span>
+              <span>Fallback used <strong>{trainingReport.fallback_used ? 'yes' : 'no'}</strong></span>
+              <span>Rows used <strong>{trainingReport.rows_used ?? 0}</strong></span>
+              <span>Train rows <strong>{trainingReport.train_rows ?? 0}</strong></span>
+              <span>Test rows <strong>{trainingReport.test_rows ?? 0}</strong></span>
+              <span>Accuracy <strong>{trainingReport.accuracy ?? 0}%</strong></span>
+              <span>Log loss <strong>{trainingReport.log_loss ?? 'N/A'}</strong></span>
+              <span>Brier 1X2 <strong>{trainingReport.brier_score_1x2 ?? 'N/A'}</strong></span>
+              <span>Trained at <strong>{trainingReport.trained_at ?? 'N/A'}</strong></span>
+            </div>
+          )}
+          {trainingReport?.note && <div className="banner info">{trainingReport.note}</div>}
+        </section>
 
         <section className="card">
           <h2>Dernier refresh</h2>

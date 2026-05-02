@@ -117,6 +117,41 @@ export type FeatureDatasetRow = {
   created_at?: string | null;
 };
 
+export type FeatureImportanceRow = {
+  feature: string;
+  importance: number;
+};
+
+export type TrainingReport = {
+  status: 'ok' | 'insufficient_data' | 'error' | 'not_trained' | string;
+  model_type?: 'random_forest' | 'xgboost' | string;
+  fallback_used?: boolean;
+  model_version?: string;
+  rows_used?: number;
+  train_rows?: number;
+  test_rows?: number;
+  accuracy?: number;
+  log_loss?: number | null;
+  brier_score_1x2?: number | null;
+  confusion_matrix?: Record<string, unknown>;
+  feature_importance?: FeatureImportanceRow[];
+  feature_columns?: string[];
+  trained_at?: string;
+  artifact_path?: string;
+  metadata_path?: string;
+  note?: string;
+  detail?: string;
+};
+
+export type MlStatus = {
+  status: string;
+  latest_candidate: TrainingReport;
+  feature_store: FeatureSummary;
+  candidate_model_exists: boolean;
+  production_model_version: string;
+  candidate_is_production: boolean;
+};
+
 export type ModelsMetadata = {
   current_model_version: string;
   previous_model_version: string;
@@ -201,6 +236,8 @@ export type PerformanceMetrics = {
   training_rows_available?: number;
   target_coverage?: number;
   feature_store_ready?: boolean;
+  ml_candidate?: TrainingReport;
+  candidate_is_production?: boolean;
   model_versions?: Record<string, ModelComparisonRow>;
   best_model_by_brier?: string | null;
   best_model_by_accuracy?: string | null;
@@ -246,6 +283,9 @@ export type DashboardSummary = {
   training_rows_available?: number;
   target_coverage?: number;
   feature_store_ready?: boolean;
+  ml_candidate_status?: string;
+  ml_candidate_accuracy?: number | null;
+  ml_candidate_model_version?: string;
   best_model_by_brier?: string | null;
   evaluated_matches?: number;
   result_accuracy?: number;
@@ -546,6 +586,40 @@ export const mockFeatureSummary: FeatureSummary = {
 
 export const mockFeatureDataset: FeatureDatasetRow[] = [];
 
+export const mockMlFeatureImportance: FeatureImportanceRow[] = [
+  { feature: 'elo_delta', importance: 0.18 },
+  { feature: 'home_probability', importance: 0.14 },
+  { feature: 'away_probability', importance: 0.12 },
+  { feature: 'data_quality_score', importance: 0.1 },
+  { feature: 'draw_risk_score', importance: 0.08 },
+];
+
+export const mockTrainingReport: TrainingReport = {
+  status: 'not_trained',
+  model_type: 'random_forest',
+  fallback_used: false,
+  model_version: 'ml-candidate-v1',
+  rows_used: 0,
+  train_rows: 0,
+  test_rows: 0,
+  accuracy: 0,
+  log_loss: null,
+  brier_score_1x2: null,
+  confusion_matrix: {},
+  feature_importance: mockMlFeatureImportance,
+  feature_columns: mockFeatureSummary.feature_names,
+  note: 'Candidate model is not yet used for production predictions.',
+};
+
+export const mockMlStatus: MlStatus = {
+  status: mockTrainingReport.status,
+  latest_candidate: mockTrainingReport,
+  feature_store: mockFeatureSummary,
+  candidate_model_exists: false,
+  production_model_version: 'elo-poisson-calibrated-v1',
+  candidate_is_production: false,
+};
+
 export const mockModelsMetadata: ModelsMetadata = {
   current_model_version: 'elo-poisson-calibrated-v1',
   previous_model_version: 'elo-poisson-v1',
@@ -606,6 +680,8 @@ export const performanceMetrics: PerformanceMetrics = {
   training_rows_available: mockFeatureSummary.with_target_count,
   target_coverage: mockFeatureSummary.target_coverage,
   feature_store_ready: mockFeatureSummary.snapshots_count > 0,
+  ml_candidate: mockTrainingReport,
+  candidate_is_production: false,
   model_versions: mockModelComparison.model_versions,
   best_model_by_brier: mockModelComparison.best_model_by_brier,
   best_model_by_accuracy: mockModelComparison.best_model_by_accuracy,
@@ -657,6 +733,9 @@ export function buildDashboardSummary(source = 'mock'): DashboardSummary {
     training_rows_available: mockFeatureSummary.with_target_count,
     target_coverage: mockFeatureSummary.target_coverage,
     feature_store_ready: mockFeatureSummary.snapshots_count > 0,
+    ml_candidate_status: mockMlStatus.status,
+    ml_candidate_accuracy: mockTrainingReport.accuracy,
+    ml_candidate_model_version: mockTrainingReport.model_version,
     best_model_by_brier: mockModelComparison.best_model_by_brier,
     evaluated_matches: mockBacktestingReport.evaluated_matches,
     result_accuracy: mockBacktestingReport.result_accuracy,

@@ -3,3 +3,6 @@ uvicorn[standard]
 httpx
 sqlalchemy
 psycopg2-binary
+scikit-learn
+joblib
+numpy

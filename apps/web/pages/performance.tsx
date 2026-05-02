@@ -1,8 +1,24 @@
 ﻿import type { GetStaticProps } from 'next';
 import Link from 'next/link';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
-import { getBacktesting, getFeatureSummary, getModelComparison, getModels, getPerformance } from '~/lib/api';
-import type { BacktestingReport, FeatureSummary, ModelComparison, ModelsMetadata, PerformanceMetrics } from '~/lib/mock-data';
+import {
+  getBacktesting,
+  getFeatureSummary,
+  getMlFeatureImportance,
+  getMlStatus,
+  getModelComparison,
+  getModels,
+  getPerformance,
+} from '~/lib/api';
+import type {
+  BacktestingReport,
+  FeatureImportanceRow,
+  FeatureSummary,
+  MlStatus,
+  ModelComparison,
+  ModelsMetadata,
+  PerformanceMetrics,
+} from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
 
 type PerformanceProps = {
@@ -11,21 +27,25 @@ type PerformanceProps = {
   models: ModelsMetadata;
   comparison: ModelComparison;
   featureSummary: FeatureSummary;
+  mlStatus: MlStatus;
+  featureImportance: FeatureImportanceRow[];
 };
 
 export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
-  const [performance, backtesting, models, comparison, featureSummary] = await Promise.all([
+  const [performance, backtesting, models, comparison, featureSummary, mlStatus, featureImportance] = await Promise.all([
     getPerformance(),
     getBacktesting(),
     getModels(),
     getModelComparison(),
     getFeatureSummary(),
+    getMlStatus(),
+    getMlFeatureImportance(),
   ]);
 
-  return { props: { performance, backtesting, models, comparison, featureSummary }, revalidate: 120 };
+  return { props: { performance, backtesting, models, comparison, featureSummary, mlStatus, featureImportance }, revalidate: 120 };
 };
 
-export default function PerformancePage({ performance, backtesting, models, comparison, featureSummary }: PerformanceProps) {
+export default function PerformancePage({ performance, backtesting, models, comparison, featureSummary, mlStatus, featureImportance }: PerformanceProps) {
   const report = {
     ...backtesting,
     model_version: performance.current_model_version ?? performance.model_version ?? models.current_model_version ?? backtesting.model_version,
@@ -67,6 +87,8 @@ export default function PerformancePage({ performance, backtesting, models, comp
   };
   const featureStoreReady = performance.feature_store_ready ?? featureStore.snapshots_count > 0;
   const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ?? 'https://footiq-pro-production.up.railway.app';
+  const candidate = performance.ml_candidate ?? mlStatus.latest_candidate;
+  const candidateImportance = candidate.feature_importance?.length ? candidate.feature_importance : featureImportance;
 
   return (
     <ProtectedRoute>
@@ -183,6 +205,47 @@ export default function PerformancePage({ performance, backtesting, models, comp
                 </span>
               ))}
             </div>
+          </article>
+        </section>
+
+        <section className="sectionSplit" id="candidate-ml">
+          <article className="card accent">
+            <p className="eyebrow">Candidate ML Model</p>
+            <h2>{candidate.model_version ?? 'ml-candidate-v1'}</h2>
+            <p>This ML candidate is trained from the Feature Store but is not yet used in production predictions.</p>
+            <div className="dataList">
+              <span>Status <strong>{candidate.status}</strong></span>
+              <span>Production model <strong>{mlStatus.production_model_version}</strong></span>
+              <span>Candidate production <strong>{mlStatus.candidate_is_production ? 'yes' : 'false'}</strong></span>
+              <span>Rows used <strong>{candidate.rows_used ?? 0}</strong></span>
+              <span>Accuracy <strong>{candidate.accuracy ?? 0}%</strong></span>
+              <span>Log loss <strong>{candidate.log_loss ?? 'N/A'}</strong></span>
+              <span>Brier 1X2 <strong>{candidate.brier_score_1x2 ?? 'N/A'}</strong></span>
+            </div>
+          </article>
+
+          <article className="card">
+            <h2>Feature importance</h2>
+            {candidateImportance.length === 0 ? (
+              <div className="emptyState">No candidate model has been trained yet.</div>
+            ) : (
+              <div className="metricTable">
+                <div className="metricTableRow header">
+                  <span>Feature</span>
+                  <span>Importance</span>
+                  <span />
+                  <span />
+                </div>
+                {candidateImportance.slice(0, 8).map((row) => (
+                  <div className="metricTableRow bucketRow" key={row.feature}>
+                    <span>{row.feature}</span>
+                    <strong>{row.importance}</strong>
+                    <span />
+                    <span />
+                  </div>
+                ))}
+              </div>
+            )}
           </article>
         </section>
 

@@ -5,9 +5,12 @@
   mockBacktestingReport,
   mockFeatureDataset,
   mockFeatureSummary,
+  mockMlFeatureImportance,
+  mockMlStatus,
   mockModelComparison,
   mockModelsMetadata,
   mockPredictionSnapshots,
+  mockTrainingReport,
   buildDashboardSummary,
   matches,
   performanceMetrics,
@@ -16,7 +19,9 @@
   type Match,
   type BacktestingReport,
   type FeatureDatasetRow,
+  type FeatureImportanceRow,
   type FeatureSummary,
+  type MlStatus,
   type ModelComparison,
   type ModelsMetadata,
   type PredictionSnapshot,
@@ -26,6 +31,7 @@
   type Prediction,
   type RefreshResponse,
   type Team,
+  type TrainingReport,
 } from '~/lib/mock-data';
 
 const API_URL =
@@ -141,6 +147,51 @@ export async function getFeatureDataset(limit = 100): Promise<FeatureDatasetRow[
   const data = await safeFetchJson<FeatureDatasetRow[]>(`/features/dataset?limit=${safeLimit}`);
 
   return Array.isArray(data) ? data : mockFeatureDataset;
+}
+
+export async function getMlStatus(): Promise<MlStatus> {
+  const data = await safeFetchJson<MlStatus>('/ml/status');
+
+  return data ?? mockMlStatus;
+}
+
+export async function getMlFeatureImportance(): Promise<FeatureImportanceRow[]> {
+  const data = await safeFetchJson<FeatureImportanceRow[]>('/ml/feature-importance');
+
+  return Array.isArray(data) ? data : mockMlFeatureImportance;
+}
+
+export async function trainCandidateModel(options?: { modelType?: string; limit?: number }): Promise<TrainingReport> {
+  const modelType = options?.modelType ?? 'random_forest';
+  const limit = Math.min(Math.max(Math.round(options?.limit ?? 5000), 1), 10000);
+
+  try {
+    const response = await fetch(
+      `/api/admin/train-candidate-model?model_type=${encodeURIComponent(modelType)}&limit=${encodeURIComponent(String(limit))}`,
+      {
+        method: 'POST',
+        headers: { Accept: 'application/json' },
+      },
+    );
+    const contentType = response.headers.get('content-type') ?? '';
+    const body = contentType.includes('application/json') ? await response.json() : null;
+
+    if (!response.ok) {
+      return {
+        ...mockTrainingReport,
+        status: 'error',
+        detail: body?.detail ?? `Training failed with status ${response.status}`,
+      };
+    }
+
+    return (body as TrainingReport) ?? mockTrainingReport;
+  } catch (error) {
+    return {
+      ...mockTrainingReport,
+      status: 'error',
+      detail: error instanceof Error ? error.message : 'Candidate training request failed',
+    };
+  }
 }
 
 export async function getPerformance(): Promise<PerformanceMetrics> {

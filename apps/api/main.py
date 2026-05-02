@@ -21,6 +21,11 @@ from services.football_data_client import (
 )
 from services.backtesting import calculate_backtest_report, calculate_snapshot_backtest, get_match_result
 from services.elo_model import calculate_team_elos
+from services.ml_training import (
+    candidate_model_exists,
+    load_latest_candidate_metadata,
+    train_candidate_model,
+)
 from services.model_registry import get_model_metadata
 from services.prediction_engine import generate_prediction_from_match
 from services.prediction_engine import MODEL_VERSION
@@ -210,6 +215,7 @@ def _dashboard_summary():
 
     comparison = calculate_snapshot_backtest(matches, repository.get_prediction_snapshots())
     feature_summary = _feature_summary()
+    candidate_metadata = load_latest_candidate_metadata()
 
     return {
         "total_matches": total_matches,
@@ -230,6 +236,9 @@ def _dashboard_summary():
         "training_rows_available": feature_summary["with_target_count"],
         "target_coverage": feature_summary["target_coverage"],
         "feature_store_ready": feature_summary["snapshots_count"] > 0,
+        "ml_candidate_status": candidate_metadata.get("status", "not_trained"),
+        "ml_candidate_accuracy": candidate_metadata.get("accuracy"),
+        "ml_candidate_model_version": candidate_metadata.get("model_version", "ml-candidate-v1"),
         "evaluated_matches": backtest["evaluated_matches"],
         "result_accuracy": backtest["result_accuracy"],
         "average_brier_score": backtest["average_brier_score"],
@@ -339,6 +348,25 @@ def feature_export(model_version: str | None = None):
     return Response(content=_feature_csv(rows), media_type="text/csv")
 
 
+@app.get("/ml/status")
+def ml_status():
+    metadata = load_latest_candidate_metadata()
+    return {
+        "status": metadata.get("status", "not_trained"),
+        "latest_candidate": metadata,
+        "feature_store": _feature_summary(),
+        "candidate_model_exists": candidate_model_exists(),
+        "production_model_version": MODEL_VERSION,
+        "candidate_is_production": False,
+    }
+
+
+@app.get("/ml/feature-importance")
+def ml_feature_importance():
+    metadata = load_latest_candidate_metadata()
+    return metadata.get("feature_importance") or []
+
+
 @app.get("/models")
 def models():
     metadata = get_model_metadata()
@@ -413,6 +441,8 @@ def model_performance():
         "training_rows_available": feature_summary["with_target_count"],
         "target_coverage": feature_summary["target_coverage"],
         "feature_store_ready": feature_summary["snapshots_count"] > 0,
+        "ml_candidate": load_latest_candidate_metadata(),
+        "candidate_is_production": False,
         "predictions_tracked": len(predictions),
         "tracked": len(predictions) or PERFORMANCE["tracked"],
         "averageConfidence": str(average_confidence or PERFORMANCE["averageConfidence"]),
@@ -559,3 +589,18 @@ def build_feature_store(
         "created_at": now,
         "note": "Use force=true to rebuild existing snapshots.",
     }
+
+
+@app.post("/admin/train-candidate-model")
+def train_candidate_model_endpoint(
+    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
+    model_type: str = Query(default="random_forest"),
+    limit: int = Query(default=5000, ge=1, le=10000),
+) -> dict[str, Any]:
+    _require_admin_key(x_admin_key)
+
+    feature_rows = repository.get_training_dataset(limit=limit)
+    if not feature_rows:
+        feature_rows = _training_dataset(limit=limit)
+
+    return train_candidate_model(feature_rows, model_type=model_type)

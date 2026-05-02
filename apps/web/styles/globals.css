@@ -944,6 +944,24 @@ input::placeholder {
   color: #dff7ff;
 }
 
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  margin: 18px 0;
+}
+
+.formField {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.formField span {
+  font-weight: 700;
+}
+
 @media (max-width: 940px) {
   .modelReliabilityBlock,
   .compactDataGrid.four {

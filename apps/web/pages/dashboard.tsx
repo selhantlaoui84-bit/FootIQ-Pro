@@ -2,23 +2,24 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
-import { getDashboardSummary, getMatches, getPredictions } from '~/lib/api';
-import { matchHref, statusClass, type DashboardSummary, type Match, type Prediction } from '~/lib/mock-data';
+import { getDashboardSummary, getMatches, getMlStatus, getPredictions } from '~/lib/api';
+import { matchHref, statusClass, type DashboardSummary, type Match, type MlStatus, type Prediction } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
 
 type DashboardProps = {
   matches: Match[];
   predictions: Prediction[];
   summary: DashboardSummary;
+  mlStatus: MlStatus;
 };
 
 export const getStaticProps: GetStaticProps<DashboardProps> = async () => {
-  const [matches, predictions, summary] = await Promise.all([getMatches(), getPredictions(), getDashboardSummary()]);
+  const [matches, predictions, summary, mlStatus] = await Promise.all([getMatches(), getPredictions(), getDashboardSummary(), getMlStatus()]);
 
-  return { props: { matches, predictions, summary }, revalidate: 120 };
+  return { props: { matches, predictions, summary, mlStatus }, revalidate: 120 };
 };
 
-export default function DashboardPage({ matches, predictions, summary }: DashboardProps) {
+export default function DashboardPage({ matches, predictions, summary, mlStatus }: DashboardProps) {
   const upcoming = [...matches]
     .sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime())
     .slice(0, 5);
@@ -28,6 +29,7 @@ export default function DashboardPage({ matches, predictions, summary }: Dashboa
     { label: 'A EVITER', value: summary.avoid_matches_count, href: '/predictions?status=avoid' },
   ];
   const competitions = Object.entries(summary.competitions_breakdown);
+  const candidate = mlStatus.latest_candidate;
 
   return (
     <ProtectedRoute>
@@ -115,6 +117,14 @@ export default function DashboardPage({ matches, predictions, summary }: Dashboa
           <Link className="metric clickable-card" href="/performance#feature-store">
             <span>Feature Store</span>
             <strong>{summary.feature_store_ready ? 'ready' : 'pending'}</strong>
+          </Link>
+          <Link className="metric clickable-card" href="/performance#candidate-ml">
+            <span>ML Candidate</span>
+            <strong>{summary.ml_candidate_status ?? candidate.status}</strong>
+          </Link>
+          <Link className="metric clickable-card" href="/performance#candidate-ml">
+            <span>ML Accuracy</span>
+            <strong>{summary.ml_candidate_accuracy ?? candidate.accuracy ?? 0}%</strong>
           </Link>
         </div>
       </section>

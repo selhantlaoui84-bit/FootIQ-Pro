@@ -55,3 +55,5 @@ __pycache__/
 node_modules/
 .env
 .env.local
+apps/api/ml_models/*.joblib
+apps/api/ml_models/*.json
