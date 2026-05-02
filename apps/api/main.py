@@ -31,6 +31,7 @@ from services.ml_shadow import compare_shadow_to_production, generate_shadow_pre
 from services.model_registry import get_model_metadata
 from services.prediction_engine import generate_prediction_from_match
 from services.prediction_engine import MODEL_VERSION
+from services.shadow_backtesting import calculate_shadow_backtest_report
 
 
 @asynccontextmanager
@@ -311,6 +312,10 @@ def _dashboard_summary():
 
     comparison = calculate_snapshot_backtest(matches, repository.get_prediction_snapshots())
     feature_summary = _feature_summary()
+    shadow_backtesting = calculate_shadow_backtest_report(
+        matches,
+        repository.get_ml_shadow_predictions(limit=2000),
+    )
     candidate_metadata = load_latest_candidate_metadata()
 
     return {
@@ -339,6 +344,9 @@ def _dashboard_summary():
         "ml_shadow_summary": _shadow_summary(),
         "shadow_disagreement_count": _shadow_summary().get("disagreement_count", 0),
         "shadow_high_disagreement_count": _shadow_summary().get("high_disagreement_count", 0),
+        "shadow_evaluated_matches": shadow_backtesting.get("evaluated_matches", 0),
+        "shadow_accuracy": shadow_backtesting.get("shadow_accuracy", 0),
+        "shadow_activation_recommendation": shadow_backtesting.get("activation_recommendation", "do_not_activate"),
         "evaluated_matches": backtest["evaluated_matches"],
         "result_accuracy": backtest["result_accuracy"],
         "average_brier_score": backtest["average_brier_score"],
@@ -540,6 +548,12 @@ def ml_shadow_predictions(limit: int = Query(default=100, ge=1, le=500), view: s
     return rows[:limit]
 
 
+@app.get("/ml/shadow-backtesting")
+def ml_shadow_backtesting(limit: int = Query(default=500, ge=1, le=2000)):
+    shadow_records = repository.get_ml_shadow_predictions(limit=limit)
+    return calculate_shadow_backtest_report(_available_matches(), shadow_records)
+
+
 @app.get("/ml/comparison")
 def ml_comparison():
     return _ml_comparison()
@@ -604,6 +618,10 @@ def model_performance():
     comparison = calculate_snapshot_backtest(_available_matches(), repository.get_prediction_snapshots())
     snapshots_count = sum(item.get("snapshots", 0) for item in comparison["model_versions"].values())
     feature_summary = _feature_summary()
+    shadow_backtesting = calculate_shadow_backtest_report(
+        _available_matches(),
+        repository.get_ml_shadow_predictions(limit=2000),
+    )
 
     return {
         **PERFORMANCE,
@@ -622,6 +640,7 @@ def model_performance():
         "ml_candidate": load_latest_candidate_metadata(),
         "ml_comparison": _ml_comparison(),
         "ml_shadow_summary": _shadow_summary(),
+        "ml_shadow_backtesting": shadow_backtesting,
         "candidate_is_production": False,
         "predictions_tracked": len(predictions),
         "tracked": len(predictions) or PERFORMANCE["tracked"],
