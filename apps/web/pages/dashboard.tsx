@@ -104,6 +104,18 @@ export default function DashboardPage({ matches, predictions, summary }: Dashboa
             <span>Best Brier</span>
             <strong>{summary.best_model_by_brier ?? 'N/A'}</strong>
           </Link>
+          <Link className="metric clickable-card" href="/performance#feature-store">
+            <span>Feature rows</span>
+            <strong>{summary.training_rows_available ?? 0}</strong>
+          </Link>
+          <Link className="metric clickable-card" href="/performance#feature-store">
+            <span>Target coverage</span>
+            <strong>{summary.target_coverage ?? 0}%</strong>
+          </Link>
+          <Link className="metric clickable-card" href="/performance#feature-store">
+            <span>Feature Store</span>
+            <strong>{summary.feature_store_ready ? 'ready' : 'pending'}</strong>
+          </Link>
         </div>
       </section>
       <section className="quickActions">

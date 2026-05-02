@@ -1,8 +1,8 @@
 ﻿import type { GetStaticProps } from 'next';
 import Link from 'next/link';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
-import { getBacktesting, getModelComparison, getModels, getPerformance } from '~/lib/api';
-import type { BacktestingReport, ModelComparison, ModelsMetadata, PerformanceMetrics } from '~/lib/mock-data';
+import { getBacktesting, getFeatureSummary, getModelComparison, getModels, getPerformance } from '~/lib/api';
+import type { BacktestingReport, FeatureSummary, ModelComparison, ModelsMetadata, PerformanceMetrics } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
 
 type PerformanceProps = {
@@ -10,20 +10,22 @@ type PerformanceProps = {
   backtesting: BacktestingReport;
   models: ModelsMetadata;
   comparison: ModelComparison;
+  featureSummary: FeatureSummary;
 };
 
 export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
-  const [performance, backtesting, models, comparison] = await Promise.all([
+  const [performance, backtesting, models, comparison, featureSummary] = await Promise.all([
     getPerformance(),
     getBacktesting(),
     getModels(),
     getModelComparison(),
+    getFeatureSummary(),
   ]);
 
-  return { props: { performance, backtesting, models, comparison }, revalidate: 120 };
+  return { props: { performance, backtesting, models, comparison, featureSummary }, revalidate: 120 };
 };
 
-export default function PerformancePage({ performance, backtesting, models, comparison }: PerformanceProps) {
+export default function PerformancePage({ performance, backtesting, models, comparison, featureSummary }: PerformanceProps) {
   const report = {
     ...backtesting,
     model_version: performance.current_model_version ?? performance.model_version ?? models.current_model_version ?? backtesting.model_version,
@@ -57,6 +59,14 @@ export default function PerformancePage({ performance, backtesting, models, comp
   const modelRows = Object.entries(performance.model_versions ?? comparison.model_versions ?? {});
   const bestByBrier = performance.best_model_by_brier ?? comparison.best_model_by_brier;
   const bestByAccuracy = performance.best_model_by_accuracy ?? comparison.best_model_by_accuracy;
+  const featureStore = {
+    ...featureSummary,
+    snapshots_count: performance.feature_snapshots_count ?? featureSummary.snapshots_count,
+    with_target_count: performance.training_rows_available ?? featureSummary.with_target_count,
+    target_coverage: performance.target_coverage ?? featureSummary.target_coverage,
+  };
+  const featureStoreReady = performance.feature_store_ready ?? featureStore.snapshots_count > 0;
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ?? 'https://footiq-pro-production.up.railway.app';
 
   return (
     <ProtectedRoute>
@@ -121,6 +131,59 @@ export default function PerformancePage({ performance, backtesting, models, comp
               ))}
             </div>
           )}
+        </section>
+
+        <section className="sectionSplit" id="feature-store">
+          <article className="card accent">
+            <p className="eyebrow">Feature Store</p>
+            <h2>Historical training dataset</h2>
+            <p>
+              The Feature Store freezes the model inputs used for each match. This prepares future supervised learning
+              models such as XGBoost.
+            </p>
+            <div className="dataList">
+              <span>
+                Status <strong>{featureStoreReady ? 'ready' : 'warming up'}</strong>
+              </span>
+              <span>
+                Storage <strong>{featureSummary.storage ?? 'memory'}</strong>
+              </span>
+              <span>
+                Snapshots <strong>{featureStore.snapshots_count}</strong>
+              </span>
+              <span>
+                Training rows <strong>{featureStore.with_target_count}</strong>
+              </span>
+              <span>
+                Target coverage <strong>{featureStore.target_coverage}%</strong>
+              </span>
+            </div>
+            <a className="button secondary" href={`${apiUrl}/features/export`}>
+              Download CSV
+            </a>
+          </article>
+
+          <article className="card">
+            <h2>Feature inventory</h2>
+            {featureStore.feature_names.length === 0 ? (
+              <div className="emptyState">No feature snapshots available yet. Run an admin refresh after PostgreSQL is enabled.</div>
+            ) : (
+              <div className="tagCloud">
+                {featureStore.feature_names.map((featureName) => (
+                  <span className="badge" key={featureName}>
+                    {featureName}
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="dataList">
+              {Object.entries(featureStore.model_versions).map(([modelVersion, count]) => (
+                <span key={modelVersion}>
+                  {modelVersion} <strong>{count}</strong>
+                </span>
+              ))}
+            </div>
+          </article>
         </section>
 
         <section className="sectionSplit">

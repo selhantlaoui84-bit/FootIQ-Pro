@@ -1,7 +1,7 @@
 ﻿import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from data import repository
@@ -10,6 +10,7 @@ from data.database import init_db
 from data.mock_data import MATCHES, PERFORMANCE, TEAMS, get_match as get_mock_match
 from data.mock_data import get_prediction as get_mock_prediction
 from data.mock_data import get_team as get_mock_team
+from services.feature_store import build_feature_snapshots, summarize_feature_store
 from services.football_data_client import (
     get_champions_league_matches,
     get_champions_league_teams,
@@ -107,6 +108,65 @@ def _prediction_for_match(match: dict, all_matches: list[dict] | None = None, el
     return generate_prediction_from_match(match, all_matches or _available_matches(), elo_ratings)
 
 
+
+
+def _available_feature_snapshots():
+    stored = repository.get_feature_snapshots()
+    if stored:
+        return stored
+    return runtime_store.get_feature_snapshots()
+
+
+def _feature_summary():
+    snapshots = _available_feature_snapshots()
+    summary = repository.get_feature_store_summary() if repository.get_feature_snapshots(limit=1) else summarize_feature_store(snapshots)
+    return {**summary, "storage": "postgresql" if repository.get_feature_snapshots(limit=1) else "memory"}
+
+
+def _training_dataset(model_version: str | None = None, limit: int = 100):
+    limit = max(1, min(int(limit or 100), 500))
+    rows = repository.get_training_dataset(model_version=model_version, limit=limit)
+    if rows:
+        return rows
+    snapshots = _available_feature_snapshots()
+    if model_version:
+        snapshots = [item for item in snapshots if item.get("model_version") == model_version]
+    return [item for item in snapshots if item.get("target")][:limit]
+
+
+def _feature_csv(rows: list[dict]) -> str:
+    feature_names = sorted({name for row in rows for name in (row.get("features") or {}).keys()})
+    headers = [
+        "match_id",
+        "model_version",
+        *feature_names,
+        "target_result",
+        "target_home_goals",
+        "target_away_goals",
+        "target_over_2_5",
+        "target_btts",
+    ]
+    lines = [",".join(headers)]
+
+    for row in rows:
+        features = row.get("features") or {}
+        target = row.get("target") or {}
+        values = [
+            row.get("match_id", ""),
+            row.get("model_version", ""),
+            *[features.get(name, "") for name in feature_names],
+            target.get("result", ""),
+            target.get("home_goals", ""),
+            target.get("away_goals", ""),
+            target.get("over_2_5", ""),
+            target.get("btts", ""),
+        ]
+        escaped = [str(value).replace('"', '""') for value in values]
+        lines.append(",".join(f'"{value}"' if "," in value else value for value in escaped))
+
+    return "\n".join(lines) + "\n"
+
+
 def _refresh_status():
     latest_log = repository.get_latest_refresh_log()
     if latest_log:
@@ -147,6 +207,7 @@ def _dashboard_summary():
         average_confidence = round(sum(item["confidence"]["score"] for item in predictions) / len(predictions))
 
     comparison = calculate_snapshot_backtest(matches, repository.get_prediction_snapshots())
+    feature_summary = _feature_summary()
 
     return {
         "total_matches": total_matches,
@@ -163,6 +224,10 @@ def _dashboard_summary():
         "current_model_version": MODEL_VERSION,
         "snapshots_count": sum(item.get("snapshots", 0) for item in comparison["model_versions"].values()),
         "best_model_by_brier": comparison.get("best_model_by_brier"),
+        "feature_snapshots_count": feature_summary["snapshots_count"],
+        "training_rows_available": feature_summary["with_target_count"],
+        "target_coverage": feature_summary["target_coverage"],
+        "feature_store_ready": feature_summary["snapshots_count"] > 0,
         "evaluated_matches": backtest["evaluated_matches"],
         "result_accuracy": backtest["result_accuracy"],
         "average_brier_score": backtest["average_brier_score"],
@@ -251,6 +316,27 @@ def team_detail(team_id: str):
 
 
 
+@app.get("/features/summary")
+def feature_summary():
+    return _feature_summary()
+
+
+@app.get("/features/dataset")
+def feature_dataset(model_version: str | None = None, limit: int = Query(default=100, ge=1, le=500)):
+    return _training_dataset(model_version=model_version, limit=limit)
+
+
+@app.get("/features/export")
+def feature_export(model_version: str | None = None):
+    rows = repository.get_training_dataset(model_version=model_version, limit=5000)
+    if not rows:
+        rows = [item for item in _available_feature_snapshots() if item.get("target")]
+        if model_version:
+            rows = [item for item in rows if item.get("model_version") == model_version]
+        rows = rows[:5000]
+    return Response(content=_feature_csv(rows), media_type="text/csv")
+
+
 @app.get("/models")
 def models():
     metadata = get_model_metadata()
@@ -309,6 +395,7 @@ def model_performance():
 
     comparison = calculate_snapshot_backtest(_available_matches(), repository.get_prediction_snapshots())
     snapshots_count = sum(item.get("snapshots", 0) for item in comparison["model_versions"].values())
+    feature_summary = _feature_summary()
 
     return {
         **PERFORMANCE,
@@ -320,6 +407,10 @@ def model_performance():
         "best_model_by_brier": comparison.get("best_model_by_brier"),
         "best_model_by_accuracy": comparison.get("best_model_by_accuracy"),
         "model_comparison_note": comparison.get("note"),
+        "feature_snapshots_count": feature_summary["snapshots_count"],
+        "training_rows_available": feature_summary["with_target_count"],
+        "target_coverage": feature_summary["target_coverage"],
+        "feature_store_ready": feature_summary["snapshots_count"] > 0,
         "predictions_tracked": len(predictions),
         "tracked": len(predictions) or PERFORMANCE["tracked"],
         "averageConfidence": str(average_confidence or PERFORMANCE["averageConfidence"]),
@@ -362,14 +453,18 @@ def refresh_data(x_admin_key: str | None = Header(default=None, alias="X-Admin-K
 
     elo_ratings = calculate_team_elos(matches)
     predictions = [_prediction_for_match(match, matches, elo_ratings) for match in matches]
+    feature_snapshots = build_feature_snapshots(matches, predictions)
     storage = "memory"
 
     snapshots_saved = 0
+    feature_snapshots_saved = 0
     if repository.save_matches(matches) and repository.save_teams(teams) and repository.save_predictions(predictions):
         storage = "postgresql"
         repository.save_refresh_log(source, storage, len(matches), len(teams))
         snapshots_saved = repository.save_prediction_snapshots(predictions)
+        feature_snapshots_saved = repository.save_feature_snapshots(feature_snapshots)
 
+    runtime_store.set_feature_snapshots(feature_snapshots)
     runtime_store.set_matches(matches)
     runtime_store.set_teams(teams)
     runtime_store.set_predictions(predictions)
@@ -385,6 +480,8 @@ def refresh_data(x_admin_key: str | None = Header(default=None, alias="X-Admin-K
         "teams_imported": status["teams_imported"],
         "predictions_imported": status["predictions_imported"],
         "snapshots_saved": snapshots_saved,
+        "feature_snapshots_saved": feature_snapshots_saved,
+        "training_rows_available": sum(1 for item in feature_snapshots if item.get("target")),
         "last_refresh_at": status["last_refresh_at"],
     }
 

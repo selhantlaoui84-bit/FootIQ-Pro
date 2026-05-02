@@ -69,6 +69,18 @@ prediction_snapshots_table = Table(
     Column("brier_score_1x2", Float, nullable=True),
 )
 
+
+feature_snapshots_table = Table(
+    "feature_snapshots",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("match_id", Text),
+    Column("model_version", Text),
+    Column("features_json", Text),
+    Column("target_json", Text, nullable=True),
+    Column("created_at", TIMESTAMP(timezone=True)),
+)
+
 refresh_logs_table = Table(
     "refresh_logs",
     metadata,

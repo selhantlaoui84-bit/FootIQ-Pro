@@ -90,11 +90,32 @@ export type RefreshResponse = {
   teams_imported?: number;
   predictions_imported?: number;
   snapshots_saved?: number;
+  feature_snapshots_saved?: number;
+  training_rows_available?: number;
   last_refresh_at?: string | null;
   error?: string;
   detail?: string;
 };
 
+
+
+export type FeatureSummary = {
+  snapshots_count: number;
+  with_target_count: number;
+  without_target_count: number;
+  target_coverage: number;
+  model_versions: Record<string, number>;
+  feature_names: string[];
+  storage?: string;
+};
+
+export type FeatureDatasetRow = {
+  match_id: string;
+  model_version: string;
+  features: Record<string, number | string | boolean | null>;
+  target?: Record<string, number | string | boolean | null> | null;
+  created_at?: string | null;
+};
 
 export type ModelsMetadata = {
   current_model_version: string;
@@ -176,6 +197,10 @@ export type PerformanceMetrics = {
   calibration_applied?: boolean;
   current_model_version?: string;
   snapshots_count?: number;
+  feature_snapshots_count?: number;
+  training_rows_available?: number;
+  target_coverage?: number;
+  feature_store_ready?: boolean;
   model_versions?: Record<string, ModelComparisonRow>;
   best_model_by_brier?: string | null;
   best_model_by_accuracy?: string | null;
@@ -217,6 +242,10 @@ export type DashboardSummary = {
   calibration_applied?: boolean;
   current_model_version?: string;
   snapshots_count?: number;
+  feature_snapshots_count?: number;
+  training_rows_available?: number;
+  target_coverage?: number;
+  feature_store_ready?: boolean;
   best_model_by_brier?: string | null;
   evaluated_matches?: number;
   result_accuracy?: number;
@@ -488,6 +517,35 @@ export const teams: Team[] = [
   },
 ];
 
+
+export const mockFeatureSummary: FeatureSummary = {
+  snapshots_count: 0,
+  with_target_count: 0,
+  without_target_count: 0,
+  target_coverage: 0,
+  model_versions: {},
+  feature_names: [
+    'elo_delta',
+    'form_delta',
+    'attack_delta',
+    'defense_delta',
+    'draw_risk_score',
+    'data_quality_score',
+    'risk_score',
+    'trap_match_score',
+    'expected_home',
+    'expected_away',
+    'over_2_5_probability',
+    'btts_probability',
+    'home_probability',
+    'draw_probability',
+    'away_probability',
+  ],
+  storage: 'memory',
+};
+
+export const mockFeatureDataset: FeatureDatasetRow[] = [];
+
 export const mockModelsMetadata: ModelsMetadata = {
   current_model_version: 'elo-poisson-calibrated-v1',
   previous_model_version: 'elo-poisson-v1',
@@ -544,6 +602,10 @@ export const performanceMetrics: PerformanceMetrics = {
   calibration_applied: true,
   current_model_version: mockModelsMetadata.current_model_version,
   snapshots_count: 0,
+  feature_snapshots_count: mockFeatureSummary.snapshots_count,
+  training_rows_available: mockFeatureSummary.with_target_count,
+  target_coverage: mockFeatureSummary.target_coverage,
+  feature_store_ready: mockFeatureSummary.snapshots_count > 0,
   model_versions: mockModelComparison.model_versions,
   best_model_by_brier: mockModelComparison.best_model_by_brier,
   best_model_by_accuracy: mockModelComparison.best_model_by_accuracy,
@@ -591,6 +653,10 @@ export function buildDashboardSummary(source = 'mock'): DashboardSummary {
     calibration_applied: true,
     current_model_version: mockModelsMetadata.current_model_version,
     snapshots_count: 0,
+    feature_snapshots_count: mockFeatureSummary.snapshots_count,
+    training_rows_available: mockFeatureSummary.with_target_count,
+    target_coverage: mockFeatureSummary.target_coverage,
+    feature_store_ready: mockFeatureSummary.snapshots_count > 0,
     best_model_by_brier: mockModelComparison.best_model_by_brier,
     evaluated_matches: mockBacktestingReport.evaluated_matches,
     result_accuracy: mockBacktestingReport.result_accuracy,

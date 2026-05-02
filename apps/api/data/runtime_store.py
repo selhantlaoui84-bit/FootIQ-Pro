@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 _matches = []
 _teams = []
 _predictions = []
+_feature_snapshots = []
 _last_refresh_at = None
 _source = "mock"
 _storage = "memory"
@@ -57,3 +58,14 @@ def get_refresh_status():
         "predictions_imported": len(_predictions),
         "last_refresh_at": _last_refresh_at,
     }
+
+
+
+def get_feature_snapshots():
+    return _feature_snapshots
+
+
+def set_feature_snapshots(feature_snapshots):
+    global _feature_snapshots, _last_refresh_at
+    _feature_snapshots = feature_snapshots
+    _last_refresh_at = datetime.now(timezone.utc).isoformat()

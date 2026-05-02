@@ -427,3 +427,116 @@ def get_model_versions() -> list[str]:
         )
     )
     return [row.get("model_version") for row in rows if row.get("model_version")]
+
+
+
+def _feature_row_to_snapshot(row: dict) -> dict:
+    created_at = row.get("created_at")
+    return {
+        "id": row.get("id"),
+        "match_id": row.get("match_id"),
+        "model_version": row.get("model_version"),
+        "features": _loads(row.get("features_json")) or {},
+        "target": _loads(row.get("target_json")),
+        "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else created_at,
+    }
+
+
+def save_feature_snapshot(match_id: str, model_version: str, features: dict, target: dict | None = None) -> str | None:
+    if not match_id or not features or not db_available():
+        return None
+
+    snapshot_id = str(uuid.uuid4())
+    ok = execute_safe(
+        text(
+            """
+            INSERT INTO feature_snapshots (id, match_id, model_version, features_json, target_json, created_at)
+            VALUES (:id, :match_id, :model_version, :features_json, :target_json, :created_at)
+            """
+        ),
+        {
+            "id": snapshot_id,
+            "match_id": match_id,
+            "model_version": model_version,
+            "features_json": _json(features),
+            "target_json": _json(target) if target is not None else None,
+            "created_at": _now(),
+        },
+    )
+    return snapshot_id if ok else None
+
+
+def save_feature_snapshots(items: list[dict]) -> int:
+    if not items or not db_available():
+        return 0
+
+    saved = 0
+    for item in items:
+        if save_feature_snapshot(
+            item.get("match_id"),
+            item.get("model_version", MODEL_VERSION),
+            item.get("features") or {},
+            item.get("target"),
+        ):
+            saved += 1
+    return saved
+
+
+def get_feature_snapshots(model_version: str | None = None, limit: int = 5000) -> list[dict]:
+    if not db_available():
+        return []
+
+    limit = max(1, min(int(limit or 5000), 5000))
+    if model_version:
+        rows = fetch_all_safe(
+            text(
+                """
+                SELECT id, match_id, model_version, features_json, target_json, created_at
+                FROM feature_snapshots
+                WHERE model_version = :model_version
+                ORDER BY created_at DESC
+                LIMIT :limit
+                """
+            ),
+            {"model_version": model_version, "limit": limit},
+        )
+    else:
+        rows = fetch_all_safe(
+            text(
+                """
+                SELECT id, match_id, model_version, features_json, target_json, created_at
+                FROM feature_snapshots
+                ORDER BY created_at DESC
+                LIMIT :limit
+                """
+            ),
+            {"limit": limit},
+        )
+    return [_feature_row_to_snapshot(row) for row in rows]
+
+
+def get_training_dataset(model_version: str | None = None, limit: int = 500) -> list[dict]:
+    snapshots = get_feature_snapshots(model_version=model_version, limit=limit)
+    return [item for item in snapshots if item.get("target")]
+
+
+def get_feature_store_summary() -> dict:
+    snapshots = get_feature_snapshots(limit=5000)
+    snapshots_count = len(snapshots)
+    with_target_count = sum(1 for item in snapshots if item.get("target"))
+    feature_names = set()
+    model_versions: dict[str, int] = {}
+
+    for item in snapshots:
+        model_version = item.get("model_version") or "unknown"
+        model_versions[model_version] = model_versions.get(model_version, 0) + 1
+        feature_names.update((item.get("features") or {}).keys())
+
+    return {
+        "snapshots_count": snapshots_count,
+        "with_target_count": with_target_count,
+        "without_target_count": snapshots_count - with_target_count,
+        "model_versions": model_versions,
+        "feature_names": sorted(feature_names),
+        "target_coverage": round((with_target_count / snapshots_count) * 100) if snapshots_count else 0,
+    }

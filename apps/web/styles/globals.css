@@ -931,6 +931,19 @@ input::placeholder {
   grid-template-columns: repeat(4, minmax(130px, 1fr));
 }
 
+.tagCloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.tagCloud .badge {
+  border-color: rgba(98, 216, 255, 0.2);
+  background: rgba(98, 216, 255, 0.08);
+  color: #dff7ff;
+}
+
 @media (max-width: 940px) {
   .modelReliabilityBlock,
   .compactDataGrid.four {

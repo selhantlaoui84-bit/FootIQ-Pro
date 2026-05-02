@@ -75,6 +75,9 @@ export default function AdminPage() {
             <Link className="button secondary" href="/performance#model-comparison">
               Model comparison
             </Link>
+            <Link className="button secondary" href="/performance#feature-store">
+              Feature Store
+            </Link>
           </div>
         </section>
 
@@ -133,12 +136,18 @@ export default function AdminPage() {
               Snapshots saved <strong>{refreshInfo?.snapshots_saved ?? 0}</strong>
             </span>
             <span>
+              Feature snapshots <strong>{refreshInfo?.feature_snapshots_saved ?? 0}</strong>
+            </span>
+            <span>
+              Training rows <strong>{refreshInfo?.training_rows_available ?? 0}</strong>
+            </span>
+            <span>
               Last refresh <strong>{refreshInfo?.last_refresh_at ?? 'N/A'}</strong>
             </span>
           </div>
           <div className="banner info">
-            Backtesting updates automatically from finished matches with available scores. See the model report and snapshot comparison on{' '}
-            <Link className="textLink" href="/performance">
+            Backtesting and feature snapshots update automatically from finished matches with available scores. See the model report on{' '}
+            <Link className="textLink" href="/performance#feature-store">
               Performance
             </Link>
             .

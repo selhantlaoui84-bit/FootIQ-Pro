@@ -3,6 +3,8 @@
   getMockMatch,
   getMockTeam,
   mockBacktestingReport,
+  mockFeatureDataset,
+  mockFeatureSummary,
   mockModelComparison,
   mockModelsMetadata,
   mockPredictionSnapshots,
@@ -13,6 +15,8 @@
   teams,
   type Match,
   type BacktestingReport,
+  type FeatureDatasetRow,
+  type FeatureSummary,
   type ModelComparison,
   type ModelsMetadata,
   type PredictionSnapshot,
@@ -125,6 +129,20 @@ export async function getBacktesting(): Promise<BacktestingReport> {
 
   return data ?? mockBacktestingReport;
 }
+
+export async function getFeatureSummary(): Promise<FeatureSummary> {
+  const data = await safeFetchJson<FeatureSummary>('/features/summary');
+
+  return data ?? mockFeatureSummary;
+}
+
+export async function getFeatureDataset(limit = 100): Promise<FeatureDatasetRow[]> {
+  const safeLimit = Math.min(Math.max(Math.round(limit), 1), 500);
+  const data = await safeFetchJson<FeatureDatasetRow[]>(`/features/dataset?limit=${safeLimit}`);
+
+  return Array.isArray(data) ? data : mockFeatureDataset;
+}
+
 export async function getPerformance(): Promise<PerformanceMetrics> {
   const data = await safeFetchJson<PerformanceMetrics>('/performance');
 
