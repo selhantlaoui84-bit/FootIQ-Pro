@@ -108,7 +108,10 @@ def _require_admin_key(x_admin_key: str | None):
     if not admin_key and env != "production":
         return
 
-    if not admin_key or x_admin_key != admin_key:
+    if not admin_key or not x_admin_key:
+        raise HTTPException(status_code=401, detail="Missing admin key")
+
+    if x_admin_key != admin_key:
         raise HTTPException(status_code=401, detail="Invalid admin key")
 
 

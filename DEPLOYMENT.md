@@ -53,6 +53,7 @@ NEXT_PUBLIC_API_URL=<backend_url>
 NEXT_PUBLIC_SUPABASE_URL=<supabase_project_url>
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<supabase_anon_key>
 NEXT_PUBLIC_ADMIN_API_KEY=<same_value_as_backend_admin_api_key_for_mvp>
+NEXT_PUBLIC_ADMIN_EMAIL=samir.elh@outlook.fr
 ```
 
 Build:
@@ -72,22 +73,30 @@ Protected frontend routes:
 /dashboard
 /admin
 /profile
+/matches
+/matches/[id]
+/predictions
+/teams
+/teams/[id]
+/performance
 ```
 
-Public data routes remain accessible:
+Public frontend routes:
 
 ```bash
 /
-/matches
-/predictions
-/teams
-/performance
 /about
+/login
+/register
 ```
 
 If Supabase env vars are missing, `/login` and `/register` show a setup warning instead of crashing.
 
+Admin access is limited in the frontend to `NEXT_PUBLIC_ADMIN_EMAIL`, defaulting to `samir.elh@outlook.fr`.
+
 Admin refresh is protected by `ADMIN_API_KEY` on Railway and sent from the MVP admin UI through `NEXT_PUBLIC_ADMIN_API_KEY`. If `ENV=production` and `ADMIN_API_KEY` is missing or incorrect, `POST /admin/refresh-data` returns `401`.
+
+`NEXT_PUBLIC_ADMIN_API_KEY` is acceptable only for this MVP. Later, replace it with backend JWT role verification.
 
 ## Test Endpoints
 

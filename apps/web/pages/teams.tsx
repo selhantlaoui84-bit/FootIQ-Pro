@@ -1,5 +1,6 @@
 import type { GetStaticProps } from 'next';
 import Link from 'next/link';
+import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { getTeams } from '~/lib/api';
 import { teamHref, type Team } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
@@ -17,7 +18,8 @@ export default function TeamsPage({ teams }: TeamsProps) {
   const competitions = [...new Set(teams.map((team) => team.competition))].join(' / ');
 
   return (
-    <Layout>
+    <ProtectedRoute>
+      <Layout>
       <section className="pageHeader">
         <p className="eyebrow">Référentiel équipes</p>
         <h1>Teams</h1>
@@ -49,6 +51,7 @@ export default function TeamsPage({ teams }: TeamsProps) {
           </Link>
         ))}
       </section>
-    </Layout>
+      </Layout>
+    </ProtectedRoute>
   );
 }

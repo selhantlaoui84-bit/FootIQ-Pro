@@ -2,6 +2,7 @@ import type { GetStaticProps } from 'next';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useEffect, useMemo, useState } from 'react';
+import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { getPredictions } from '~/lib/api';
 import { isAvoidStatus, matchHref, statusClass, type ConfidenceStatus, type Prediction } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
@@ -55,7 +56,8 @@ export default function PredictionsPage({ predictions }: PredictionsProps) {
   );
 
   return (
-    <Layout>
+    <ProtectedRoute>
+      <Layout>
       <section className="pageHeader">
         <p className="eyebrow">Catalogue FootIQ</p>
         <h1>Predictions</h1>
@@ -102,7 +104,8 @@ export default function PredictionsPage({ predictions }: PredictionsProps) {
           <div className="emptyState">Aucune prediction ne correspond aux filtres.</div>
         )}
       </section>
-    </Layout>
+      </Layout>
+    </ProtectedRoute>
   );
 }
 

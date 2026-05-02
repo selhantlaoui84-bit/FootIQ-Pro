@@ -64,6 +64,7 @@ export type RefreshResponse = {
   teams_imported?: number;
   last_refresh_at?: string | null;
   error?: string;
+  detail?: string;
 };
 
 export type PerformanceMetrics = {
@@ -384,7 +385,7 @@ export function buildDashboardSummary(source = 'mock'): DashboardSummary {
 }
 
 export function isAvoidStatus(status: string) {
-  return status === 'A EVITER' || status === 'À ÉVITER';
+  return status === 'A EVITER' || status === '? ?VITER';
 }
 
 export function getMockPrediction(id: string) {

@@ -7,16 +7,28 @@ type AuthContextValue = {
   session: Session | null;
   loading: boolean;
   authConfigured: boolean;
+  isAuthenticated: boolean;
+  isAdmin: boolean;
+  adminEmail: string;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signUp: (email: string, password: string) => Promise<{ error?: string; confirmationRequired?: boolean }>;
   signOut: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+const DEFAULT_ADMIN_EMAIL = 'samir.elh@outlook.fr';
+
+function getAdminEmail() {
+  return (process.env.NEXT_PUBLIC_ADMIN_EMAIL || DEFAULT_ADMIN_EMAIL).trim().toLowerCase();
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(authConfigured);
+  const user = session?.user ?? null;
+  const adminEmail = getAdminEmail();
+  const isAuthenticated = Boolean(user);
+  const isAdmin = user?.email?.toLowerCase() === adminEmail;
 
   useEffect(() => {
     if (!supabase) {
@@ -59,10 +71,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AuthContextValue>(
     () => ({
-      user: session?.user ?? null,
+      user,
       session,
       loading,
       authConfigured,
+      isAuthenticated,
+      isAdmin,
+      adminEmail,
       async signIn(email: string, password: string) {
         if (!supabase) {
           return { error: 'Supabase auth is not configured.' };
@@ -95,7 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(null);
       },
     }),
-    [loading, session],
+    [adminEmail, isAdmin, isAuthenticated, loading, session, user],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

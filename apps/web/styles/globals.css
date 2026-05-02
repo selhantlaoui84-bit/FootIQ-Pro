@@ -712,6 +712,41 @@ input::placeholder {
   width: min(280px, 80vw);
 }
 
+.authLockedScreen {
+  display: grid;
+  place-items: center;
+  min-height: 62vh;
+  padding: 24px;
+}
+
+.accessDeniedCard {
+  display: grid;
+  width: min(100%, 560px);
+  gap: 16px;
+  padding: 28px;
+  text-align: left;
+  background:
+    linear-gradient(145deg, rgba(255, 93, 108, 0.12), transparent 44%),
+    linear-gradient(315deg, rgba(98, 216, 255, 0.08), transparent 42%), var(--card);
+  border: 1px solid rgba(255, 93, 108, 0.32);
+  border-radius: 22px;
+  box-shadow:
+    0 28px 90px rgba(0, 0, 0, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.accessDeniedCard h1 {
+  margin-bottom: 0;
+  font-size: clamp(38px, 6vw, 62px);
+}
+
+.roleStrip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
 .userBadge {
   display: inline-flex;
   align-items: center;
@@ -721,6 +756,33 @@ input::placeholder {
   background: rgba(255, 255, 255, 0.07);
   border: 1px solid var(--border);
   border-radius: 999px;
+}
+
+.roleBadge {
+  display: inline-flex;
+  align-items: center;
+  width: max-content;
+  min-height: 34px;
+  padding: 0 12px;
+  color: #07111f;
+  background: var(--amber);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.roleBadge.admin,
+.adminBadge {
+  color: #041016;
+  background: linear-gradient(135deg, var(--green), var(--cyan));
+}
+
+.button.adminDisabled,
+.button:disabled.adminDisabled {
+  color: #8794a8;
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(148, 163, 184, 0.12);
 }
 
 .logoutWide {

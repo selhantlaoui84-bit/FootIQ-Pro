@@ -2,6 +2,7 @@ import type { GetStaticProps } from 'next';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useEffect, useMemo, useState } from 'react';
+import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { getMatches } from '~/lib/api';
 import { matchHref, statusClass, type Match } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
@@ -53,7 +54,8 @@ export default function MatchesPage({ matches }: MatchesProps) {
   }, [competition, matches, query, sort]);
 
   return (
-    <Layout>
+    <ProtectedRoute>
+      <Layout>
       <section className="pageHeader">
         <p className="eyebrow">Calendrier predictif</p>
         <h1>Matchs a venir</h1>
@@ -89,7 +91,8 @@ export default function MatchesPage({ matches }: MatchesProps) {
           <div className="emptyState">Aucun match ne correspond aux filtres.</div>
         )}
       </section>
-    </Layout>
+      </Layout>
+    </ProtectedRoute>
   );
 }
 

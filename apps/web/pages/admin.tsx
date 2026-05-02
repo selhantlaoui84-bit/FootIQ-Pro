@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { getBackendHealth, getRefreshStatus, refreshData } from '~/lib/api';
+import { useAuth } from '~/lib/auth';
 import type { HealthResponse, RefreshResponse } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
 
@@ -11,6 +12,7 @@ export default function AdminPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const adminKeyConfigured = Boolean(process.env.NEXT_PUBLIC_ADMIN_API_KEY);
+  const { user, isAdmin } = useAuth();
 
   useEffect(() => {
     getBackendHealth()
@@ -40,7 +42,7 @@ export default function AdminPage() {
       }
 
       if (result.status === 'error') {
-        setError(result.error ?? 'Refresh refus?.');
+        setError(result.detail ?? result.error ?? 'Refresh refused.');
         return;
       }
 
@@ -53,12 +55,16 @@ export default function AdminPage() {
   }
 
   return (
-    <ProtectedRoute>
+    <ProtectedRoute requireAdmin>
       <Layout>
         <section className="pageHeader">
           <p className="eyebrow">Administration MVP</p>
           <h1>Admin</h1>
           <p>Controle du backend, du refresh football-data.org et de la source active.</p>
+          <div className="roleStrip">
+            <span className="userBadge">{user?.email ?? 'Unknown user'}</span>
+            <span className={`roleBadge ${isAdmin ? 'admin' : ''}`}>{isAdmin ? 'Admin' : 'User'}</span>
+          </div>
           <div className="quickActions">
             <Link className="button secondary" href="/dashboard">
               Dashboard
@@ -92,11 +98,12 @@ export default function AdminPage() {
             <h2>Refresh data</h2>
             <p>Import Ligue 1 et Champions League, avec fallback mock automatique.</p>
             {!adminKeyConfigured && <div className="banner warning">Admin key not configured</div>}
+            {!isAdmin && <div className="banner error">Admin access required.</div>}
             <button
               className="button primary"
               type="button"
               onClick={handleRefresh}
-              disabled={isRefreshing || !adminKeyConfigured}
+              disabled={isRefreshing || !adminKeyConfigured || !isAdmin}
             >
               {isRefreshing ? 'Refresh en cours...' : 'Refresh data'}
             </button>

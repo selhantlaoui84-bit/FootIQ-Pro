@@ -1,5 +1,6 @@
 import type { GetStaticProps } from 'next';
 import Link from 'next/link';
+import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { getPerformance, getPredictions } from '~/lib/api';
 import type { PerformanceMetrics, Prediction } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
@@ -30,7 +31,8 @@ export default function PerformancePage({ performance, predictions }: Performanc
   ];
 
   return (
-    <Layout>
+    <ProtectedRoute>
+      <Layout>
       <section className="pageHeader">
         <p className="eyebrow">Calibration modèle</p>
         <h1>Performance</h1>
@@ -66,6 +68,7 @@ export default function PerformancePage({ performance, predictions }: Performanc
           </div>
         </Link>
       </section>
-    </Layout>
+      </Layout>
+    </ProtectedRoute>
   );
 }

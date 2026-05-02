@@ -1,16 +1,23 @@
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { useAuth } from '~/lib/auth';
 import { Layout } from '~/src-layout';
 
 export default function LoginPage() {
   const router = useRouter();
-  const { signIn, authConfigured } = useAuth();
+  const { signIn, authConfigured, isAuthenticated, loading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!loading && isAuthenticated) {
+      const next = typeof router.query.next === 'string' ? router.query.next : '/dashboard';
+      void router.replace(next);
+    }
+  }, [isAuthenticated, loading, router]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

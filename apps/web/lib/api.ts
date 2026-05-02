@@ -117,10 +117,36 @@ export async function refreshData(): Promise<RefreshResponse | null> {
     };
   }
 
-  return safeFetchJson<RefreshResponse>('/admin/refresh-data', {
-    method: 'POST',
-    headers: {
-      'X-Admin-Key': adminKey,
-    },
-  });
+  if (!API_URL) {
+    return {
+      status: 'error',
+      detail: 'API URL not configured',
+    };
+  }
+
+  try {
+    const response = await fetch(`${API_URL}/admin/refresh-data`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'X-Admin-Key': adminKey,
+      },
+    });
+    const contentType = response.headers.get('content-type') ?? '';
+    const body = contentType.includes('application/json') ? await response.json() : null;
+
+    if (!response.ok) {
+      return {
+        status: 'error',
+        detail: body?.detail ?? `Refresh failed with status ${response.status}`,
+      };
+    }
+
+    return body as RefreshResponse;
+  } catch {
+    return {
+      status: 'error',
+      detail: 'Refresh request failed',
+    };
+  }
 }

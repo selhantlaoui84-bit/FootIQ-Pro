@@ -1,5 +1,6 @@
 import type { GetStaticPaths, GetStaticProps } from 'next';
 import Link from 'next/link';
+import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { getMatches, getPredictions, getTeam } from '~/lib/api';
 import { matchHref, teams, type Match, type Prediction, type Team } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
@@ -36,7 +37,8 @@ export default function TeamDetailPage({ team, relatedMatches, relatedPrediction
       : 0;
 
   return (
-    <Layout>
+    <ProtectedRoute>
+      <Layout>
       <section className="pageHeader">
         <p className="eyebrow">{team.competition}</p>
         <h1>{team.name}</h1>
@@ -114,7 +116,8 @@ export default function TeamDetailPage({ team, relatedMatches, relatedPrediction
           </div>
         </div>
       </section>
-    </Layout>
+      </Layout>
+    </ProtectedRoute>
   );
 }
 

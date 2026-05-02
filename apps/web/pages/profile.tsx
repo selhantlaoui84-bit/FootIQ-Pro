@@ -6,7 +6,7 @@ import { Layout } from '~/src-layout';
 
 export default function ProfilePage() {
   const router = useRouter();
-  const { user, signOut } = useAuth();
+  const { user, isAdmin, adminEmail, signOut } = useAuth();
 
   async function handleSignOut() {
     await signOut();
@@ -28,6 +28,9 @@ export default function ProfilePage() {
             <div className="dataList">
               <span>
                 Email <strong>{user?.email ?? 'N/A'}</strong>
+              </span>
+              <span>
+                Role <strong>{isAdmin ? 'Admin' : 'User'}</strong>
               </span>
               <span>
                 Status <strong>Active</strong>
@@ -56,9 +59,13 @@ export default function ProfilePage() {
               <Link className="button secondary" href="/predictions">
                 Predictions
               </Link>
-              <Link className="button primary" href="/admin">
-                Admin
-              </Link>
+              {isAdmin ? (
+                <Link className="button primary" href="/admin">
+                  Admin
+                </Link>
+              ) : (
+                <span className="banner warning">Admin access is limited to {adminEmail}.</span>
+              )}
             </div>
           </article>
         </section>
