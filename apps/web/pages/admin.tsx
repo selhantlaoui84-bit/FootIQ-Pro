@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
-import { buildFeatureStore, generateShadowPredictions, getAdminWorkflowStatus, getBackendHealth, getFeatureQualityReport, getFeatureStoreJobStatus, getRefreshJobStatus, getRefreshStatus, refreshData, trainCandidateModel } from '~/lib/api';
+import { buildFeatureStore, generateShadowPredictions, getAdminWorkflowStatus, getBackendHealth, getFeatureQualityReport, getFeatureStoreJobStatus, getRefreshJobStatus, getRefreshStatus, refreshData, trainCandidateModel, getModelGovernance 
+
+} from '~/lib/api';
 import { useAuth } from '~/lib/auth';
-import type { AdminWorkflowStatus, BuildFeatureStoreResponse, DatasetQualityReport, GenerateShadowPredictionsResponse, HealthResponse, MatchView, RefreshJobStatus, RefreshResponse, TrainingReport } from '~/lib/mock-data';
+import type { AdminWorkflowStatus, BuildFeatureStoreResponse, DatasetQualityReport, GenerateShadowPredictionsResponse, HealthResponse, MatchView, RefreshJobStatus, RefreshResponse, TrainingReport, ModelGovernanceReport } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
 
 export default function AdminPage() {
@@ -20,6 +22,7 @@ export default function AdminPage() {
   const [featureStoreJobId, setFeatureStoreJobId] = useState<string | null>(null);
   const [featureQuality, setFeatureQuality] = useState<DatasetQualityReport | null>(null);
   const [isTraining, setIsTraining] = useState(false);
+  const [modelGovernance, setModelGovernance] = useState<ModelGovernanceReport | null>(null);
   const [modelType, setModelType] = useState('random_forest');
   const [trainingLimit, setTrainingLimit] = useState(5000);
   const [trainingReport, setTrainingReport] = useState<TrainingReport | null>(null);
@@ -44,6 +47,9 @@ export default function AdminPage() {
     getFeatureQualityReport()
       .then(setFeatureQuality)
       .catch(() => setFeatureQuality(null));
+    getModelGovernance()
+      .then(setModelGovernance)
+      .catch(() => setModelGovernance(null));
   }, []);
 
   useEffect(() => {
@@ -275,6 +281,40 @@ export default function AdminPage() {
             </Link>
           </div>
         </section>
+
+        <article className="card">
+  <p className="eyebrow">Gouvernance modèle</p>
+  <h2>Contrôle de promotion</h2>
+  <p>
+    Le modèle ML candidat ne peut pas être promu automatiquement. Toute promotion nécessite une revue manuelle.
+  </p>
+
+  <div className="dataList">
+    <span>
+      Niveau <strong>{modelGovernance?.promotion_readiness.level ?? 'unknown'}</strong>
+    </span>
+    <span>
+      Score <strong>{modelGovernance?.promotion_readiness.score ?? 0}/100</strong>
+    </span>
+    <span>
+      Blocages <strong>{modelGovernance?.promotion_readiness.blocking_reasons.length ?? 0}</strong>
+    </span>
+    <span>
+      Production verrouillée <strong>{modelGovernance?.production_model.locked ? 'oui' : 'non'}</strong>
+    </span>
+    <span>
+      Promotion automatique <strong>{modelGovernance?.policy.automatic_promotion ? 'oui' : 'non'}</strong>
+    </span>
+  </div>
+
+  {modelGovernance?.promotion_readiness.next_actions?.[0] && (
+    <div className="banner warning">{modelGovernance.promotion_readiness.next_actions[0]}</div>
+  )}
+
+  <Link className="button secondary" href="/performance#model-governance">
+    Voir la gouvernance complète
+  </Link>
+</article>
 
         <section className="card workflowCard">
           <p className="eyebrow">?tat du workflow</p>

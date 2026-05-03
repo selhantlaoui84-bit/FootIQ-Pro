@@ -16,6 +16,7 @@ import {
   getMlShadowSummary,
   getModelComparison,
   getModels,
+  getModelGovernance,
   getPerformance,
 } from '~/lib/api';
 import type {
@@ -30,6 +31,7 @@ import type {
   MlStatus,
   MlShadowSummary,
   MlShadowBacktesting,
+  ModelGovernanceReport,
   ModelComparison,
   ModelsMetadata,
   PerformanceMetrics,
@@ -45,6 +47,7 @@ type PerformanceProps = {
   featureQuality: DatasetQualityReport;
   mlStatus: MlStatus;
   mlComparison: MlComparison;
+  modelGovernance: ModelGovernanceReport;
   shadowSummary: MlShadowSummary;
   shadowBacktesting: MlShadowBacktesting;
   hybridSummary: HybridSummary;
@@ -69,6 +72,7 @@ export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
     hybridEngineSummary,
     explainabilitySummary,
     featureImportance,
+    modelGovernance,
   ] = await Promise.all([
     getPerformance(),
     getBacktesting(),
@@ -84,6 +88,7 @@ export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
     getHybridEngineSummary(),
     getExplainabilitySummary(200, 'upcoming'),
     getMlFeatureImportance(),
+    getModelGovernance(),
   ]);
 
   return {
@@ -102,6 +107,7 @@ export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
       hybridEngineSummary,
       explainabilitySummary,
       featureImportance,
+      modelGovernance,
     },
     revalidate: 120,
   };
@@ -122,6 +128,7 @@ export default function PerformancePage({
   hybridEngineSummary,
   explainabilitySummary,
   featureImportance,
+  modelGovernance,
 }: PerformanceProps) {
   const report = {
     ...backtesting,
@@ -170,6 +177,15 @@ export default function PerformancePage({
   const explainability = performance.explainability_summary ?? explainabilitySummary;
   const datasetQuality = performance.dataset_quality ?? featureQuality;
   const candidateImportance = candidate.feature_importance?.length ? candidate.feature_importance : featureImportance;
+
+  const governance = performance.model_governance ?? modelGovernance;
+  const gateLabels: Record<string, string> = {
+  dataset_quality: 'Qualité dataset',
+  training: 'Entraînement',
+  shadow_backtesting: 'Backtesting shadow',
+  monitoring: 'Monitoring',
+  hybrid_review: 'Revue hybride',
+};
 
   return (
     <ProtectedRoute>
@@ -236,6 +252,150 @@ export default function PerformancePage({
           )}
         </section>
 
+
+<section className="card sectionAnchor" id="model-governance">
+  <div className="cardTop">
+    <div>
+      <p className="eyebrow">Gouvernance des modèles</p>
+      <h2>Registre et critères de promotion</h2>
+    </div>
+    <span className={`badge readinessScore ${governance.promotion_readiness.level}`}>
+      {governance.promotion_readiness.level}
+    </span>
+  </div>
+
+  <p>
+    Cette gouvernance empêche toute bascule automatique du ML vers la production. Le modèle officiel reste verrouillé
+    tant que les critères ne sont pas validés manuellement.
+  </p>
+
+  <div className="compactDataGrid four">
+    <div className="metric">
+      <span>Modèle production</span>
+      <strong>{governance.production_model.version}</strong>
+    </div>
+    <div className="metric">
+      <span>Production verrouillée</span>
+      <strong>{governance.production_model.locked ? 'oui' : 'non'}</strong>
+    </div>
+    <div className="metric">
+      <span>Modèle candidat</span>
+      <strong>{governance.candidate_model.version ?? 'N/A'}</strong>
+    </div>
+    <div className="metric">
+      <span>Statut candidat</span>
+      <strong>{governance.candidate_model.status}</strong>
+    </div>
+    <div className="metric">
+      <span>Candidat en production</span>
+      <strong>{governance.candidate_model.candidate_is_production ? 'oui' : 'non'}</strong>
+    </div>
+    <div className="metric">
+      <span>Score gouvernance</span>
+      <strong>{governance.promotion_readiness.score}/100</strong>
+    </div>
+    <div className="metric">
+      <span>Promotion prête</span>
+      <strong>{governance.promotion_readiness.ready ? 'oui' : 'non'}</strong>
+    </div>
+    <div className="metric">
+      <span>Promotion automatique</span>
+      <strong>{governance.policy.automatic_promotion ? 'oui' : 'non'}</strong>
+    </div>
+  </div>
+
+  <h3>Gates de validation</h3>
+  <div className="governanceGrid">
+    {Object.entries(governance.governance_gates).map(([key, gate]) => (
+      <article className={`governanceGate ${gate.passed ? 'passed' : 'blocked'}`} key={key}>
+        <div className="cardTop">
+          <h4>{gateLabels[key] ?? key}</h4>
+          <span className={`badge ${gate.passed ? 'success' : 'warning'}`}>
+            {gate.passed ? 'validé' : 'bloqué'}
+          </span>
+        </div>
+        <p>{gate.reason}</p>
+        <div className="dataList">
+          {gate.recommendation && (
+            <span>
+              Recommandation <strong>{gate.recommendation}</strong>
+            </span>
+          )}
+          {gate.status && (
+            <span>
+              Statut <strong>{gate.status}</strong>
+            </span>
+          )}
+          {typeof gate.evaluated_matches === 'number' && (
+            <span>
+              Matchs évalués <strong>{gate.evaluated_matches}</strong>
+            </span>
+          )}
+          {typeof gate.shadow_accuracy === 'number' && (
+            <span>
+              Accuracy shadow <strong>{gate.shadow_accuracy}%</strong>
+            </span>
+          )}
+          {typeof gate.production_accuracy === 'number' && (
+            <span>
+              Accuracy officielle <strong>{gate.production_accuracy}%</strong>
+            </span>
+          )}
+        </div>
+      </article>
+    ))}
+  </div>
+
+  <div className="sectionSplit">
+    <article className="card">
+      <h3>Blocages</h3>
+      {governance.promotion_readiness.blocking_reasons.length === 0 ? (
+        <div className="emptyState">Aucun blocage critique déclaré.</div>
+      ) : (
+        <ul className="blockerList">
+          {governance.promotion_readiness.blocking_reasons.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      )}
+    </article>
+
+    <article className="card">
+      <h3>Prochaines actions</h3>
+      {governance.promotion_readiness.next_actions.length === 0 ? (
+        <div className="emptyState">Aucune action prioritaire.</div>
+      ) : (
+        <ul className="blockerList">
+          {governance.promotion_readiness.next_actions.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      )}
+    </article>
+  </div>
+
+  {governance.promotion_readiness.warnings.length > 0 && (
+    <div className="banner warning">
+      {governance.promotion_readiness.warnings.map((warning) => (
+        <p key={warning}>{warning}</p>
+      ))}
+    </div>
+  )}
+
+  <h3>Historique des versions</h3>
+  <div className="versionTimeline">
+    {governance.version_history.map((version) => (
+      <article className="versionTimelineItem" key={`${version.version}-${version.status}`}>
+        <strong>{version.version}</strong>
+        <span>{version.family}</span>
+        <span className="badge">{version.status}</span>
+        <p>{version.notes}</p>
+      </article>
+    ))}
+  </div>
+
+  <div className="banner info">{governance.policy.note}</div>
+</section>
         <section className="sectionSplit" id="feature-store">
           <article className="card accent">
             <p className="eyebrow">Feature Store</p>

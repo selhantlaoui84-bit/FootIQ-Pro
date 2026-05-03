@@ -487,6 +487,7 @@ export type PerformanceMetrics = {
   best_model_by_brier?: string | null;
   best_model_by_accuracy?: string | null;
   model_comparison_note?: string;
+  model_governance?: ModelGovernanceReport;
   predictions_tracked?: number;
   evaluated_matches?: number;
   result_accuracy?: number;
@@ -531,6 +532,10 @@ export type DashboardSummary = {
   feature_store_ready?: boolean;
   feature_set_version?: string | null;
   advanced_feature_coverage?: AdvancedFeatureCoverage;
+  model_governance_level?: string;
+  model_governance_score?: number;
+  model_governance_blockers_count?: number;
+  model_promotion_ready?: boolean;
   ml_candidate_status?: string;
   ml_candidate_accuracy?: number | null;
   ml_candidate_model_version?: string;
@@ -1264,6 +1269,107 @@ export const mockBacktestingReport: BacktestingReport = {
   note: 'Le backtesting est calculé sur les matchs terminés avec scores disponibles.',
 };
 
+export type GovernanceGate = {
+  passed: boolean;
+  reason: string;
+  recommendation?: string;
+  status?: string;
+  evaluated_matches?: number;
+  shadow_accuracy?: number;
+  production_accuracy?: number;
+};
+
+export type ModelGovernanceReport = {
+  status: string;
+  generated_at: string;
+  production_model: {
+    version: string;
+    family: string;
+    status: string;
+    locked: boolean;
+    description: string;
+  };
+  candidate_model: {
+    version: string | null;
+    family: string | null;
+    status: string;
+    candidate_is_production: boolean;
+    rows_used: number;
+    accuracy: number | null;
+    brier_score_1x2: number | null;
+    trained_at: string | null;
+  };
+  governance_gates: Record<string, GovernanceGate>;
+  promotion_readiness: {
+    ready: boolean;
+    level: string;
+    score: number;
+    blocking_reasons: string[];
+    warnings: string[];
+    next_actions: string[];
+  };
+  version_history: {
+    version: string;
+    family: string;
+    status: string;
+    notes: string;
+  }[];
+  policy: {
+    automatic_promotion: boolean;
+    requires_manual_review: boolean;
+    production_model_locked: boolean;
+    note: string;
+  };
+};
+
+export const mockModelGovernance: ModelGovernanceReport = {
+  status: 'ok',
+  generated_at: '2026-05-03T13:00:00Z',
+  production_model: {
+    version: 'elo-poisson-calibrated-v1',
+    family: 'elo_poisson',
+    status: 'production',
+    locked: true,
+    description: 'Modèle officiel Elo/Poisson calibré.',
+  },
+  candidate_model: {
+    version: 'ml-candidate-v1',
+    family: 'random_forest',
+    status: 'not_trained',
+    candidate_is_production: false,
+    rows_used: 0,
+    accuracy: null,
+    brier_score_1x2: null,
+    trained_at: null,
+  },
+  governance_gates: {
+    dataset_quality: { passed: false, reason: 'Dataset non vérifié.' },
+    training: { passed: false, reason: 'Modèle candidat non entraîné.' },
+    shadow_backtesting: { passed: false, reason: 'Shadow backtesting insuffisant.' },
+    monitoring: { passed: true, reason: 'Monitoring disponible.' },
+    hybrid_review: { passed: false, reason: 'Revue hybride insuffisante.' },
+  },
+  promotion_readiness: {
+    ready: false,
+    level: 'not_ready',
+    score: 0,
+    blocking_reasons: ['Modèle candidat non entraîné.'],
+    warnings: [],
+    next_actions: ['Valider le dataset puis entraîner le modèle candidat.'],
+  },
+  version_history: [
+    { version: 'elo-poisson-v1', family: 'elo_poisson', status: 'previous', notes: 'Modèle initial.' },
+    { version: 'elo-poisson-calibrated-v1', family: 'elo_poisson', status: 'production', notes: 'Modèle officiel.' },
+    { version: 'ml-candidate-v1', family: 'random_forest', status: 'not_trained', notes: 'Candidat ML.' },
+  ],
+  policy: {
+    automatic_promotion: false,
+    requires_manual_review: true,
+    production_model_locked: true,
+    note: 'Le modèle ML ne peut pas remplacer automatiquement le modèle officiel.',
+  },
+};
+
 export const performanceMetrics: PerformanceMetrics = {
   tracked: 1248,
   highConfidenceHitRate: '64%',
@@ -1306,6 +1412,7 @@ export const performanceMetrics: PerformanceMetrics = {
   note: mockBacktestingReport.note,
   lastUpdated: '2026-05-02T08:00:00Z',
   latest_refresh: null,
+  model_governance: mockModelGovernance,
 };
 
 export function buildDashboardSummary(source = 'mock'): DashboardSummary {
@@ -1369,6 +1476,10 @@ export function buildDashboardSummary(source = 'mock'): DashboardSummary {
     last_refresh_at: performanceMetrics.lastUpdated,
     source,
     storage: 'memory',
+    model_governance_level: mockModelGovernance.promotion_readiness.level,
+    model_governance_score: mockModelGovernance.promotion_readiness.score,
+    model_governance_blockers_count: mockModelGovernance.promotion_readiness.blocking_reasons.length,
+    model_promotion_ready: false,
   };
 }
 
@@ -1606,3 +1717,4 @@ export const mockHybridEngineSummary: HybridEngineSummary = {
   recommendation: 'insufficient_shadow_data',
   reason: 'Aucune donn?e shadow suffisante pour alimenter le moteur hybride.',
 };
+

@@ -141,6 +141,13 @@ export default function DashboardPage({ matches, predictions, summary, mlStatus,
             <span>D?saccords ?lev?s</span>
             <strong>{summary.shadow_high_disagreement_count ?? summary.ml_shadow_summary?.high_disagreement_count ?? shadowSummary.high_disagreement_count}</strong>
           </Link>
+          <Link className="metric clickable-card" href="/performance#model-governance">
+            <span>Gouvernance modèle</span>
+            <strong>{summary.model_governance_level ?? 'not_ready'}</strong>
+           <small>
+              Score {summary.model_governance_score ?? 0}/100 · Blocages {summary.model_governance_blockers_count ?? 0}
+          </small>
+          </Link>
         </div>
       </section>
 

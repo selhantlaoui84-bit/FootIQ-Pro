@@ -1193,3 +1193,73 @@ input::placeholder {
   color: var(--text);
 }
 
+.governanceGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  margin: 18px 0;
+}
+
+.governanceGate {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.035);
+  border-radius: 18px;
+  padding: 18px;
+}
+
+.governanceGate.passed {
+  border-color: rgba(80, 220, 160, 0.35);
+}
+
+.governanceGate.blocked {
+  border-color: rgba(255, 180, 80, 0.35);
+}
+
+.governanceGate.warning {
+  border-color: rgba(255, 210, 90, 0.35);
+}
+
+.readinessScore {
+  text-transform: uppercase;
+}
+
+.readinessScore.blocked {
+  border-color: rgba(255, 95, 95, 0.45);
+}
+
+.readinessScore.not_ready,
+.readinessScore.watch {
+  border-color: rgba(255, 210, 90, 0.45);
+}
+
+.readinessScore.review_only {
+  border-color: rgba(80, 220, 160, 0.35);
+}
+
+.blockerList {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
+
+.blockerList li {
+  margin-bottom: 8px;
+}
+
+.versionTimeline {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.versionTimelineItem {
+  display: grid;
+  gap: 6px;
+  border-left: 2px solid rgba(255, 255, 255, 0.14);
+  padding: 12px 0 12px 16px;
+}
+
+.versionTimelineItem p {
+  margin: 0;
+  color: var(--muted);
+}

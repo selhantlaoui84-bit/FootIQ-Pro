@@ -28,6 +28,8 @@
   performanceMetrics,
   predictions,
   teams,
+  mockModelGovernance,
+  type ModelGovernanceReport,
   type Match,
   type AdminWorkflowStatus,
   type BacktestingReport,
@@ -435,4 +437,10 @@ export async function getMlShadowBacktesting(limit = 500) {
   );
 
   return data ?? mockMlShadowBacktesting;
+}
+
+export async function getModelGovernance(): Promise<ModelGovernanceReport> {
+  const data = await safeFetchJson<ModelGovernanceReport>('/models/governance');
+
+  return data ?? mockModelGovernance;
 }
