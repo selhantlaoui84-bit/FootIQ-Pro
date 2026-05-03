@@ -16,6 +16,7 @@ from data.mock_data import get_team as get_mock_team
 from services.feature_store import build_feature_snapshots, summarize_feature_store
 from services.data_quality import build_dataset_quality_report
 from services.football_data_client import (
+    get_configured_competitions_data,
     get_champions_league_matches,
     get_champions_league_teams,
     get_ligue1_matches,
@@ -595,10 +596,15 @@ def run_refresh_data_job(job_id: str | None = None) -> dict:
         source = "mock"
         matches = MATCHES
         teams = TEAMS
+        competition_warnings = []
+        configured_competitions = []
 
         if os.getenv("FOOTBALL_DATA_API_KEY"):
-            external_matches = get_ligue1_matches() + get_champions_league_matches()
-            external_teams = get_ligue1_teams() + get_champions_league_teams()
+            external_data = get_configured_competitions_data()
+            external_matches = external_data["matches"]
+            external_teams = external_data["teams"]
+            competition_warnings = external_data.get("warnings", [])
+            configured_competitions = external_data.get("competition_labels", [])
 
             if external_matches or external_teams:
                 source = "football-data.org"
@@ -650,6 +656,8 @@ def run_refresh_data_job(job_id: str | None = None) -> dict:
             ],
             "last_refresh_at": status.get("last_refresh_at"),
             "warning": warning,
+            "configured_competitions": configured_competitions,
+            "competition_warnings": competition_warnings,
         }
 
         if job_id:

@@ -1193,6 +1193,119 @@ input::placeholder {
   color: var(--text);
 }
 
+.fluidCard,
+.card,
+.rowCard,
+.metric {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.responsiveText {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.scoreBlock {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  align-content: center;
+  min-width: min(340px, 100%);
+  padding: 18px;
+  border: 1px solid rgba(125, 211, 252, 0.28);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(34, 211, 238, 0.18), transparent 55%),
+    rgba(15, 23, 42, 0.76);
+  box-shadow: 0 20px 55px rgba(34, 211, 238, 0.12);
+  text-align: center;
+}
+
+.scoreBlock.large {
+  min-width: min(460px, 100%);
+}
+
+.scoreValue {
+  color: #f8fafc;
+  font-size: clamp(2rem, 7vw, 4.6rem);
+  line-height: 0.95;
+  letter-spacing: 0;
+  text-shadow: 0 0 28px rgba(125, 211, 252, 0.35);
+}
+
+.matchResultSummary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  width: 100%;
+  gap: 8px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.matchResultSummary span {
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 42, 0.48);
+  padding: 8px 10px;
+}
+
+.compactStatGrid {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.mobileStack {
+  display: grid;
+  gap: 14px;
+}
+
+.textClamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.card,
+.clickable-card,
+.rowCard {
+  transform-style: preserve-3d;
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.clickable-card:hover,
+.rowCard:hover {
+  transform: translateY(-4px) perspective(900px) rotateX(1deg);
+  box-shadow: 0 24px 60px rgba(14, 165, 233, 0.12);
+}
+
+.confidence-bar span,
+.probabilityBar span,
+.factorStrength span {
+  transition: width 650ms ease;
+}
+
+@media (max-width: 720px) {
+  .rowCard {
+    grid-template-columns: 1fr;
+  }
+
+  .scoreBlock {
+    min-width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
 .governanceGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));

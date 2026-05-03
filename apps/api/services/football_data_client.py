@@ -10,6 +10,18 @@ logger = logging.getLogger("footiq.football_data")
 BASE_URL = "https://api.football-data.org/v4"
 TIMEOUT_SECONDS = 8
 
+COMPETITION_LABELS = {
+    "FL1": "Ligue 1",
+    "PL": "Premier League",
+    "PD": "Liga",
+    "SA": "Serie A",
+    "BL1": "Bundesliga",
+    "DED": "Eredivisie",
+    "PPL": "Liga Portugal",
+    "CL": "Ligue des champions",
+    "WC": "Coupe du monde",
+}
+
 
 def slugify(value: str) -> str:
     normalized = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
@@ -100,6 +112,53 @@ def _get_teams(competition_code: str, competition_label: str):
         return []
 
     return [normalize_team(team, competition_label) for team in data.get("teams", [])]
+
+
+def configured_competition_codes():
+    raw = os.getenv("FOOTIQ_COMPETITIONS", "FL1,CL")
+    codes = []
+    for item in raw.split(","):
+        code = item.strip().upper()
+        if code and code not in codes:
+            codes.append(code)
+    return codes or ["FL1", "CL"]
+
+
+def competition_label(code: str):
+    return COMPETITION_LABELS.get(code.upper(), code.upper())
+
+
+def get_configured_competitions_data():
+    matches = []
+    teams = []
+    warnings = []
+
+    for code in configured_competition_codes():
+        label = competition_label(code)
+        competition_matches = _get_matches(code, label)
+        competition_teams = _get_teams(code, label)
+        if not competition_matches and not competition_teams:
+            warnings.append(f"{label}: aucune donnée récupérée ou compétition non disponible avec le plan actuel.")
+            continue
+        matches.extend(competition_matches)
+        teams.extend(competition_teams)
+
+    return {
+        "matches": _deduplicate(matches),
+        "teams": _deduplicate(teams),
+        "competitions": configured_competition_codes(),
+        "competition_labels": [competition_label(code) for code in configured_competition_codes()],
+        "warnings": warnings,
+    }
+
+
+def _deduplicate(items):
+    deduped = {}
+    for item in items:
+        key = item.get("id") or item.get("match_id") or item.get("slug") or item.get("name")
+        if key:
+            deduped[key] = item
+    return list(deduped.values())
 
 
 def get_ligue1_matches():

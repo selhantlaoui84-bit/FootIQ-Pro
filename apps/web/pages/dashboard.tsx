@@ -5,6 +5,7 @@ import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { getDashboardSummary, getMatches, getMlShadowSummary, getMlStatus, getPredictions } from '~/lib/api';
 import { matchHref, statusClass, type DashboardSummary, type Match, type MlShadowSummary, type MlStatus, type Prediction } from '~/lib/mock-data';
+import { formatCompetitionLabel, formatKickoffFr, formatStatusLabel } from '~/lib/ui-text';
 import { Layout } from '~/src-layout';
 
 type DashboardProps = {
@@ -29,7 +30,7 @@ export default function DashboardPage({ matches, predictions, summary, mlStatus,
   const statusDistribution = [
     { label: 'FIABLE', value: summary.reliable_matches_count, href: '/predictions?status=FIABLE' },
     { label: 'MOYEN', value: summary.medium_matches_count, href: '/predictions?status=MOYEN' },
-    { label: 'A EVITER', value: summary.avoid_matches_count, href: '/predictions?status=avoid' },
+    { label: 'À ÉVITER', value: summary.avoid_matches_count, href: '/predictions?status=avoid' },
   ];
   const competitions = Object.entries(summary.competitions_breakdown);
   const candidate = mlStatus.latest_candidate;
@@ -50,9 +51,6 @@ export default function DashboardPage({ matches, predictions, summary, mlStatus,
           <Stat label="Pièges" value={summary.trap_matches_count} href="/predictions?trap=true" />
         </div>
         <div className="sourceStrip">
-          <span>Source: {summary.source}</span>
-          <span>Storage: {summary.storage}</span>
-          <span>Modèle: {summary.model_version ?? 'elo-poisson-calibrated-v1'}</span>
           <span>
             Actualisation: {summary.last_refresh_at ? new Date(summary.last_refresh_at).toLocaleString('fr-FR') : 'Non lancée'}
           </span>
@@ -86,7 +84,7 @@ export default function DashboardPage({ matches, predictions, summary, mlStatus,
             <strong>{summary.evaluated_matches ?? 0}</strong>
           </Link>
           <Link className="metric clickable-card" href="/performance">
-            <span className="metricHelp">Accuracy <InfoTooltip content="Pourcentage de résultats correctement prédits sur l’échantillon évalué." /></span>
+            <span className="metricHelp">Précision <InfoTooltip content="Pourcentage de résultats correctement prédits sur l'échantillon évalué." /></span>
             <strong>{summary.result_accuracy ?? 0}%</strong>
           </Link>
           <Link className="metric clickable-card" href="/performance">
@@ -126,7 +124,7 @@ export default function DashboardPage({ matches, predictions, summary, mlStatus,
             <strong>{summary.ml_candidate_status ?? candidate.status}</strong>
           </Link>
           <Link className="metric clickable-card" href="/performance#candidate-ml">
-            <span>Accuracy ML</span>
+            <span>Précision ML</span>
             <strong>{summary.ml_candidate_accuracy ?? candidate.accuracy ?? 0}%</strong>
           </Link>
           <Link className="metric clickable-card" href="/performance#shadow-ml">
@@ -145,7 +143,7 @@ export default function DashboardPage({ matches, predictions, summary, mlStatus,
             <span>Gouvernance modèle</span>
             <strong>{summary.model_governance_level ?? 'not_ready'}</strong>
            <small>
-              Score {summary.model_governance_score ?? 0}/100 · Blocages {summary.model_governance_blockers_count ?? 0}
+              Score {summary.model_governance_score ?? 0}/100 Â· Blocages {summary.model_governance_blockers_count ?? 0}
           </small>
           </Link>
         </div>
@@ -168,7 +166,7 @@ export default function DashboardPage({ matches, predictions, summary, mlStatus,
             <strong>{summary.hybrid_engine_strong_count ?? 0}</strong>
           </Link>
           <Link className="metric clickable-card" href="/performance#hybrid-engine">
-            <span>? ?viter</span>
+            <span>À éviter</span>
             <strong>{summary.hybrid_engine_avoid_count ?? 0}</strong>
           </Link>
         </div>
@@ -281,9 +279,9 @@ export default function DashboardPage({ matches, predictions, summary, mlStatus,
           ))}
         </Panel>
         <div className="stack">
-          <Distribution title="Status distribution" rows={statusDistribution} total={predictions.length} />
+          <Distribution title="Répartition des signaux" rows={statusDistribution} total={predictions.length} />
           <Distribution
-            title="Competition distribution"
+            title="Répartition des compétitions"
             rows={competitions.map(([label, value]) => ({
               label,
               value,
@@ -324,14 +322,15 @@ function PredictionCard({ prediction }: { prediction: Prediction }) {
   return (
     <Link className="card matchCard clickable-card" href={matchHref(prediction)}>
       <div className="cardTop">
-        <span>{prediction.competition}</span>
+        <span>{formatCompetitionLabel(prediction.competition)}</span>
         <span className={`badge status-badge ${statusClass(prediction.confidence.status)}`}>
-          {prediction.confidence.status}
+          {formatStatusLabel(prediction.confidence.status)}
         </span>
       </div>
       <h3>
         {prediction.home_team} vs {prediction.away_team}
       </h3>
+      <small>{formatKickoffFr(prediction.kickoff)}</small>
       <div className="confidenceLine confidence-bar">
         <span style={{ width: `${prediction.confidence.score}%` }} />
       </div>

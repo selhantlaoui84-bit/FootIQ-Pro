@@ -153,9 +153,9 @@ export default function PerformancePage({
     ['Calibration', report.calibration_applied ? 'active' : 'active'],
     ['Prédictions suivies', performance.predictions_tracked ?? performance.tracked],
     ['Matchs évalués', report.evaluated_matches],
-    ['Accuracy résultat', `${report.result_accuracy}%`],
-    ['Accuracy over 2.5', `${report.over_2_5_accuracy}%`],
-    ['Accuracy BTTS', `${report.btts_accuracy}%`],
+    ['Précision résultat', `${report.result_accuracy}%`],
+    ['Précision over 2.5', `${report.over_2_5_accuracy}%`],
+    ['Précision BTTS', `${report.btts_accuracy}%`],
     ['Score Brier moyen', report.average_brier_score],
     ['Score de calibration', `${report.calibration_score}/100`],
   ];
@@ -191,7 +191,7 @@ export default function PerformancePage({
     <ProtectedRoute>
       <Layout>
         <section className="pageHeader">
-          <p className="eyebrow">Model evaluation</p>
+          <p className="eyebrow">Analyse modèle</p>
           <h1>Performance</h1>
           <p>A good probabilistic model is not always right; it must be well calibrated.</p>
         </section>
@@ -222,7 +222,7 @@ export default function PerformancePage({
             <h2>Meilleur modèle</h2>
             <div className="dataList">
               <span>Meilleur Brier <strong>{bestByBrier ?? 'N/A'}</strong></span>
-              <span>Meilleure accuracy <strong>{bestByAccuracy ?? 'N/A'}</strong></span>
+              <span>Meilleure précision <strong>{bestByAccuracy ?? 'N/A'}</strong></span>
             </div>
             <p>Un snapshot conserve ce que le modèle pensait avant évaluation. Cela permet une comparaison juste dans le temps.</p>
           </article>
@@ -237,7 +237,7 @@ export default function PerformancePage({
               <div className="metricTableRow header">
                 <span>Modèle</span>
                 <span>Snapshots</span>
-                <span>Accuracy</span>
+                <span>Précision</span>
                 <span>Brier</span>
               </div>
               {modelRows.map(([modelVersion, row]) => (
@@ -333,12 +333,12 @@ export default function PerformancePage({
           )}
           {typeof gate.shadow_accuracy === 'number' && (
             <span>
-              Accuracy shadow <strong>{gate.shadow_accuracy}%</strong>
+              Précision shadow <strong>{gate.shadow_accuracy}%</strong>
             </span>
           )}
           {typeof gate.production_accuracy === 'number' && (
             <span>
-              Accuracy officielle <strong>{gate.production_accuracy}%</strong>
+              Précision officielle <strong>{gate.production_accuracy}%</strong>
             </span>
           )}
         </div>
@@ -467,7 +467,7 @@ export default function PerformancePage({
               <InfoTooltip content="L'anti-leakage vérifie que les features ne contiennent pas d'information connue seulement après le match." />
             </span>
           </h2>
-          <p>L’anti-leakage vérifie que le modèle n’apprend pas avec des informations qui n’existent qu’après le match.</p>
+          <p>L'anti-leakage vérifie que le modèle n'apprend pas avec des informations qui n'existent qu'après le match.</p>
           <div className="compactDataGrid four">
             <div className="metric"><span>Training sûr</span><strong>{datasetQuality.safe_for_training ? 'oui' : 'non'}</strong></div>
             <div className="metric"><span>Lignes contrôlées</span><strong>{datasetQuality.rows_checked}</strong></div>
@@ -538,18 +538,18 @@ export default function PerformancePage({
             <h2>{candidate.model_version ?? 'ml-candidate-v1'}</h2>
             <p>Ce candidat ML est entraîné depuis le Feature Store, mais il n'est pas encore utilisé en production.</p>
             <div className="dataList">
-              <span>Status <strong>{candidate.status}</strong></span>
+              <span>Statut <strong>{candidate.status}</strong></span>
               <span>Modèle production <strong>{mlStatus.production_model_version}</strong></span>
               <span>Candidat en production <strong>{mlStatus.candidate_is_production ? 'oui' : 'non'}</strong></span>
               <span>Lignes utilisées <strong>{candidate.rows_used ?? 0}</strong></span>
-              <span>Accuracy <strong>{candidate.accuracy ?? 0}%</strong></span>
+              <span>Précision <strong>{candidate.accuracy ?? 0}%</strong></span>
               <span>Log loss <strong>{candidate.log_loss ?? 'N/A'}</strong></span>
               <span>Brier 1X2 <strong>{candidate.brier_score_1x2 ?? 'N/A'}</strong></span>
             </div>
           </article>
 
           <article className="card">
-            <h2>Feature importance</h2>
+            <h2>Importance des variables</h2>
             {candidateImportance.length === 0 ? (
               <div className="emptyState">Aucun modèle candidat n'a encore été entraîné.</div>
             ) : (
@@ -583,7 +583,7 @@ export default function PerformancePage({
           <div className="metricTable">
             <div className="metricTableRow header">
               <span>Modèle</span>
-              <span>Accuracy</span>
+              <span>Précision</span>
               <span>Brier</span>
               <span>Statut</span>
             </div>
@@ -625,14 +625,14 @@ export default function PerformancePage({
         <section className="card hybridEngineCard sectionAnchor" id="hybrid-engine">
           <p className="eyebrow">Moteur hybride v1</p>
           <h2>Moteur hybride v1</h2>
-          <p>Le moteur hybride v1 ne remplace pas le mod?le officiel. Il classe les matchs selon le niveau de consensus ou de d?saccord entre Elo/Poisson et le ML shadow.</p>
+          <p>Le moteur hybride v1 ne remplace pas le modèle officiel. Il classe les matchs selon le niveau de consensus ou de désaccord entre Elo/Poisson et le ML shadow.</p>
           <div className="compactDataGrid four">
             <div className="metric"><span>Version</span><strong>{hybridEngine.engine_version}</strong></div>
             <div className="metric"><span>Recommandation</span><strong>{hybridEngine.recommendation}</strong></div>
             <div className="metric"><span>Strong</span><strong>{hybridEngine.summary.strong_count}</strong></div>
             <div className="metric"><span>Medium</span><strong>{hybridEngine.summary.medium_count}</strong></div>
             <div className="metric"><span>Weak</span><strong>{hybridEngine.summary.weak_count}</strong></div>
-            <div className="metric"><span>? ?viter</span><strong>{hybridEngine.summary.avoid_count}</strong></div>
+            <div className="metric"><span>À éviter</span><strong>{hybridEngine.summary.avoid_count}</strong></div>
             <div className="metric"><span>Unknown</span><strong>{hybridEngine.summary.unknown_count}</strong></div>
             <div className="metric"><span>Candidat production</span><strong>{hybridEngine.candidate_is_production ? 'oui' : 'non'}</strong></div>
             <div className="metric"><span>Officiel primaire</span><strong>{hybridEngine.official_prediction_stays_primary ? 'oui' : 'non'}</strong></div>
@@ -684,7 +684,7 @@ export default function PerformancePage({
         <section className="card sectionAnchor" id="hybrid-review">
           <p className="eyebrow">Signal consultatif</p>
           <h2>Revue hybride</h2>
-          <p>Le mode hybride ne remplace pas le mod?le officiel. Il ajoute un signal de prudence ou de renforcement lorsque le ML shadow confirme ou contredit le mod?le Elo/Poisson.</p>
+          <p>Le mode hybride ne remplace pas le modèle officiel. Il ajoute un signal de prudence ou de renforcement lorsque le ML shadow confirme ou contredit le modèle Elo/Poisson.</p>
           <div className="dataList">
             <span>Mode <strong>{hybrid.mode}</strong></span>
             <span>Recommandation <strong>{hybrid.recommendation}</strong></span>
@@ -718,17 +718,17 @@ export default function PerformancePage({
     </div>
 
     <div className="metric">
-      <span>Accuracy officielle</span>
+      <span>Précision officielle</span>
       <strong>{shadowBacktesting.production_accuracy}%</strong>
     </div>
 
     <div className="metric">
-      <span>Accuracy shadow</span>
+      <span>Précision shadow</span>
       <strong>{shadowBacktesting.shadow_accuracy}%</strong>
     </div>
 
     <div className="metric">
-      <span>Score d’activation</span>
+      <span>Score d'activation</span>
       <strong>{shadowBacktesting.activation_score}/100</strong>
     </div>
 
@@ -770,7 +770,7 @@ export default function PerformancePage({
 
   <div className="banner info">
     <strong>Recommandation : </strong>
-    {shadowBacktesting.activation_recommendation} — {shadowBacktesting.recommendation_reason}
+    {shadowBacktesting.activation_recommendation} â€” {shadowBacktesting.recommendation_reason}
   </div>
 
   {shadowBacktesting.recent_evaluations?.length > 0 && (
@@ -831,8 +831,8 @@ export default function PerformancePage({
           <div className="metricTable">
             <div className="metricTableRow header">
               <span>Bucket</span>
-              <span>Count</span>
-              <span>Accuracy</span>
+                  <span>Volume</span>
+                  <span>Précision</span>
               <span>Brier</span>
             </div>
             {report.confidence_buckets.map((bucket) => (
@@ -860,7 +860,7 @@ export default function PerformancePage({
                       Evaluated <strong>{row.count}</strong>
                     </span>
                     <span>
-                      Accuracy <strong>{row.accuracy}%</strong>
+                      Précision <strong>{row.accuracy}%</strong>
                     </span>
                     <span>
                       Brier <strong>{row.average_brier_score}</strong>

@@ -92,7 +92,7 @@ export default function AdminPage() {
     } catch (error) {
       if (cancelled) return;
 
-      setError(error instanceof Error ? error.message : 'Suivi du job d’actualisation indisponible.');
+      setError(error instanceof Error ? error.message : "Suivi du job d'actualisation indisponible.");
       setIsRefreshing(false);
       setRefreshJobId(null);
     }
@@ -353,18 +353,18 @@ async function handleRefresh() {
 
         <section className="card workflowCard">
           <p className="eyebrow">?tat du workflow</p>
-          <h2>Pipeline data et mod?le</h2>
+          <h2>Pipeline data et modèle</h2>
           <div className="compactDataGrid four">
-            <div className="metric"><span>Donn?es actualis?es</span><strong>{workflowStatus?.refresh.last_refresh_at ? 'oui' : 'non'}</strong></div>
-            <div className="metric"><span>Feature Store pr?t</span><strong>{workflowStatus?.feature_store.ready ? 'oui' : 'non'}</strong></div>
-            <div className="metric"><span>Mod?le candidat entra?n?</span><strong>{workflowStatus?.candidate_model.trained ? 'oui' : 'non'}</strong></div>
-            <div className="metric"><span>Pr?dictions shadow g?n?r?es</span><strong>{workflowStatus?.shadow_predictions.generated ? 'oui' : 'non'}</strong></div>
+            <div className="metric"><span>Données actualisées</span><strong>{workflowStatus?.refresh.last_refresh_at ? 'oui' : 'non'}</strong></div>
+            <div className="metric"><span>Feature Store prêt</span><strong>{workflowStatus?.feature_store.ready ? 'oui' : 'non'}</strong></div>
+            <div className="metric"><span>Modèle candidat entraîné</span><strong>{workflowStatus?.candidate_model.trained ? 'oui' : 'non'}</strong></div>
+            <div className="metric"><span>Prédictions shadow générées</span><strong>{workflowStatus?.shadow_predictions.generated ? 'oui' : 'non'}</strong></div>
             <div className="metric"><span>Backtesting shadow disponible</span><strong>{workflowStatus?.shadow_backtesting.ready ? 'oui' : 'non'}</strong></div>
             <div className="metric"><span>Feature set</span><strong>{workflowStatus?.feature_engineering?.feature_set_version ?? 'pre-match-advanced-v1'}</strong></div>
             <div className="metric"><span>Couverture avancee</span><strong>{workflowStatus?.feature_engineering?.advanced_feature_coverage ?? 0}%</strong></div>
-            <div className="metric"><span>Prochaine ?tape</span><strong>{workflowStatus?.next_step ?? 'refresh_data'}</strong></div>
+            <div className="metric"><span>Prochaine étape</span><strong>{workflowStatus?.next_step ?? 'refresh_data'}</strong></div>
           </div>
-        <div className="banner info">Le moteur hybride est consultatif : il ne remplace pas le mod?le officiel.</div>
+        <div className="banner info">Le moteur hybride est consultatif : il ne remplace pas le modèle officiel.</div>
         </section>
 
         <section className="card qualityCard">
@@ -449,7 +449,7 @@ async function handleRefresh() {
           {featureStoreJob && (
             <div className="banner info">
               Statut job Feature Store: {featureStoreJob.status}
-              {featureStoreJob.duration_ms ? ` · Durée ${featureStoreJob.duration_ms} ms` : ''}
+              {featureStoreJob.duration_ms ? ` Â· Durée ${featureStoreJob.duration_ms} ms` : ''}
             </div>
           )}
           {featureBuildInfo && (
@@ -514,7 +514,7 @@ async function handleRefresh() {
               <span>Lignes utilisées <strong>{trainingReport.rows_used ?? 0}</strong></span>
               <span>Lignes train <strong>{trainingReport.train_rows ?? 0}</strong></span>
               <span>Lignes test <strong>{trainingReport.test_rows ?? 0}</strong></span>
-              <span className="metricHelp">Accuracy <InfoTooltip content="Pourcentage de résultats correctement prédits sur l’échantillon évalué." /> <strong>{trainingReport.accuracy ?? 0}%</strong></span>
+              <span className="metricHelp">Précision <InfoTooltip content="Pourcentage de résultats correctement prédits sur l'échantillon évalué." /> <strong>{trainingReport.accuracy ?? 0}%</strong></span>
               <span className="metricHelp">Log loss <InfoTooltip content="Mesure pénalisant fortement les prédictions confiantes mais incorrectes. Plus bas est meilleur." /> <strong>{trainingReport.log_loss ?? 'N/A'}</strong></span>
               <span>Brier 1X2 <strong>{trainingReport.brier_score_1x2 ?? 'N/A'}</strong></span>
               <span>Entraîné le <strong>{trainingReport.trained_at ?? 'N/A'}</strong></span>
@@ -532,8 +532,8 @@ async function handleRefresh() {
 
         <section className="card shadowCard">
           <p className="eyebrow">Mode shadow ML</p>
-          <h2>4. G?n?rer les pr?dictions shadow</h2>
-          <p>Calcule les pr?dictions du mod?le ML candidat en parall?le du mod?le officiel, sans les activer en production.</p>
+          <h2>4. Générer les prédictions shadow</h2>
+          <p>Calcule les prédictions du modèle ML candidat en parallèle du modèle officiel, sans les activer en production.</p>
           <div className="formGrid">
             <label className="formField">
               <span>Limite</span>
@@ -548,26 +548,26 @@ async function handleRefresh() {
               </select>
             </label>
             <label className="formField checkboxField">
-              <span>Forcer la r?g?n?ration</span>
+              <span>Forcer la régénération</span>
               <input type="checkbox" checked={shadowForce} onChange={(event) => setShadowForce(event.target.checked)} />
             </label>
           </div>
           <button className="button primary" type="button" onClick={handleGenerateShadowPredictions} disabled={isGeneratingShadow || !isAdmin}>
-            {isGeneratingShadow ? 'G?n?ration...' : 'G?n?rer les pr?dictions shadow'}
+            {isGeneratingShadow ? 'Génération...' : 'Générer les prédictions shadow'}
           </button>
           {shadowResult && (
             <div className="dataList">
               <span>Vue <strong>{shadowResult.view ?? shadowView}</strong></span>
-              <span>G?n?r?es <strong>{shadowResult.shadow_predictions_generated ?? 0}</strong></span>
+              <span>Générées <strong>{shadowResult.shadow_predictions_generated ?? 0}</strong></span>
               <span>Sauvegard?es <strong>{shadowResult.shadow_predictions_saved ?? 0}</strong></span>
               <span>Disponibles <strong>{shadowResult.available_count ?? 0}</strong></span>
-              <span>D?saccords <strong>{shadowResult.disagreement_count ?? 0}</strong></span>
-              <span>D?saccords ?lev?s <strong>{shadowResult.high_disagreement_count ?? 0}</strong></span>
+              <span>Désaccords <strong>{shadowResult.disagreement_count ?? 0}</strong></span>
+              <span>Désaccords élevés <strong>{shadowResult.high_disagreement_count ?? 0}</strong></span>
               <span>Candidat production <strong>{shadowResult.candidate_is_production ? 'oui' : 'non'}</strong></span>
             </div>
           )}
           {shadowResult?.note && <div className="banner info">{shadowResult.note}</div>}
-          <p>Apr?s g?n?ration des pr?dictions shadow, consultez le backtesting shadow pour mesurer les d?saccords et la qualit? du candidat ML.</p>
+          <p>Après génération des prédictions shadow, consultez le backtesting shadow pour mesurer les désaccords et la qualité du candidat ML.</p>
           <Link className="textLink" href="/performance#shadow-backtesting">Voir le backtesting shadow</Link>
         </section>
 
@@ -604,7 +604,15 @@ async function handleRefresh() {
             <span>
               Dernière actualisation <strong>{refreshInfo?.last_refresh_at ?? 'N/A'}</strong>
             </span>
+            <span>
+              Compétitions configurées <strong>{refreshInfo?.configured_competitions?.join(', ') || 'FL1, CL'}</strong>
+            </span>
           </div>
+          {(refreshInfo?.competition_warnings?.length ?? 0) > 0 && (
+            <div className="banner warning">
+              {refreshInfo?.competition_warnings?.join(' ')}
+            </div>
+          )}
           <div className="banner info">
             Le backtesting et les snapshots se mettent à jour depuis les matchs terminés avec score disponible. Voir le rapport modèle dans{' '}
             <Link className="textLink" href="/performance#shadow-ml">

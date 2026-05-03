@@ -1,4 +1,4 @@
-﻿import type { NextApiRequest, NextApiResponse } from 'next';
+import type { NextApiRequest, NextApiResponse } from 'next';
 
 const DEFAULT_API_URL = 'https://footiq-pro-production.up.railway.app';
 

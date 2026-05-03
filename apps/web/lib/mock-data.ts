@@ -1,4 +1,4 @@
-export type ConfidenceStatus = 'FIABLE' | 'MOYEN' | 'A EVITER' | 'À ÉVITER';
+export type ConfidenceStatus = 'FIABLE' | 'MOYEN' | 'À ÉVITER';
 export type Recommendation = 'Exploitable' | 'Prudence' | 'À éviter' | 'À éviter';
 
 export type ExplainabilityFactor = {
@@ -207,6 +207,8 @@ export type RefreshResponse = {
   refresh_duration_ms?: number;
   next_recommended_actions?: string[];
   warning?: string;
+  configured_competitions?: string[];
+  competition_warnings?: string[];
   feature_snapshots_saved?: number;
   training_rows_available?: number;
   last_refresh_at?: string | null;
@@ -713,7 +715,7 @@ export const predictions: Prediction[] = [
     calibration: { applied: true, method: 'conservative_probability_smoothing', overconfidence_factor: 0.1, draw_adjustment: 2, confidence_penalty: 5 },
     probabilities: { home: 43, draw: 29, away: 28 },
     goals: { expected_home: 1.5, expected_away: 1.2, over_2_5: 46, btts: 57 },
-    confidence: { score: 54, status: 'A EVITER' },
+    confidence: { score: 54, status: 'À ÉVITER' },
     flags: { trap_match: false, risk: true },
     recommendation: 'Prudence',
     main_prediction: 'Match serre, nul fortement plausible',
@@ -765,7 +767,7 @@ export const predictions: Prediction[] = [
     calibration: { applied: true, method: 'conservative_probability_smoothing', overconfidence_factor: 0.1, draw_adjustment: 2, confidence_penalty: 5 },
     probabilities: { home: 36, draw: 31, away: 33 },
     goals: { expected_home: 1.2, expected_away: 1.3, over_2_5: 44, btts: 55 },
-    confidence: { score: 48, status: 'A EVITER' },
+    confidence: { score: 48, status: 'À ÉVITER' },
     flags: { trap_match: false, risk: true },
     recommendation: 'À éviter',
     main_prediction: 'Aucune direction claire',
@@ -1200,7 +1202,7 @@ export const mockGenerateShadowPredictionsResponse: GenerateShadowPredictionsRes
   disagreement_count: 0,
   high_disagreement_count: 0,
   candidate_is_production: false,
-  note: "Les pr?dictions ML shadow seront calcul?es en parall?le du mod?le officiel.",
+  note: "Les prédictions ML shadow seront calculées en parallèle du modèle officiel.",
 };
 
 export const mockMlComparison: MlComparison = {
@@ -1484,7 +1486,7 @@ export function buildDashboardSummary(source = 'mock'): DashboardSummary {
 }
 
 export function isAvoidStatus(status: string) {
-  return status === 'A EVITER' || status === 'À ÉVITER';
+  return status === 'À ÉVITER';
 }
 
 export function getMockPrediction(id: string) {
@@ -1622,7 +1624,7 @@ export const mockHybridDecision: HybridDecision = {
   decision_label: 'shadow_indisponible',
   risk_adjustment: 0,
   display_message: 'Signal ML shadow indisponible. La lecture officielle reste Elo/Poisson.',
-  explanation: ['Le mod?le officiel Elo/Poisson reste la seule pr?diction utilis?e.'],
+  explanation: ['Le modèle officiel Elo/Poisson reste la seule prédiction utilisée.'],
 };
 
 export const mockHybridSummary: HybridSummary = {
@@ -1684,8 +1686,8 @@ export const mockHybridEngineDecision: HybridEngineDecision = {
   decision_label: 'shadow_indisponible',
   action: 'insufficient_shadow_data',
   display_title: 'Signal ML indisponible',
-  display_message: 'Le mod?le officiel Elo/Poisson reste la r?f?rence.',
-  explanation: ['Le moteur hybride ne remplace pas la pr?diction officielle.'],
+  display_message: 'Le modèle officiel Elo/Poisson reste la référence.',
+  explanation: ['Le moteur hybride ne remplace pas la prédiction officielle.'],
   warnings: ['Signal shadow indisponible.'],
   evidence: {
     production_confidence: null,

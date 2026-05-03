@@ -6,6 +6,7 @@ import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { getPredictions } from '~/lib/api';
 import { isAvoidStatus, matchHref, statusClass, type ConfidenceStatus, type Prediction } from '~/lib/mock-data';
+import { formatCompetitionLabel, formatKickoffFr, formatRecommendationLabel, formatStatusLabel } from '~/lib/ui-text';
 import { Layout } from '~/src-layout';
 
 type PredictionsProps = {
@@ -27,7 +28,7 @@ export default function PredictionsPage({ predictions }: PredictionsProps) {
 
   useEffect(() => {
     if (typeof router.query.status === 'string') {
-      setStatus(router.query.status === 'avoid' ? 'A EVITER' : router.query.status);
+      setStatus(router.query.status === 'avoid' ? 'À ÉVITER' : router.query.status);
     }
 
     setTrapOnly(router.query.trap === 'true');
@@ -40,7 +41,7 @@ export default function PredictionsPage({ predictions }: PredictionsProps) {
           const statusMatches =
             !status ||
             prediction.confidence.status === status ||
-            (status === 'A EVITER' && isAvoidStatus(prediction.confidence.status));
+            (status === 'À ÉVITER' && isAvoidStatus(prediction.confidence.status));
           const trapMatches = !trapOnly || prediction.flags.trap_match;
           const riskMatches = !riskOnly || prediction.flags.risk;
           const confidenceMatches = !highConfidence || prediction.confidence.score >= 70;
@@ -74,9 +75,9 @@ export default function PredictionsPage({ predictions }: PredictionsProps) {
         />
         <select aria-label="Statut" value={status} onChange={(event) => setStatus(event.target.value)}>
           <option value="">Tous statuts</option>
-          {(['FIABLE', 'MOYEN', 'A EVITER'] as ConfidenceStatus[]).map((item) => (
+          {(['FIABLE', 'MOYEN', 'À ÉVITER'] as ConfidenceStatus[]).map((item) => (
             <option key={item} value={item}>
-              {item}
+              {formatStatusLabel(item)}
             </option>
           ))}
         </select>
@@ -114,14 +115,15 @@ function PredictionCard({ prediction }: { prediction: Prediction }) {
   return (
     <Link className="card matchCard clickable-card" href={matchHref(prediction)}>
       <div className="cardTop">
-        <span>{prediction.competition}</span>
+        <span>{formatCompetitionLabel(prediction.competition)}</span>
         <span className={`badge status-badge ${statusClass(prediction.confidence.status)}`}>
-          {prediction.confidence.status}
+          {formatStatusLabel(prediction.confidence.status)}
         </span>
       </div>
       <h3>
         {prediction.home_team} vs {prediction.away_team}
       </h3>
+      <p>{formatKickoffFr(prediction.kickoff)}</p>
       <div className="probGrid">
         <span>
           1 <strong>{prediction.probabilities.home}%</strong>
@@ -138,10 +140,7 @@ function PredictionCard({ prediction }: { prediction: Prediction }) {
       </div>
       <div className="dataList compact">
         <span>
-          Modèle <strong>{prediction.model_version ?? 'elo-poisson-calibrated-v1'}</strong>
-        </span>
-        <span>
-          Score <strong>{prediction.goals.most_likely_score ?? 'N/A'}</strong>
+          Score probable <strong>{prediction.goals.most_likely_score ?? 'N/A'}</strong>
         </span>
         <span>
           <span className="metricHelp">Risque <InfoTooltip content="Score de risque contextuel. Plus il est élevé, plus le match est difficile à lire." /></span>
@@ -150,12 +149,6 @@ function PredictionCard({ prediction }: { prediction: Prediction }) {
         <span>
           <span className="metricHelp">Écart Elo <InfoTooltip content="Écart de niveau relatif entre les deux équipes selon le système Elo." /></span>
           <strong>{prediction.features?.elo_delta ?? 'N/A'}</strong>
-        </span>
-        <span>
-          Calibration <strong>{prediction.calibration?.applied ? 'active' : 'active'}</strong>
-        </span>
-        <span>
-          Pénalité <strong>{prediction.calibration?.confidence_penalty ?? 'N/A'}</strong>
         </span>
       </div>
       {prediction.hybrid_engine && (
@@ -178,15 +171,16 @@ function PredictionCard({ prediction }: { prediction: Prediction }) {
         </div>
       )}
       <p>{prediction.explanation[0]}</p>
+      <strong>{formatRecommendationLabel(prediction.recommendation)}</strong>
     </Link>
   );
 }
 
 
 function hybridLabel(label: string) {
-  if (label === 'signal_renforce') return 'signal renforc?';
+  if (label === 'signal_renforce') return 'signal renforcé';
   if (label === 'prudence_confirmee') return 'prudence';
-  if (label === 'desaccord_modele') return 'd?saccord mod?le';
-  if (label === 'eviter') return '?viter';
+  if (label === 'desaccord_modele') return 'désaccord modèle';
+  if (label === 'eviter') return 'à éviter';
   return 'shadow indisponible';
 }

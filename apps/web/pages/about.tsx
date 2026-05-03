@@ -15,7 +15,7 @@ export default function AboutPage() {
       <section className="grid three">
         <article className="card">
           <h2>Lire les matchs</h2>
-          <p>Identifier les rencontres où les signaux statistiques convergent clairement.</p>
+            <p>Identifier les rencontres où les signaux statistiques convergent clairement.</p>
         </article>
         <article className="card">
           <h2>Repérer les pièges</h2>

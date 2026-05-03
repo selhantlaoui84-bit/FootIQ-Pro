@@ -7,7 +7,7 @@ const links = [
   { href: '/matches', label: 'Matchs' },
   { href: '/predictions', label: 'Prédictions' },
   { href: '/teams', label: 'Équipes' },
-  { href: '/performance', label: 'Performance' },
+  { href: '/performance', label: 'Analyse' },
 ];
 
 export function Layout({ children }: { children: ReactNode }) {

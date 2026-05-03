@@ -1,10 +1,19 @@
-﻿import type { GetStaticProps } from 'next';
+import type { GetStaticProps } from 'next';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useEffect, useMemo, useState } from 'react';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { getMatches } from '~/lib/api';
 import { matchHref, statusClass, type Match, type MatchView } from '~/lib/mock-data';
+import {
+  formatCompetitionLabel,
+  formatFinishedMatchSummary,
+  formatKickoffFr,
+  formatMatchStatusLabel,
+  formatScore,
+  formatStatusLabel,
+  formatWinnerLabel,
+} from '~/lib/ui-text';
 import { Layout } from '~/src-layout';
 
 type MatchesProps = {
@@ -78,12 +87,12 @@ export default function MatchesPage({ matches }: MatchesProps) {
           <p className="eyebrow">Calendrier dynamique</p>
           <h1>Matchs</h1>
           <p>
-            Les matchs à venir sont affichés en priorité. L'historique reste consultable pour l'analyse, le backtesting et le Feature Store.
+            Les matchs à venir sont affichés en priorité. L'historique reste consultable avec les scores et les chiffres clés.
           </p>
           <div className="sourceStrip">
             <span>À venir: {upcomingCount}</span>
             <span>Historique: {historyCount}</span>
-            <span>Total: {matches.length}</span>
+            <span>Total : {matches.length}</span>
           </div>
         </section>
 
@@ -110,7 +119,7 @@ export default function MatchesPage({ matches }: MatchesProps) {
             <option value="">Toutes compétitions</option>
             {competitions.map((item) => (
               <option key={item} value={item}>
-                {item}
+                {formatCompetitionLabel(item)}
               </option>
             ))}
           </select>
@@ -138,31 +147,40 @@ export default function MatchesPage({ matches }: MatchesProps) {
 function MatchRow({ match }: { match: Match }) {
   const finished = isFinished(match);
   const scoreAvailable = match.score_full_time_home !== undefined && match.score_full_time_home !== null && match.score_full_time_away !== undefined && match.score_full_time_away !== null;
+  const summary = formatFinishedMatchSummary(match);
 
   return (
-    <Link className="rowCard clickable-card" href={matchHref(match)}>
+    <Link className="rowCard clickable-card fluidCard" href={matchHref(match)}>
       <div>
-        <span className="muted">{match.competition}</span>
+        <span className="muted">{formatCompetitionLabel(match.competition)}</span>
         <h2>
           {match.home_team} vs {match.away_team}
         </h2>
-        <p>{new Date(match.kickoff).toLocaleString('fr-FR', { dateStyle: 'full', timeStyle: 'short' })}</p>
+        <p>{formatKickoffFr(match.kickoff)}</p>
         <div className="cardTop compact">
-          <span className={`badge status-badge ${finished ? 'historicalBadge' : ''}`}>{finished ? 'Terminé' : match.status ?? 'À venir'}</span>
-          <span className="badge">{match.source ?? 'api'}</span>
+          <span className={`badge status-badge ${finished ? 'historicalBadge' : ''}`}>
+            {formatMatchStatusLabel(match.status)}
+          </span>
+          {finished && <span className="badge">{formatWinnerLabel(match)}</span>}
         </div>
       </div>
 
       {finished ? (
-        <div className="scoreDisplay" aria-label="Score final">
+        <div className="scoreBlock" aria-label="Score final">
           {scoreAvailable ? (
             <>
-              <span>{match.home_team}</span>
-              <strong>{match.score_full_time_home} - {match.score_full_time_away}</strong>
-              <span>{match.away_team}</span>
+              <span className="responsiveText">{match.home_team}</span>
+              <strong className="scoreValue">{formatScore(match)}</strong>
+              <span className="responsiveText">{match.away_team}</span>
+              <div className="matchResultSummary">
+                <span>Mi-temps : {summary.halftime}</span>
+                <span>Résultat 1N2 : {summary.result1n2}</span>
+                <span>Over 2.5 : {summary.over25}</span>
+                <span>BTTS : {summary.btts}</span>
+              </div>
             </>
           ) : (
-            <strong>Score non disponible</strong>
+            <strong className="scoreValue">Score non disponible</strong>
           )}
         </div>
       ) : (
@@ -182,11 +200,11 @@ function MatchRow({ match }: { match: Match }) {
       <div>
         {match.confidence ? (
           <>
-            <span className={`badge status-badge ${statusClass(match.confidence.status)}`}>{match.confidence.status}</span>
+            <span className={`badge status-badge ${statusClass(match.confidence.status)}`}>{formatStatusLabel(match.confidence.status)}</span>
             <strong className="score">{match.confidence.score}</strong>
           </>
         ) : (
-          <span className="badge status-badge moyen">{finished ? 'Terminé' : match.status ?? 'À venir'}</span>
+          <span className="badge status-badge moyen">{formatMatchStatusLabel(match.status)}</span>
         )}
       </div>
       <span className="button secondary small">Voir analyse</span>

@@ -1,9 +1,10 @@
-﻿import type { GetStaticPaths, GetStaticProps } from 'next';
+import type { GetStaticPaths, GetStaticProps } from 'next';
 import Link from 'next/link';
 import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { getMatch, getPrediction } from '~/lib/api';
 import { matches, statusClass, teamNameHref, type Match, type Prediction } from '~/lib/mock-data';
+import { formatCompetitionLabel, formatFinishedMatchSummary, formatKickoffFr, formatMatchStatusLabel, formatScore, formatWinnerLabel } from '~/lib/ui-text';
 import { Layout } from '~/src-layout';
 
 type MatchDetailProps = {
@@ -29,7 +30,8 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
   const homeScore = match.score_full_time_home ?? prediction.score_full_time_home;
   const awayScore = match.score_full_time_away ?? prediction.score_full_time_away;
   const scoreAvailable = homeScore !== undefined && homeScore !== null && awayScore !== undefined && awayScore !== null;
-  const winner = winnerLabel(match.winner ?? prediction.winner, prediction.home_team, prediction.away_team);
+  const summary = formatFinishedMatchSummary({ ...match, ...prediction });
+  const winner = formatWinnerLabel({ ...match, ...prediction });
   const shadow = prediction.shadow;
   const hybrid = prediction.hybrid;
   const hybridEngine = prediction.hybrid_engine;
@@ -44,17 +46,18 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
             <h1>
               {prediction.home_team} vs {prediction.away_team}
             </h1>
-            <p>{new Date(kickoff).toLocaleString('fr-FR', { dateStyle: 'full', timeStyle: 'short' })}</p>
+            <p>{formatKickoffFr(kickoff)}</p>
             <div className="cardTop compact">
-              <span className={`badge status-badge ${finished ? 'historicalBadge' : ''}`}>{finished ? 'Terminé' : match.status ?? prediction.status ?? 'À venir'}</span>
-              <span className="badge">Source: {prediction.source ?? match.source ?? 'mock'}</span>
+              <span className={`badge status-badge ${finished ? 'historicalBadge' : ''}`}>{formatMatchStatusLabel(match.status ?? prediction.status)}</span>
+              <span className="badge">{formatCompetitionLabel(prediction.competition || match.competition)}</span>
             </div>
           </div>
           {finished && scoreAvailable ? (
-            <div className="scoreDisplay large">
+            <div className="scoreBlock large">
               <span>{prediction.home_team}</span>
-              <strong>{homeScore} - {awayScore}</strong>
+              <strong className="scoreValue">{formatScore({ score_full_time_home: homeScore, score_full_time_away: awayScore })}</strong>
               <span>{prediction.away_team}</span>
+              <small>{winner}</small>
             </div>
           ) : (
             <span className={`badge large status-badge ${statusClass(prediction.confidence.status)}`}>{prediction.confidence.status}</span>
@@ -67,10 +70,16 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
               Contexte historique
               <InfoTooltip content="Les matchs terminés restent utilisés pour l'Elo, la forme, le Feature Store, le backtesting et l'entraînement ML." />
             </h2>
-            <div className="dataList">
-              <span>Date du match <strong>{new Date(kickoff).toLocaleDateString('fr-FR', { dateStyle: 'long' })}</strong></span>
-              <span>Score final <strong>{scoreAvailable ? `${homeScore} - ${awayScore}` : 'Non disponible'}</strong></span>
+            <div className="matchResultSummary compactStatGrid">
+              <span>Date <strong>{formatKickoffFr(kickoff)}</strong></span>
+              <span>Compétition <strong>{formatCompetitionLabel(match.competition)}</strong></span>
+              <span>Score final <strong>{summary.score}</strong></span>
+              <span>Mi-temps <strong>{summary.halftime}</strong></span>
+              <span>Résultat <strong>{summary.result1n2}</strong></span>
               <span>Vainqueur <strong>{winner}</strong></span>
+              <span>Total buts <strong>{summary.totalGoals ?? 'N/A'}</strong></span>
+              <span>Over 2.5 <strong>{summary.over25}</strong></span>
+              <span>BTTS <strong>{summary.btts}</strong></span>
             </div>
             <p>La prédiction affichée sert ici de contexte post-match et de matière pour l'évaluation du modèle.</p>
           </section>
@@ -84,9 +93,8 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
 
         <section className="sectionSplit">
           <article className="card">
-            <h2>Modèle offensif</h2>
+            <h2>Lecture offensive</h2>
             <div className="dataList">
-              <span>Modèle <strong>{prediction.model_version ?? 'elo-poisson-calibrated-v1'}</strong></span>
               <span>Score attendu <strong>{prediction.goals.expected_home} - {prediction.goals.expected_away}</strong></span>
               <span>Score probable <strong>{prediction.goals.most_likely_score ?? 'N/A'}</strong></span>
               <span>Over 1.5 <strong>{prediction.goals.over_1_5 ?? 'N/A'}%</strong></span>
@@ -164,23 +172,23 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
         {hybridEngine && (
           <section className="card hybridEngineCard">
             <h2 className="metricHelp">
-              D?cision hybride v1
-              <InfoTooltip content="Le moteur hybride v1 classe le niveau de consensus entre Elo/Poisson et le ML shadow, sans remplacer la pr?diction officielle." />
+              Décision hybride v1
+              <InfoTooltip content="Le moteur hybride v1 classe le niveau de consensus entre Elo/Poisson et le ML shadow, sans remplacer la prédiction officielle." />
             </h2>
             <h3>{hybridEngine.display_title}</h3>
             <p>{hybridEngine.display_message}</p>
             <div className="comparisonMiniTable">
               <span className="metricHelp">Score de consensus <InfoTooltip content="Mesure le niveau de convergence entre le signal officiel et le ML shadow." /> <strong>{hybridEngine.consensus_score}/100</strong></span>
-              <span>Niveau de d?cision <strong className={`decisionBadge ${hybridEngine.decision_level}`}>{hybridEngine.decision_level}</strong></span>
-              <span className="metricHelp">Action recommand?e <InfoTooltip content="Action consultative: elle n'active jamais le ML en production." /> <strong>{hybridEngine.action}</strong></span>
+              <span>Niveau de décision <strong className={`decisionBadge ${hybridEngine.decision_level}`}>{hybridEngine.decision_level}</strong></span>
+              <span className="metricHelp">Action recommandée <InfoTooltip content="Action consultative: elle n'active jamais le ML en production." /> <strong>{hybridEngine.action}</strong></span>
               <span>Signal officiel <strong>{translatePick(hybridEngine.production_pick)}</strong></span>
               <span>Signal shadow <strong>{translatePick(hybridEngine.shadow_pick)}</strong></span>
               <span>Accord <strong>{hybridEngine.agreement}</strong></span>
-              <span className="metricHelp">Ajustement du risque <InfoTooltip content="Variation consultative du niveau de risque selon le consensus ou le d?saccord mod?le." /> <strong>{hybridEngine.risk_adjustment}</strong></span>
+              <span className="metricHelp">Ajustement du risque <InfoTooltip content="Variation consultative du niveau de risque selon le consensus ou le désaccord modèle." /> <strong>{hybridEngine.risk_adjustment}</strong></span>
             </div>
             <ul>{hybridEngine.explanation.map((item) => <li key={item}>{item}</li>)}</ul>
             {hybridEngine.warnings.length > 0 && <div className="banner warning">{hybridEngine.warnings.join(' ')}</div>}
-            <div className="banner info">Le mod?le officiel reste Elo/Poisson. Le moteur hybride ajoute une lecture de prudence ou de renforcement, sans remplacer la pr?diction officielle.</div>
+            <div className="banner info">Le modèle officiel reste Elo/Poisson. Le moteur hybride ajoute une lecture de prudence ou de renforcement, sans remplacer la prédiction officielle.</div>
           </section>
         )}
 
@@ -188,19 +196,19 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
           <section className="card advisoryCard">
             <h2 className="metricHelp">
               Signal hybride
-              <InfoTooltip content="Le mode hybride reste consultatif: le mod?le officiel demeure Elo/Poisson et le ML shadow sert uniquement ? renforcer ou nuancer la lecture." />
+              <InfoTooltip content="Le mode hybride reste consultatif: le modèle officiel demeure Elo/Poisson et le ML shadow sert uniquement à renforcer ou nuancer la lecture." />
             </h2>
             <p>{hybrid.display_message}</p>
             <div className="comparisonMiniTable">
               <span>Label <strong>{hybrid.decision_label}</strong></span>
-              <span className="metricHelp">Consensus <InfoTooltip content="Score de consensus entre le mod?le officiel et le signal ML shadow. Plus il est haut, plus les signaux convergent." /> <strong>{hybrid.consensus_score}/100</strong></span>
+              <span className="metricHelp">Consensus <InfoTooltip content="Score de consensus entre le modèle officiel et le signal ML shadow. Plus il est haut, plus les signaux convergent." /> <strong>{hybrid.consensus_score}/100</strong></span>
               <span>Accord <strong>{hybrid.agreement}</strong></span>
               <span>Choix officiel <strong>{translatePick(hybrid.production_pick)}</strong></span>
               <span>Choix shadow <strong>{translatePick(hybrid.shadow_pick)}</strong></span>
               <span>Ajustement risque <strong>{hybrid.risk_adjustment}</strong></span>
             </div>
             <ul>{hybrid.explanation.map((item) => <li key={item}>{item}</li>)}</ul>
-            <div className="banner info">Le mod?le officiel reste Elo/Poisson. Le ML intervient uniquement comme signal d'observation.</div>
+            <div className="banner info">Le modèle officiel reste Elo/Poisson. Le ML intervient uniquement comme signal d'observation.</div>
           </section>
         )}
 
@@ -346,13 +354,6 @@ function Probability({ label, value }: { label: string; value: number }) {
 
 function isFinished(item: { status?: string }) {
   return String(item.status ?? '').toUpperCase() === 'FINISHED';
-}
-
-function winnerLabel(winner: string | null | undefined, homeTeam: string, awayTeam: string) {
-  if (winner === 'HOME_TEAM') return homeTeam;
-  if (winner === 'AWAY_TEAM') return awayTeam;
-  if (winner === 'DRAW') return 'Nul';
-  return 'Non disponible';
 }
 
 function translatePick(pick: string | null | undefined) {
