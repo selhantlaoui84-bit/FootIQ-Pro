@@ -231,6 +231,8 @@ export default function AdminPage() {
             <div className="metric"><span>Mod?le candidat entra?n?</span><strong>{workflowStatus?.candidate_model.trained ? 'oui' : 'non'}</strong></div>
             <div className="metric"><span>Pr?dictions shadow g?n?r?es</span><strong>{workflowStatus?.shadow_predictions.generated ? 'oui' : 'non'}</strong></div>
             <div className="metric"><span>Backtesting shadow disponible</span><strong>{workflowStatus?.shadow_backtesting.ready ? 'oui' : 'non'}</strong></div>
+            <div className="metric"><span>Feature set</span><strong>{workflowStatus?.feature_engineering?.feature_set_version ?? 'pre-match-advanced-v1'}</strong></div>
+            <div className="metric"><span>Couverture avancee</span><strong>{workflowStatus?.feature_engineering?.advanced_feature_coverage ?? 0}%</strong></div>
             <div className="metric"><span>Prochaine ?tape</span><strong>{workflowStatus?.next_step ?? 'refresh_data'}</strong></div>
           </div>
         <div className="banner info">Le moteur hybride est consultatif : il ne remplace pas le mod?le officiel.</div>
@@ -254,6 +256,8 @@ export default function AdminPage() {
             <div className="metric"><span>Alertes</span><strong>{featureQuality?.warning_rows ?? 0}</strong></div>
             <div className="metric"><span>Mode détection</span><strong>{featureQuality?.leakage_detection_mode ?? 'strict_feature_only'}</strong></div>
             <div className="metric"><span>Features observées</span><strong>{featureQuality?.observed_feature_names?.length ?? 0}</strong></div>
+            <div className="metric"><span>Feature set</span><strong>{featureQuality?.feature_set_version ?? 'pre-match-advanced-v1'}</strong></div>
+            <div className="metric"><span>Couverture avancee</span><strong>{featureQuality?.advanced_feature_coverage?.coverage_percent ?? 0}%</strong></div>
           </div>
           <div className="banner info">
             `risk_score`, `trap_match_score` et `data_quality_score` sont autorisés: ce sont des métriques modèle pré-match, pas des scores finaux.
@@ -321,8 +325,11 @@ export default function AdminPage() {
               <span>Snapshots sauvegardés <strong>{featureBuildInfo.feature_snapshots_saved ?? 0}</strong></span>
               <span>Lignes entraînables <strong>{featureBuildInfo.training_rows_available ?? 0}</strong></span>
               <span>Couverture cible <strong>{featureBuildInfo.target_coverage ?? 0}%</strong></span>
+              <span>Feature set <strong>{featureBuildInfo.feature_set_version ?? 'pre-match-advanced-v1'}</strong></span>
+              <span>Couverture avancee <strong>{featureBuildInfo.advanced_feature_coverage?.coverage_percent ?? 0}%</strong></span>
             </div>
           )}
+          <div className="banner info">Les nouvelles variables avancees utilisent uniquement les matchs termines avant le coup d'envoi du match cible.</div>
         </section>
 
         <section className="card">
@@ -473,5 +480,6 @@ export default function AdminPage() {
     </ProtectedRoute>
   );
 }
+
 
 

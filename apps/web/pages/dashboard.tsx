@@ -183,6 +183,14 @@ export default function DashboardPage({ matches, predictions, summary, mlStatus,
             <span>Recommandation</span>
             <strong>{summary.dataset_quality_recommendation ?? 'insufficient_data'}</strong>
           </Link>
+          <Link className="metric clickable-card" href="/performance#feature-store">
+            <span>Feature set</span>
+            <strong>{summary.feature_set_version ?? 'pre-match-advanced-v1'}</strong>
+          </Link>
+          <Link className="metric clickable-card" href="/performance#feature-store">
+            <span>Couverture avancée</span>
+            <strong>{summary.advanced_feature_coverage?.coverage_percent ?? 0}%</strong>
+          </Link>
         </div>
       </section>
 

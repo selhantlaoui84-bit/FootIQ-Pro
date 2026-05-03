@@ -6,6 +6,7 @@ from datetime import datetime
 from sqlalchemy import text
 
 from data.database import db_available, execute_safe, fetch_all_safe, fetch_one_safe
+from services.advanced_features import ADVANCED_FEATURE_COLUMNS, FEATURE_SET_VERSION
 
 logger = logging.getLogger(__name__)
 MODEL_VERSION = "elo-poisson-calibrated-v1"
@@ -432,11 +433,13 @@ def get_model_versions() -> list[str]:
 
 def _feature_row_to_snapshot(row: dict) -> dict:
     created_at = row.get("created_at")
+    features = _loads(row.get("features_json")) or {}
     return {
         "id": row.get("id"),
         "match_id": row.get("match_id"),
         "model_version": row.get("model_version"),
-        "features": _loads(row.get("features_json")) or {},
+        "feature_set_version": FEATURE_SET_VERSION if any(name in features for name in ADVANCED_FEATURE_COLUMNS) else None,
+        "features": features,
         "target": _loads(row.get("target_json")),
         "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else created_at,
     }
@@ -538,7 +541,19 @@ def get_feature_store_summary() -> dict:
         "without_target_count": snapshots_count - with_target_count,
         "model_versions": model_versions,
         "feature_names": sorted(feature_names),
+        "feature_set_version": FEATURE_SET_VERSION if any(name in feature_names for name in ADVANCED_FEATURE_COLUMNS) else None,
+        "advanced_feature_coverage": _advanced_feature_coverage(feature_names),
         "target_coverage": round((with_target_count / snapshots_count) * 100) if snapshots_count else 0,
+    }
+
+
+def _advanced_feature_coverage(feature_names: set[str]) -> dict:
+    present = len([name for name in ADVANCED_FEATURE_COLUMNS if name in feature_names])
+    expected = len(ADVANCED_FEATURE_COLUMNS)
+    return {
+        "advanced_features_present": present,
+        "advanced_features_expected": expected,
+        "coverage_percent": round((present / expected) * 100) if expected else 0,
     }
 def get_feature_snapshot_keys(model_version: str | None = None) -> set[str]:
     try:

@@ -12,6 +12,7 @@ from sklearn.metrics import accuracy_score, confusion_matrix, log_loss
 from sklearn.model_selection import train_test_split
 
 from services.data_quality import is_potential_leakage_feature
+from services.advanced_features import ADVANCED_FEATURE_COLUMNS, FEATURE_SET_VERSION
 
 try:
     from xgboost import XGBClassifier
@@ -35,7 +36,7 @@ FEATURE_COLUMNS = [
     "home_probability",
     "draw_probability",
     "away_probability",
-]
+] + ADVANCED_FEATURE_COLUMNS
 
 LABEL_MAPPING = {"home": 0, "draw": 1, "away": 2}
 MODEL_VERSION = "ml-candidate-v1"
@@ -62,6 +63,8 @@ def _empty_report(status: str, detail: str | None = None) -> dict[str, Any]:
         "confusion_matrix": {},
         "feature_importance": [],
         "feature_columns": FEATURE_COLUMNS,
+        "feature_set_version": FEATURE_SET_VERSION,
+        "feature_columns_count": len(FEATURE_COLUMNS),
         "trained_at": now,
         "artifact_path": "ml_models/latest_candidate.joblib",
         "metadata_path": "ml_models/latest_candidate_metadata.json",
@@ -238,6 +241,8 @@ def train_candidate_model(feature_rows: list[dict], model_type: str = "random_fo
             },
             "feature_importance": _feature_importance(model),
             "feature_columns": FEATURE_COLUMNS,
+            "feature_set_version": FEATURE_SET_VERSION,
+            "feature_columns_count": len(FEATURE_COLUMNS),
             "trained_at": now,
             "artifact_path": "ml_models/latest_candidate.joblib",
             "metadata_path": "ml_models/latest_candidate_metadata.json",

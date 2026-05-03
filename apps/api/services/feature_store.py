@@ -1,9 +1,10 @@
 ﻿from __future__ import annotations
 
+from services.advanced_features import ADVANCED_FEATURE_COLUMNS, FEATURE_SET_VERSION, build_advanced_pre_match_features
 from services.backtesting import get_match_result
 
 
-FEATURE_SNAPSHOT_COLUMNS = [
+BASE_FEATURE_COLUMNS = [
     "elo_delta",
     "form_delta",
     "attack_delta",
@@ -20,6 +21,7 @@ FEATURE_SNAPSHOT_COLUMNS = [
     "draw_probability",
     "away_probability",
 ]
+FEATURE_SNAPSHOT_COLUMNS = BASE_FEATURE_COLUMNS + ADVANCED_FEATURE_COLUMNS
 
 
 def build_target_from_match(match: dict) -> dict | None:
@@ -73,10 +75,12 @@ def build_feature_snapshot(match: dict, all_matches: list[dict], prediction: dic
         "draw_probability": _number(probabilities.get("draw")),
         "away_probability": _number(probabilities.get("away")),
     }
+    features.update(build_advanced_pre_match_features(match, all_matches))
 
     return {
         "match_id": match_id,
         "model_version": model_version,
+        "feature_set_version": FEATURE_SET_VERSION,
         "features": _sanitize_features(features),
         "target": build_target_from_match(match),
     }
@@ -124,5 +128,17 @@ def summarize_feature_store(feature_snapshots: list[dict]) -> dict:
         "without_target_count": count - with_target_count,
         "model_versions": model_versions,
         "feature_names": sorted(feature_names),
+        "feature_set_version": FEATURE_SET_VERSION if any(name in feature_names for name in ADVANCED_FEATURE_COLUMNS) else None,
+        "advanced_feature_coverage": _advanced_feature_coverage(feature_names),
         "target_coverage": round((with_target_count / count) * 100) if count else 0,
+    }
+
+
+def _advanced_feature_coverage(feature_names: set[str]) -> dict:
+    present = len([name for name in ADVANCED_FEATURE_COLUMNS if name in feature_names])
+    expected = len(ADVANCED_FEATURE_COLUMNS)
+    return {
+        "advanced_features_present": present,
+        "advanced_features_expected": expected,
+        "coverage_percent": round((present / expected) * 100) if expected else 0,
     }

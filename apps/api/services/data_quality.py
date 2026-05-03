@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from services.advanced_features import ADVANCED_FEATURE_COLUMNS, FEATURE_SET_VERSION
+
 
 LEAKAGE_KEYWORDS = [
     "winner",
@@ -30,7 +32,7 @@ SAFE_FEATURE_NAMES = [
     "home_probability",
     "draw_probability",
     "away_probability",
-]
+] + ADVANCED_FEATURE_COLUMNS
 
 BLOCKED_FEATURE_NAMES = [
     "score_full_time_home",
@@ -127,6 +129,7 @@ def inspect_feature_row(row: dict[str, Any]) -> dict[str, Any]:
         return {
             "match_id": row.get("match_id", ""),
             "model_version": row.get("model_version"),
+            "feature_set_version": row.get("feature_set_version"),
             "feature_count": len(feature_names),
             "has_target": bool(target),
             "target_fields": target_fields,
@@ -140,6 +143,7 @@ def inspect_feature_row(row: dict[str, Any]) -> dict[str, Any]:
         return {
             "match_id": row.get("match_id", "") if isinstance(row, dict) else "",
             "model_version": row.get("model_version") if isinstance(row, dict) else None,
+            "feature_set_version": row.get("feature_set_version") if isinstance(row, dict) else None,
             "feature_count": 0,
             "has_target": False,
             "target_fields": [],
@@ -177,6 +181,13 @@ def build_dataset_quality_report(rows: list[dict[str, Any]], limit: int = 1000) 
             "observed_feature_names": [],
             "leakage_detection_mode": "strict_feature_only",
             "sample_checked_rows": [],
+            "feature_set_version": None,
+            "feature_set_version_coverage": {},
+            "advanced_feature_coverage": {
+                "advanced_features_present": 0,
+                "advanced_features_expected": len(ADVANCED_FEATURE_COLUMNS),
+                "coverage_percent": 0,
+            },
             "sample_issues": [],
         }
 
@@ -188,6 +199,8 @@ def build_dataset_quality_report(rows: list[dict[str, Any]], limit: int = 1000) 
 
     leakage_features = sorted({name for item in inspections for name in item["leakage_features"]})
     observed_feature_names = sorted({name for row in checked_rows for name in (row.get("features") or {}).keys()})
+    advanced_present = len([name for name in ADVANCED_FEATURE_COLUMNS if name in observed_feature_names])
+    feature_set_versions: dict[str, int] = {}
     missing_core_features: dict[str, int] = {}
     target_field_coverage: dict[str, int] = {field: 0 for field in ALLOWED_TARGET_FIELDS}
 
@@ -196,6 +209,10 @@ def build_dataset_quality_report(rows: list[dict[str, Any]], limit: int = 1000) 
             missing_core_features[name] = missing_core_features.get(name, 0) + 1
         for name in item["target_fields"]:
             target_field_coverage[name] = target_field_coverage.get(name, 0) + 1
+        version = item.get("feature_set_version") or (
+            FEATURE_SET_VERSION if any(name in observed_feature_names for name in ADVANCED_FEATURE_COLUMNS) else "base"
+        )
+        feature_set_versions[version] = feature_set_versions.get(version, 0) + 1
 
     sample_issues = [
         item
@@ -205,6 +222,7 @@ def build_dataset_quality_report(rows: list[dict[str, Any]], limit: int = 1000) 
     sample_checked_rows = [
         {
             "match_id": item["match_id"],
+            "feature_set_version": item.get("feature_set_version"),
             "feature_names": sorted((checked_rows[index].get("features") or {}).keys()),
             "target_fields": item["target_fields"],
             "leakage_features": item["leakage_features"],
@@ -248,6 +266,13 @@ def build_dataset_quality_report(rows: list[dict[str, Any]], limit: int = 1000) 
         "blocked_feature_names": BLOCKED_FEATURE_NAMES,
         "observed_feature_names": observed_feature_names,
         "leakage_detection_mode": "strict_feature_only",
+        "feature_set_version": FEATURE_SET_VERSION if advanced_present else None,
+        "feature_set_version_coverage": feature_set_versions,
+        "advanced_feature_coverage": {
+            "advanced_features_present": advanced_present,
+            "advanced_features_expected": len(ADVANCED_FEATURE_COLUMNS),
+            "coverage_percent": round((advanced_present / len(ADVANCED_FEATURE_COLUMNS)) * 100) if ADVANCED_FEATURE_COLUMNS else 0,
+        },
         "safe_for_training": safe_for_training,
         "recommendation": recommendation,
         "recommendation_reason": reason,

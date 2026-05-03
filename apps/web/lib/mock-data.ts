@@ -199,7 +199,15 @@ export type FeatureSummary = {
   target_coverage: number;
   model_versions: Record<string, number>;
   feature_names: string[];
+  feature_set_version?: string | null;
+  advanced_feature_coverage?: AdvancedFeatureCoverage;
   storage?: string;
+};
+
+export type AdvancedFeatureCoverage = {
+  advanced_features_present: number;
+  advanced_features_expected: number;
+  coverage_percent: number;
 };
 
 export type FeatureDatasetRow = {
@@ -239,6 +247,9 @@ export type DatasetQualityReport = {
   blocked_feature_names?: string[];
   observed_feature_names?: string[];
   leakage_detection_mode?: string;
+  feature_set_version?: string | null;
+  feature_set_version_coverage?: Record<string, number>;
+  advanced_feature_coverage?: AdvancedFeatureCoverage;
   safe_for_training: boolean;
   recommendation: 'safe_to_train' | 'review_warnings' | 'blocked_leakage_detected' | 'insufficient_data' | string;
   recommendation_reason: string;
@@ -294,6 +305,8 @@ export type BuildFeatureStoreResponse = {
   feature_snapshots_skipped?: number;
   training_rows_available?: number;
   target_coverage?: number;
+  feature_set_version?: string | null;
+  advanced_feature_coverage?: AdvancedFeatureCoverage;
   model_version?: string;
   created_at?: string;
   note?: string;
@@ -417,6 +430,9 @@ export type PerformanceMetrics = {
   training_rows_available?: number;
   target_coverage?: number;
   feature_store_ready?: boolean;
+  feature_set_version?: string | null;
+  advanced_feature_coverage?: AdvancedFeatureCoverage;
+  feature_columns_count?: number;
   ml_candidate?: TrainingReport;
   ml_comparison?: MlComparison;
   ml_shadow_summary?: MlShadowSummary;
@@ -471,6 +487,8 @@ export type DashboardSummary = {
   training_rows_available?: number;
   target_coverage?: number;
   feature_store_ready?: boolean;
+  feature_set_version?: string | null;
+  advanced_feature_coverage?: AdvancedFeatureCoverage;
   ml_candidate_status?: string;
   ml_candidate_accuracy?: number | null;
   ml_candidate_model_version?: string;
@@ -587,6 +605,7 @@ export type HybridEngineSummary = {
 export type AdminWorkflowStatus = {
   refresh: { last_refresh_at: string | null; storage: string; matches_imported: number; predictions_imported: number };
   feature_store: { ready: boolean; snapshots_count: number; training_rows_available: number; target_coverage: number };
+  feature_engineering?: { feature_set_version?: string | null; advanced_feature_coverage: number };
   candidate_model: { trained: boolean; status: string; model_version: string | null; accuracy: number | null };
   shadow_predictions: { generated: boolean; count: number; disagreement_count: number };
   shadow_backtesting: { ready: boolean; evaluated_matches: number; shadow_accuracy: number; activation_recommendation: string };
@@ -879,6 +898,48 @@ export const teams: Team[] = [
 ];
 
 
+export const mockAdvancedFeatureNames = [
+  'home_recent_points_per_match',
+  'away_recent_points_per_match',
+  'form_points_delta',
+  'home_recent_goals_for_avg',
+  'away_recent_goals_for_avg',
+  'attack_recent_delta',
+  'home_recent_goals_against_avg',
+  'away_recent_goals_against_avg',
+  'defense_recent_delta',
+  'home_recent_win_rate',
+  'away_recent_win_rate',
+  'win_rate_delta',
+  'home_recent_unbeaten_rate',
+  'away_recent_unbeaten_rate',
+  'unbeaten_rate_delta',
+  'home_recent_matches_count',
+  'away_recent_matches_count',
+  'home_recent_home_points_avg',
+  'home_recent_home_goals_for_avg',
+  'home_recent_home_goals_against_avg',
+  'away_recent_away_points_avg',
+  'away_recent_away_goals_for_avg',
+  'away_recent_away_goals_against_avg',
+  'home_rest_days',
+  'away_rest_days',
+  'rest_days_delta',
+  'home_matches_last_7d',
+  'home_matches_last_14d',
+  'home_matches_last_21d',
+  'away_matches_last_7d',
+  'away_matches_last_14d',
+  'away_matches_last_21d',
+  'schedule_density_delta_14d',
+  'home_win_streak',
+  'home_unbeaten_streak',
+  'home_loss_streak',
+  'away_win_streak',
+  'away_unbeaten_streak',
+  'away_loss_streak',
+];
+
 export const mockFeatureSummary: FeatureSummary = {
   snapshots_count: 0,
   with_target_count: 0,
@@ -901,7 +962,14 @@ export const mockFeatureSummary: FeatureSummary = {
     'home_probability',
     'draw_probability',
     'away_probability',
+    ...mockAdvancedFeatureNames,
   ],
+  feature_set_version: 'pre-match-advanced-v1',
+  advanced_feature_coverage: {
+    advanced_features_present: mockAdvancedFeatureNames.length,
+    advanced_features_expected: mockAdvancedFeatureNames.length,
+    coverage_percent: 100,
+  },
   storage: 'memory',
 };
 
@@ -942,6 +1010,9 @@ export const mockFeatureQualityReport: DatasetQualityReport = {
   ],
   observed_feature_names: [],
   leakage_detection_mode: 'strict_feature_only',
+  feature_set_version: 'pre-match-advanced-v1',
+  feature_set_version_coverage: {},
+  advanced_feature_coverage: mockFeatureSummary.advanced_feature_coverage,
   safe_for_training: false,
   recommendation: 'insufficient_data',
   recommendation_reason: 'Aucune ligne supervisee disponible pour le controle qualite.',
@@ -957,6 +1028,8 @@ export const mockBuildFeatureStoreResponse: BuildFeatureStoreResponse = {
   feature_snapshots_skipped: 0,
   training_rows_available: 0,
   target_coverage: 0,
+  feature_set_version: mockFeatureSummary.feature_set_version,
+  advanced_feature_coverage: mockFeatureSummary.advanced_feature_coverage,
   model_version: 'elo-poisson-calibrated-v1',
   note: 'Construisez le Feature Store après avoir actualisé les données.',
 };
@@ -1108,6 +1181,9 @@ export const performanceMetrics: PerformanceMetrics = {
   feature_snapshots_count: mockFeatureSummary.snapshots_count,
   training_rows_available: mockFeatureSummary.with_target_count,
   target_coverage: mockFeatureSummary.target_coverage,
+  feature_set_version: mockFeatureSummary.feature_set_version,
+  advanced_feature_coverage: mockFeatureSummary.advanced_feature_coverage,
+  feature_columns_count: mockFeatureSummary.feature_names.length,
   feature_store_ready: mockFeatureSummary.snapshots_count > 0,
   ml_candidate: mockTrainingReport,
   ml_comparison: mockMlComparison,
@@ -1165,6 +1241,8 @@ export function buildDashboardSummary(source = 'mock'): DashboardSummary {
     feature_snapshots_count: mockFeatureSummary.snapshots_count,
     training_rows_available: mockFeatureSummary.with_target_count,
     target_coverage: mockFeatureSummary.target_coverage,
+    feature_set_version: mockFeatureSummary.feature_set_version,
+    advanced_feature_coverage: mockFeatureSummary.advanced_feature_coverage,
     feature_store_ready: mockFeatureSummary.snapshots_count > 0,
     ml_candidate_status: mockMlStatus.status,
     ml_candidate_accuracy: mockTrainingReport.accuracy,
@@ -1357,6 +1435,7 @@ export const mockRefreshJobStatus: RefreshJobStatus = {
 export const mockAdminWorkflowStatus: AdminWorkflowStatus = {
   refresh: { last_refresh_at: null, storage: 'memory', matches_imported: 0, predictions_imported: 0 },
   feature_store: { ready: false, snapshots_count: 0, training_rows_available: 0, target_coverage: 0 },
+  feature_engineering: { feature_set_version: 'pre-match-advanced-v1', advanced_feature_coverage: 0 },
   candidate_model: { trained: false, status: 'not_trained', model_version: null, accuracy: null },
   shadow_predictions: { generated: false, count: 0, disagreement_count: 0 },
   shadow_backtesting: { ready: false, evaluated_matches: 0, shadow_accuracy: 0, activation_recommendation: 'do_not_activate' },

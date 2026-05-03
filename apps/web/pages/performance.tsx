@@ -252,7 +252,17 @@ export default function PerformancePage({
               <span>
                 Couverture cible <strong>{featureStore.target_coverage}%</strong>
               </span>
+              <span>
+                Feature set <strong>{featureStore.feature_set_version ?? 'pre-match-advanced-v1'}</strong>
+              </span>
+              <span>
+                Couverture avancee <strong>{featureStore.advanced_feature_coverage?.coverage_percent ?? 0}%</strong>
+              </span>
+              <span>
+                Colonnes ML <strong>{performance.feature_columns_count ?? featureStore.feature_names.length}</strong>
+              </span>
             </div>
+            <p>Ces variables sont calculees uniquement avec les matchs passes par rapport au match cible.</p>
             <a className="button secondary" href={`${apiUrl}/features/export`}>
               Télécharger le CSV
             </a>
@@ -300,6 +310,8 @@ export default function PerformancePage({
             <div className="metric"><span>Recommandation</span><strong>{datasetQuality.recommendation}</strong></div>
             <div className="metric"><span>Mode détection</span><strong>{datasetQuality.leakage_detection_mode ?? 'strict_feature_only'}</strong></div>
             <div className="metric"><span>Features observées</span><strong>{datasetQuality.observed_feature_names?.length ?? 0}</strong></div>
+            <div className="metric"><span>Feature set</span><strong>{datasetQuality.feature_set_version ?? 'pre-match-advanced-v1'}</strong></div>
+            <div className="metric"><span>Couverture avancée</span><strong>{datasetQuality.advanced_feature_coverage?.coverage_percent ?? 0}%</strong></div>
           </div>
           <div className={`banner ${datasetQuality.safe_for_training ? 'success' : 'warning'}`}>
             {datasetQuality.recommendation_reason}
@@ -317,6 +329,11 @@ export default function PerformancePage({
               ))}
             </div>
           )}
+          <div className="tagCloud">
+            {['forme récente', 'domicile/extérieur', 'repos', 'densité calendrier', 'séries'].map((category) => (
+              <span className="badge" key={category}>{category}</span>
+            ))}
+          </div>
           <div className="metricTable issueTable">
             <div className="metricTableRow header">
               <span>Champ cible</span>

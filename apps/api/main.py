@@ -27,6 +27,7 @@ from services.football_data_client import (
 from services.backtesting import calculate_backtest_report, calculate_snapshot_backtest, get_match_result
 from services.elo_model import calculate_team_elos
 from services.ml_training import (
+    FEATURE_COLUMNS,
     MODEL_VERSION as ML_CANDIDATE_VERSION,
     candidate_model_exists,
     load_latest_candidate_metadata,
@@ -283,7 +284,7 @@ def _dataset_quality_report(limit: int = 1000):
     safe_limit = max(1, min(int(limit or 1000), 5000))
     rows = repository.get_training_dataset(limit=safe_limit)
     if not rows:
-        rows = [item for item in _available_feature_snapshots() if item.get("target")][:safe_limit]
+        rows = _available_feature_snapshots()[:safe_limit]
     return build_dataset_quality_report(rows, limit=safe_limit)
 
 
@@ -450,6 +451,10 @@ def _admin_workflow_status():
             "training_rows_available": feature.get("with_target_count", 0),
             "target_coverage": feature.get("target_coverage", 0),
         },
+        "feature_engineering": {
+            "feature_set_version": feature.get("feature_set_version") or dataset_quality.get("feature_set_version"),
+            "advanced_feature_coverage": (feature.get("advanced_feature_coverage") or dataset_quality.get("advanced_feature_coverage") or {}).get("coverage_percent", 0),
+        },
         "candidate_model": {
             "trained": candidate.get("status") == "ok",
             "status": candidate.get("status", "not_trained"),
@@ -536,6 +541,8 @@ def _dashboard_summary():
         "feature_snapshots_count": feature_summary["snapshots_count"],
         "training_rows_available": feature_summary["with_target_count"],
         "target_coverage": feature_summary["target_coverage"],
+        "feature_set_version": feature_summary.get("feature_set_version") or dataset_quality.get("feature_set_version"),
+        "advanced_feature_coverage": feature_summary.get("advanced_feature_coverage") or dataset_quality.get("advanced_feature_coverage"),
         "feature_store_ready": feature_summary["snapshots_count"] > 0,
         "ml_candidate_status": candidate_metadata.get("status", "not_trained"),
         "ml_candidate_accuracy": candidate_metadata.get("accuracy"),
@@ -881,6 +888,9 @@ def model_performance():
         "feature_snapshots_count": feature_summary["snapshots_count"],
         "training_rows_available": feature_summary["with_target_count"],
         "target_coverage": feature_summary["target_coverage"],
+        "feature_set_version": feature_summary.get("feature_set_version") or dataset_quality.get("feature_set_version"),
+        "advanced_feature_coverage": feature_summary.get("advanced_feature_coverage") or dataset_quality.get("advanced_feature_coverage"),
+        "feature_columns_count": len(FEATURE_COLUMNS),
         "feature_store_ready": feature_summary["snapshots_count"] > 0,
         "ml_candidate": load_latest_candidate_metadata(),
         "ml_comparison": _ml_comparison(),
@@ -1073,6 +1083,7 @@ def build_feature_store(
         if selected_items
         else 0
     )
+    feature_summary = summarize_feature_store(selected_items)
 
     return {
         "status": "ok",
@@ -1082,6 +1093,8 @@ def build_feature_store(
         "feature_snapshots_skipped": skipped_count,
         "training_rows_available": training_rows_available,
         "target_coverage": target_coverage,
+        "feature_set_version": feature_summary.get("feature_set_version"),
+        "advanced_feature_coverage": feature_summary.get("advanced_feature_coverage"),
         "model_version": MODEL_VERSION,
         "limit": limit,
         "force": force,
