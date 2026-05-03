@@ -26,6 +26,7 @@ from services.shadow_backtesting import calculate_shadow_backtest_report
 from services.elo_model import calculate_team_elos
 from services.model_registry import get_model_metadata
 from services.model_monitoring import build_monitoring_report
+from services.model_governance import build_model_governance_report
 from services.prediction_engine import generate_prediction_from_match
 from services.prediction_engine import MODEL_VERSION
 
@@ -145,6 +146,68 @@ def _model_monitoring_report(periods: list[str] | None = None, shadow_limit: int
         _available_predictions(),
         repository.get_ml_shadow_predictions(limit=shadow_limit),
         periods=periods or ["7d", "30d", "90d", "all"],
+    )
+
+def _ml_status_compact():
+    try:
+        latest_candidate = repository.get_latest_ml_training_report()
+    except Exception:
+        latest_candidate = None
+
+    latest_candidate = latest_candidate or {
+        "status": "not_trained",
+        "model_version": "ml-candidate-v1",
+        "model_type": "random_forest",
+        "rows_used": 0,
+        "accuracy": None,
+        "brier_score_1x2": None,
+        "trained_at": None,
+    }
+
+    return {
+        "status": latest_candidate.get("status", "not_trained"),
+        "latest_candidate": latest_candidate,
+        "candidate_model_exists": latest_candidate.get("status") not in {"not_trained", None},
+        "production_model_version": MODEL_VERSION,
+        "candidate_is_production": False,
+    }
+
+
+def _dataset_quality_report(limit: int = 1000):
+    rows = repository.get_training_dataset(limit=limit)
+
+    if not rows:
+        snapshots = _available_feature_snapshots()
+        rows = [item for item in snapshots if item.get("target")][:limit]
+
+    return build_dataset_quality_report(rows, limit=limit)
+
+
+def _model_governance_report():
+    model_metadata = get_model_metadata()
+    ml_status = _ml_status_compact()
+    dataset_quality = _dataset_quality_report(1000)
+    monitoring_report = _model_monitoring_report(["7d", "30d", "90d", "all"], 2000)
+    shadow_backtesting = calculate_shadow_backtest_report(
+        _available_matches(),
+        repository.get_ml_shadow_predictions(limit=2000),
+    )
+
+    try:
+        hybrid_engine_summary = hybrid_engine_summary_report(limit=200, view="upcoming")
+    except Exception:
+        hybrid_engine_summary = {
+            "recommendation": "insufficient_shadow_data",
+            "reason": "Résumé hybride indisponible.",
+        }
+
+    return build_model_governance_report(
+        model_metadata,
+        ml_status,
+        dataset_quality,
+        monitoring_report,
+        shadow_backtesting,
+        hybrid_engine_summary,
     )
 
 
@@ -374,7 +437,24 @@ def models():
     metadata = get_model_metadata()
     versions = repository.get_model_versions()
     available_versions = sorted(set(versions + [metadata["current_model_version"], metadata["previous_model_version"]]))
-    return {**metadata, "available_model_versions": available_versions}
+    governance = _model_governance_report()
+    readiness = governance.get("promotion_readiness", {})
+
+    return {
+        **metadata,
+        "available_model_versions": available_versions,
+        "governance_status": {
+            "promotion_ready": False,
+            "promotion_level": readiness.get("level", "not_ready"),
+            "governance_score": readiness.get("score", 0),
+            "blocking_reasons_count": len(readiness.get("blocking_reasons", [])),
+        },
+    }
+
+
+@app.get("/models/governance")
+def models_governance():
+    return _model_governance_report()
 
 
 @app.get("/models/comparison")
@@ -444,7 +524,9 @@ def model_performance():
         _available_matches(),
         repository.get_ml_shadow_predictions(limit=2000),
     )
-    monitoring_report = _model_monitoring_report(["7d", "30d", "90d", "all"], 2000)  
+    monitoring_report = _model_monitoring_report(["7d", "30d", "90d", "all"], 2000) 
+    model_governance = _model_governance_report()
+
 
     return {
         **PERFORMANCE,
@@ -472,6 +554,7 @@ def model_performance():
         "latest_refresh": _refresh_status(),
         "ml_shadow_backtesting": shadow_backtesting,
         "model_monitoring": monitoring_report,
+        "model_governance": model_governance,
     }
 
 
@@ -484,6 +567,9 @@ def dashboard_summary():
     monitoring_official_30d = monitoring_30d.get("official", {})
     monitoring_trend = monitoring_report.get("trend_summary", {})
 
+    governance = _model_governance_report()
+    readiness = governance.get("promotion_readiness", {})
+
     return {
         **summary,
         "monitoring_status": monitoring_trend.get("monitoring_status", "unknown"),
@@ -491,6 +577,10 @@ def dashboard_summary():
         "monitoring_brier_30d": monitoring_official_30d.get("average_brier_score"),
         "monitoring_shadow_edge": monitoring_trend.get("shadow_edge", "unknown"),
         "monitoring_alerts_count": len(monitoring_report.get("alerts", [])),
+        "model_governance_level": readiness.get("level", "not_ready"),
+        "model_governance_score": readiness.get("score", 0),
+        "model_governance_blockers_count": len(readiness.get("blocking_reasons", [])),
+        "model_promotion_ready": False,
     }
 
 
