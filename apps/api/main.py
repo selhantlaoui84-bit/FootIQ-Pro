@@ -1,8 +1,10 @@
 ﻿import os
+import time
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
-from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from data import repository
@@ -484,127 +486,236 @@ def dashboard_summary():
 def refresh_status():
     return {"status": "ok", **_refresh_status()}
 
+def run_refresh_data_job(job_id: str | None = None) -> dict:
+    started = time.perf_counter()
+
+    try:
+        source = "mock"
+        matches = MATCHES
+        teams = TEAMS
+
+        if os.getenv("FOOTBALL_DATA_API_KEY"):
+            external_matches = get_ligue1_matches() + get_champions_league_matches()
+            external_teams = get_ligue1_teams() + get_champions_league_teams()
+
+            if external_matches or external_teams:
+                source = "football-data.org"
+                matches = external_matches or MATCHES
+                teams = external_teams or TEAMS
+
+        elo_ratings = calculate_team_elos(matches)
+        predictions = [_prediction_for_match(match, matches, elo_ratings) for match in matches]
+
+        storage = "memory"
+        snapshots_saved = 0
+        warning = None
+
+        saved_core = repository.save_matches(matches) and repository.save_teams(teams) and repository.save_predictions(predictions)
+
+        if saved_core:
+            storage = "postgresql"
+            repository.save_refresh_log(source, storage, len(matches), len(teams))
+
+            try:
+                snapshots_saved = repository.save_prediction_snapshots(predictions)
+            except Exception as exc:
+                warning = f"Refresh réussi, mais sauvegarde des snapshots échouée: {exc}"
+        else:
+            warning = "PostgreSQL indisponible ou écriture échouée. Fallback mémoire utilisé."
+
+        runtime_store.set_matches(matches)
+        runtime_store.set_teams(teams)
+        runtime_store.set_predictions(predictions)
+        runtime_store.set_source(source)
+        runtime_store.set_storage(storage)
+
+        status = runtime_store.get_refresh_status()
+        duration_ms = round((time.perf_counter() - started) * 1000)
+
+        result = {
+            "status": "ok",
+            "source": source,
+            "storage": storage,
+            "matches_imported": len(matches),
+            "teams_imported": len(teams),
+            "predictions_imported": len(predictions),
+            "snapshots_saved": snapshots_saved,
+            "refresh_duration_ms": duration_ms,
+            "next_recommended_actions": [
+                "build_feature_store",
+                "train_candidate_model",
+                "generate_shadow_predictions",
+            ],
+            "last_refresh_at": status.get("last_refresh_at"),
+            "warning": warning,
+        }
+
+        if job_id:
+            runtime_store.finish_refresh_job(job_id, result)
+
+        return result
+
+    except Exception as exc:
+        if job_id:
+            runtime_store.fail_refresh_job(job_id, str(exc))
+        raise
+
 
 @app.post("/admin/refresh-data")
-def refresh_data(x_admin_key: str | None = Header(default=None, alias="X-Admin-Key")):
+def refresh_data(
+    background_tasks: BackgroundTasks,
+    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
+):
     _require_admin_key(x_admin_key)
 
-    source = "mock"
-    matches = MATCHES
-    teams = TEAMS
-
-    if os.getenv("FOOTBALL_DATA_API_KEY"):
-        external_matches = get_ligue1_matches() + get_champions_league_matches()
-        external_teams = get_ligue1_teams() + get_champions_league_teams()
-
-        if external_matches or external_teams:
-            source = "football-data.org"
-            matches = external_matches or MATCHES
-            teams = external_teams or TEAMS
-
-    elo_ratings = calculate_team_elos(matches)
-    predictions = [_prediction_for_match(match, matches, elo_ratings) for match in matches]
-    feature_snapshots = []
-    storage = "memory"
-
-    snapshots_saved = 0
-    feature_snapshots_saved = 0
-    if repository.save_matches(matches) and repository.save_teams(teams) and repository.save_predictions(predictions):
-        storage = "postgresql"
-        repository.save_refresh_log(source, storage, len(matches), len(teams))
-        snapshots_saved = repository.save_prediction_snapshots(predictions)
-        #feature_snapshots_saved = repository.save_feature_snapshots(feature_snapshots)
-
-    #runtime_store.set_feature_snapshots(feature_snapshots)
-    runtime_store.set_matches(matches)
-    runtime_store.set_teams(teams)
-    runtime_store.set_predictions(predictions)
-    runtime_store.set_source(source)
-    runtime_store.set_storage(storage)
-    status = runtime_store.get_refresh_status()
+    job_id = str(uuid.uuid4())
+    runtime_store.start_refresh_job(job_id)
+    background_tasks.add_task(run_refresh_data_job, job_id)
 
     return {
-        "status": "ok",
-        "source": source,
-        "storage": storage,
-        "matches_imported": status["matches_imported"],
-        "teams_imported": status["teams_imported"],
-        "predictions_imported": status["predictions_imported"],
-        "snapshots_saved": snapshots_saved,
-        "feature_snapshots_saved": feature_snapshots_saved,
-        "training_rows_available": sum(1 for item in feature_snapshots if item.get("target")),
-        "last_refresh_at": status["last_refresh_at"],
+        "status": "accepted",
+        "job_id": job_id,
+        "message": "Actualisation lancée. Consultez le statut du job.",
+        "next_check_endpoint": f"/admin/refresh-job-status?job_id={job_id}",
     }
+
+
+@app.post("/admin/refresh-data-sync")
+def refresh_data_sync(x_admin_key: str | None = Header(default=None, alias="X-Admin-Key")):
+    _require_admin_key(x_admin_key)
+    return run_refresh_data_job(None)
+
+
+@app.get("/admin/refresh-job-status")
+def refresh_job_status(job_id: str | None = None):
+    return runtime_store.get_refresh_job(job_id)
+
+def run_build_feature_store_job(
+    job_id: str | None = None,
+    limit: int = 500,
+    force: bool = False,
+) -> dict:
+    started = time.perf_counter()
+
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+
+        matches = _available_matches()
+        predictions = _available_predictions()
+
+        limit = max(1, min(int(limit or 500), 2000))
+
+        existing_keys = set()
+        if not force:
+            try:
+                existing_keys = repository.get_feature_snapshot_keys(model_version=MODEL_VERSION)
+            except Exception:
+                existing_keys = set()
+
+        target_matches = []
+        skipped_count = 0
+
+        for match in matches:
+            match_id = match.get("match_id") or match.get("id") or match.get("slug")
+            key = f"{match_id}:{MODEL_VERSION}"
+
+            if not force and key in existing_keys:
+                skipped_count += 1
+                continue
+
+            target_matches.append(match)
+
+            if len(target_matches) >= limit:
+                break
+
+        try:
+            feature_items = build_feature_snapshots(matches, predictions, target_matches=target_matches)
+        except TypeError:
+            all_items = build_feature_snapshots(matches, predictions)
+            target_ids = {
+                item.get("match_id") or item.get("id") or item.get("slug")
+                for item in target_matches
+            }
+            feature_items = [
+                item for item in all_items
+                if item.get("match_id") in target_ids
+            ][:limit]
+
+        saved_count = repository.save_feature_snapshots(feature_items)
+
+        storage = "postgresql" if saved_count > 0 else "memory"
+
+        if storage == "memory" and feature_items:
+            runtime_store.set_feature_snapshots(feature_items)
+
+        training_rows_available = sum(1 for item in feature_items if item.get("target") is not None)
+
+        target_coverage = (
+            round((training_rows_available / len(feature_items)) * 100)
+            if feature_items
+            else 0
+        )
+
+        duration_ms = round((time.perf_counter() - started) * 1000)
+
+        result = {
+            "status": "ok",
+            "storage": storage,
+            "feature_snapshots_built": len(feature_items),
+            "feature_snapshots_saved": saved_count,
+            "feature_snapshots_skipped": skipped_count,
+            "training_rows_available": training_rows_available,
+            "target_coverage": target_coverage,
+            "feature_set_version": "pre-match-advanced-v1",
+            "duration_ms": duration_ms,
+            "limit": limit,
+            "force": force,
+            "created_at": now,
+            "note": "Feature Store construit en tâche asynchrone.",
+        }
+
+        if job_id:
+            runtime_store.finish_feature_store_job(job_id, result)
+
+        return result
+
+    except Exception as exc:
+        if job_id:
+            runtime_store.fail_feature_store_job(job_id, str(exc))
+        raise
+
+
 @app.post("/admin/build-feature-store")
 def build_feature_store(
+    background_tasks: BackgroundTasks,
     x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
     limit: int = Query(default=500, ge=1, le=2000),
     force: bool = Query(default=False),
 ) -> dict[str, Any]:
     _require_admin_key(x_admin_key)
 
-    now = datetime.now(timezone.utc).isoformat()
-
-    matches = _available_matches()
-    predictions = _available_predictions()
-
-    existing_keys = set()
-    if not force:
-        try:
-            existing_keys = repository.get_feature_snapshot_keys(model_version=MODEL_VERSION)
-        except Exception:
-            existing_keys = set()
-
-    all_feature_items = build_feature_snapshots(matches, predictions)
-
-    selected_items = []
-    skipped_count = 0
-
-    for item in all_feature_items:
-        match_id = item.get("match_id")
-        model_version = item.get("model_version") or MODEL_VERSION
-        key = f"{match_id}:{model_version}"
-
-        if not force and key in existing_keys:
-            skipped_count += 1
-            continue
-
-        selected_items.append(item)
-
-        if len(selected_items) >= limit:
-            break
-
-    saved_count = repository.save_feature_snapshots(selected_items)
-
-    if saved_count > 0:
-        storage = "postgresql"
-    else:
-        storage = "memory"
-
-    if storage == "memory" and selected_items:
-        runtime_store.set_feature_snapshots(selected_items)
-
-    training_rows_available = sum(
-        1 for item in selected_items if item.get("target") is not None
-    )
-
-    target_coverage = (
-        round((training_rows_available / len(selected_items)) * 100)
-        if selected_items
-        else 0
-    )
+    job_id = str(uuid.uuid4())
+    runtime_store.start_feature_store_job(job_id)
+    background_tasks.add_task(run_build_feature_store_job, job_id, limit, force)
 
     return {
-        "status": "ok",
-        "storage": storage,
-        "feature_snapshots_built": len(selected_items),
-        "feature_snapshots_saved": saved_count,
-        "feature_snapshots_skipped": skipped_count,
-        "training_rows_available": training_rows_available,
-        "target_coverage": target_coverage,
-        "model_version": MODEL_VERSION,
-        "limit": limit,
-        "force": force,
-        "created_at": now,
-        "note": "Use force=true to rebuild existing snapshots.",
+        "status": "accepted",
+        "job_id": job_id,
+        "message": "Construction du Feature Store lancée.",
+        "next_check_endpoint": f"/admin/feature-store-job-status?job_id={job_id}",
     }
+
+
+@app.post("/admin/build-feature-store-sync")
+def build_feature_store_sync(
+    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
+    limit: int = Query(default=500, ge=1, le=2000),
+    force: bool = Query(default=False),
+) -> dict[str, Any]:
+    _require_admin_key(x_admin_key)
+    return run_build_feature_store_job(None, limit, force)
+
+
+@app.get("/admin/feature-store-job-status")
+def feature_store_job_status(job_id: str | None = None):
+    return runtime_store.get_feature_store_job(job_id)
