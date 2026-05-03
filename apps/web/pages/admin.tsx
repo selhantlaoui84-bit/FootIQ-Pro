@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
-import { buildFeatureStore, generateShadowPredictions, getAdminWorkflowStatus, getBackendHealth, getFeatureQualityReport, getFeatureStoreJobStatus, getRefreshJobStatus, getRefreshStatus, refreshData, trainCandidateModel, getModelGovernance 
+import { buildFeatureStore, generateShadowPredictions, getAdminWorkflowStatus, getBackendHealth, getFeatureQualityReport, getFeatureStoreJobStatus, getRefreshJobStatus, getRefreshStatus, refreshData, trainCandidateModel, getModelGovernance, getAdminAlerts,
 
 } from '~/lib/api';
 import { useAuth } from '~/lib/auth';
-import type { AdminWorkflowStatus, BuildFeatureStoreResponse, DatasetQualityReport, GenerateShadowPredictionsResponse, HealthResponse, MatchView, RefreshJobStatus, RefreshResponse, TrainingReport, ModelGovernanceReport } from '~/lib/mock-data';
+import type { AdminWorkflowStatus, BuildFeatureStoreResponse, DatasetQualityReport, GenerateShadowPredictionsResponse, HealthResponse, MatchView, RefreshJobStatus, RefreshResponse, TrainingReport, ModelGovernanceReport, AdminAlertsReport } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
 
 export default function AdminPage() {
@@ -23,6 +23,7 @@ export default function AdminPage() {
   const [featureQuality, setFeatureQuality] = useState<DatasetQualityReport | null>(null);
   const [isTraining, setIsTraining] = useState(false);
   const [modelGovernance, setModelGovernance] = useState<ModelGovernanceReport | null>(null);
+  const [adminAlerts, setAdminAlerts] = useState<AdminAlertsReport | null>(null);
   const [modelType, setModelType] = useState('random_forest');
   const [trainingLimit, setTrainingLimit] = useState(5000);
   const [trainingReport, setTrainingReport] = useState<TrainingReport | null>(null);
@@ -50,6 +51,9 @@ export default function AdminPage() {
     getModelGovernance()
       .then(setModelGovernance)
       .catch(() => setModelGovernance(null));
+    getAdminAlerts()
+      .then(setAdminAlerts)
+      .catch(() => setAdminAlerts(null));
   }, []);
 
   useEffect(() => {
@@ -80,6 +84,7 @@ export default function AdminPage() {
         getAdminWorkflowStatus().then(setWorkflowStatus).catch(() => undefined);
         getFeatureQualityReport().then(setFeatureQuality).catch(() => undefined);
         getModelGovernance().then(setModelGovernance).catch(() => undefined);
+        getAdminAlerts().then(setAdminAlerts).catch(() => undefined);
 
         return;
       }
@@ -133,6 +138,7 @@ useEffect(() => {
         getAdminWorkflowStatus().then(setWorkflowStatus).catch(() => undefined);
         getFeatureQualityReport().then(setFeatureQuality).catch(() => undefined);
         getModelGovernance().then(setModelGovernance).catch(() => undefined);
+        getAdminAlerts().then(setAdminAlerts).catch(() => undefined);
 
         return;
       }
@@ -220,6 +226,12 @@ async function handleRefresh() {
       }
       if (result.dataset_quality) {
         setFeatureQuality(result.dataset_quality);
+
+
+        getAdminWorkflowStatus().then(setWorkflowStatus).catch(() => undefined);
+        getFeatureQualityReport().then(setFeatureQuality).catch(() => undefined);
+        getModelGovernance().then(setModelGovernance).catch(() => undefined);
+        getAdminAlerts().then(setAdminAlerts).catch(() => undefined);
       }
     } catch {
       setError('Candidate training unavailable for the moment.');
@@ -235,6 +247,10 @@ async function handleRefresh() {
     try {
       const result = await generateShadowPredictions({ limit: shadowLimit, force: shadowForce, view: shadowView });
       setShadowResult(result);
+
+      getAdminWorkflowStatus().then(setWorkflowStatus).catch(() => undefined);
+      getModelGovernance().then(setModelGovernance).catch(() => undefined);
+      getAdminAlerts().then(setAdminAlerts).catch(() => undefined);
 
       if (result.status === 'error') {
         setError(result.detail ?? 'Génération des prédiction shadow impossible.');
@@ -272,6 +288,7 @@ async function handleRefresh() {
         return;
       }
       getFeatureQualityReport().then(setFeatureQuality).catch(() => undefined);
+      getAdminAlerts().then(setAdminAlerts).catch(() => undefined);
     } catch {
       setError('Construction du Feature Store indisponible pour le moment.');
     } finally {
@@ -316,6 +333,91 @@ async function handleRefresh() {
             </Link>
           </div>
         </section>
+
+        <section className="card">
+  <div className="cardTop">
+    <div>
+      <p className="eyebrow">Alertes système</p>
+      <h2>Santé opérationnelle</h2>
+    </div>
+
+    <span className={`statusBadge ${adminAlerts?.overall_status ?? 'warning'}`}>
+      {adminAlerts?.overall_status === 'healthy'
+        ? 'Sain'
+        : adminAlerts?.overall_status === 'critical'
+          ? 'Critique'
+          : 'Attention'}
+    </span>
+  </div>
+
+  <div className="compactDataGrid four">
+    <div className="metric">
+      <span>Total alertes</span>
+      <strong>{adminAlerts?.alerts_count ?? 0}</strong>
+    </div>
+
+    <div className="metric">
+      <span>Critiques</span>
+      <strong>{adminAlerts?.critical_count ?? 0}</strong>
+    </div>
+
+    <div className="metric">
+      <span>Attention</span>
+      <strong>{adminAlerts?.warning_count ?? 0}</strong>
+    </div>
+
+    <div className="metric">
+      <span>Notifications externes</span>
+      <strong>{adminAlerts?.policy.external_notifications_enabled ? 'oui' : 'non'}</strong>
+    </div>
+  </div>
+
+  {adminAlerts?.next_best_action && (
+    <div className="nextActionBox">
+      <span>Action recommandée</span>
+      <strong>{adminAlerts.next_best_action.label}</strong>
+      <Link className="button secondary" href={adminAlerts.next_best_action.href}>
+        Ouvrir
+      </Link>
+    </div>
+  )}
+
+  <div className="alertGrid">
+    {(adminAlerts?.alerts ?? []).map((alert) => (
+      <article className={`alertCard ${alert.level}`} key={alert.id}>
+        <div className="cardTop">
+          <h3>{alert.title}</h3>
+
+          <span className={`statusBadge ${alert.level}`}>
+            {alert.level === 'critical'
+              ? 'Critique'
+              : alert.level === 'warning'
+                ? 'Attention'
+                : 'Info'}
+          </span>
+        </div>
+
+        <p>{alert.message}</p>
+
+        <div className="dataList">
+          <span>
+            Zone <strong>{alert.area}</strong>
+          </span>
+
+          <span>
+            Bloquant <strong>{alert.blocking ? 'oui' : 'non'}</strong>
+          </span>
+        </div>
+
+        <p className="mutedText">{alert.recommended_action}</p>
+
+        <Link className="button ghost" href={alert.action_href}>
+          Voir l’action
+        </Link>
+      </article>
+    ))}
+  </div>
+</section>
 
         <article className="card">
   <p className="eyebrow">Gouvernance modèle</p>

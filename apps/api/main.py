@@ -13,6 +13,7 @@ from data.database import init_db
 from data.mock_data import MATCHES, PERFORMANCE, TEAMS, get_match as get_mock_match
 from data.mock_data import get_prediction as get_mock_prediction
 from data.mock_data import get_team as get_mock_team
+from services.admin_alerts import build_admin_alerts_report
 from services.feature_store import build_feature_snapshots, summarize_feature_store
 from services.data_quality import build_dataset_quality_report
 from services.football_data_client import (
@@ -116,6 +117,119 @@ def _prediction_for_match(match: dict, all_matches: list[dict] | None = None, el
     return generate_prediction_from_match(match, all_matches or _available_matches(), elo_ratings)
 
 
+def _shadow_summary_compact():
+    try:
+        rows = repository.get_ml_shadow_predictions(limit=2000)
+    except Exception:
+        rows = []
+
+    available_count = 0
+    disagreement_count = 0
+    high_disagreement_count = 0
+
+    for row in rows:
+        shadow_prediction = row.get("shadow_prediction") or row.get("prediction") or {}
+        comparison = row.get("comparison") or {}
+
+        if shadow_prediction.get("available"):
+            available_count += 1
+        if comparison.get("same_pick") is False:
+            disagreement_count += 1
+        if comparison.get("disagreement_level") == "high":
+            high_disagreement_count += 1
+
+    return {
+        "shadow_predictions_count": len(rows),
+        "available_count": available_count,
+        "disagreement_count": disagreement_count,
+        "high_disagreement_count": high_disagreement_count,
+        "candidate_is_production": False,
+        "production_model_version": MODEL_VERSION,
+    }
+
+
+def _workflow_status_compact():
+    refresh = _refresh_status()
+    feature = _feature_summary()
+    ml_status = _ml_status_compact()
+    shadow_summary = _shadow_summary_compact()
+
+    try:
+        latest_refresh_job = runtime_store.get_refresh_job_status()
+    except Exception:
+        latest_refresh_job = None
+
+    try:
+        latest_feature_store_job = runtime_store.get_feature_store_job_status()
+    except Exception:
+        latest_feature_store_job = None
+
+    return {
+        "refresh": {
+            "last_refresh_at": refresh.get("last_refresh_at"),
+            "storage": refresh.get("storage", "memory"),
+            "matches_imported": refresh.get("matches_imported", 0),
+            "predictions_imported": refresh.get("predictions_imported", 0),
+        },
+        "feature_store": {
+            "ready": feature.get("snapshots_count", 0) > 0,
+            "snapshots_count": feature.get("snapshots_count", 0),
+            "training_rows_available": feature.get("with_target_count", 0),
+            "target_coverage": feature.get("target_coverage", 0),
+        },
+        "candidate_model": {
+            "trained": ml_status.get("status") in {"ok", "trained", "success"},
+            "status": ml_status.get("status", "not_trained"),
+            "model_version": (ml_status.get("latest_candidate") or {}).get("model_version"),
+            "accuracy": (ml_status.get("latest_candidate") or {}).get("accuracy"),
+        },
+        "shadow_predictions": {
+            "generated": shadow_summary.get("shadow_predictions_count", 0) > 0,
+            "count": shadow_summary.get("shadow_predictions_count", 0),
+            "disagreement_count": shadow_summary.get("disagreement_count", 0),
+        },
+        "latest_refresh_job": latest_refresh_job,
+        "latest_feature_store_job": latest_feature_store_job,
+        "next_step": "review_admin_alerts",
+    }
+
+
+def _admin_alerts_report():
+    workflow_status = _workflow_status_compact()
+    refresh_status = _refresh_status()
+    feature_summary = _feature_summary()
+    dataset_quality = _dataset_quality_report(1000)
+    ml_status = _ml_status_compact()
+    shadow_summary = _shadow_summary_compact()
+    shadow_backtesting = calculate_shadow_backtest_report(
+        _available_matches(),
+        repository.get_ml_shadow_predictions(limit=2000),
+    )
+    monitoring_report = _model_monitoring_report(["30d", "all"], 2000)
+    governance_report = _model_governance_report()
+
+    return build_admin_alerts_report(
+        workflow_status,
+        refresh_status,
+        feature_summary,
+        dataset_quality,
+        ml_status,
+        shadow_summary,
+        shadow_backtesting,
+        monitoring_report,
+        governance_report,
+    )
+
+
+def _admin_alerts_compact():
+    report = _admin_alerts_report()
+    return {
+        "overall_status": report.get("overall_status", "unknown"),
+        "alerts_count": report.get("alerts_count", 0),
+        "critical_count": report.get("critical_count", 0),
+        "warning_count": report.get("warning_count", 0),
+        "next_best_action": report.get("next_best_action"),
+    }
 
 
 def _available_feature_snapshots():
@@ -347,6 +461,30 @@ def _require_admin_key(x_admin_key: str | None):
         raise HTTPException(status_code=401, detail="Invalid admin key")
 
 
+@app.get("/admin/alerts")
+def admin_alerts():
+    return _admin_alerts_report()
+
+
+@app.get("/admin/workflow")
+def admin_workflow():
+    workflow = _workflow_status_compact()
+
+    return {
+        **workflow,
+        "admin_alerts": _admin_alerts_compact(),
+    }
+
+
+@app.get("/admin/workflow-status")
+def admin_workflow_status():
+    workflow = _workflow_status_compact()
+
+    return {
+        **workflow,
+        "admin_alerts": _admin_alerts_compact(),
+    }
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -527,6 +665,7 @@ def model_performance():
     )
     monitoring_report = _model_monitoring_report(["7d", "30d", "90d", "all"], 2000) 
     model_governance = _model_governance_report()
+    admin_alerts = _admin_alerts_compact()
 
 
     return {
@@ -556,6 +695,7 @@ def model_performance():
         "ml_shadow_backtesting": shadow_backtesting,
         "model_monitoring": monitoring_report,
         "model_governance": model_governance,
+        "admin_alerts": admin_alerts,
     }
 
 
@@ -567,7 +707,7 @@ def dashboard_summary():
     monitoring_30d = monitoring_report.get("periods", {}).get("30d", {})
     monitoring_official_30d = monitoring_30d.get("official", {})
     monitoring_trend = monitoring_report.get("trend_summary", {})
-
+    alerts = _admin_alerts_compact()
     governance = _model_governance_report()
     readiness = governance.get("promotion_readiness", {})
 
@@ -582,6 +722,9 @@ def dashboard_summary():
         "model_governance_score": readiness.get("score", 0),
         "model_governance_blockers_count": len(readiness.get("blocking_reasons", [])),
         "model_promotion_ready": False,
+        "admin_alerts_status": alerts.get("overall_status"),
+        "admin_alerts_count": alerts.get("alerts_count"),
+        "admin_critical_alerts_count": alerts.get("critical_count"),
     }
 
 

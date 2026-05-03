@@ -29,6 +29,8 @@
   predictions,
   teams,
   mockModelGovernance,
+  mockAdminAlertsReport,
+  type AdminAlertsReport,
   type ModelGovernanceReport,
   type Match,
   type AdminWorkflowStatus,
@@ -91,6 +93,12 @@ async function safeFetchJson<T>(path: string, init?: RequestInit): Promise<T | n
   } catch {
     return null;
   }
+}
+
+export async function getAdminAlerts(): Promise<AdminAlertsReport> {
+  const data = await safeFetchJson<AdminAlertsReport>('/admin/alerts');
+
+  return data ?? mockAdminAlertsReport;
 }
 
 export async function getBackendHealth(): Promise<HealthResponse | null> {

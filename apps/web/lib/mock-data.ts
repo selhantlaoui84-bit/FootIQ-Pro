@@ -508,6 +508,12 @@ export type PerformanceMetrics = {
   note?: string;
   lastUpdated: string;
   latest_refresh?: RefreshResponse | null;
+  admin_alerts?: AdminAlertsReport | {
+  overall_status: string;
+  alerts_count: number;
+  critical_count: number;
+  warning_count: number;
+};
 };
 
 export type HealthResponse = { status?: string; ok?: boolean };
@@ -524,6 +530,9 @@ export type DashboardSummary = {
   trap_matches_count: number;
   average_confidence: number;
   average_risk_score?: number;
+  admin_alerts_status?: string;
+  admin_alerts_count?: number;
+  admin_critical_alerts_count?: number;
   model_version?: string;
   calibration_applied?: boolean;
   current_model_version?: string;
@@ -654,6 +663,72 @@ export type HybridEngineSummary = {
   reason: string;
 };
 
+export type AdminAlert = {
+  id: string;
+  level: 'critical' | 'warning' | 'info' | string;
+  title: string;
+  message: string;
+  area: string;
+  recommended_action: string;
+  action_href: string;
+  blocking: boolean;
+  created_at: string;
+};
+
+export type AdminAlertsReport = {
+  status: string;
+  generated_at: string;
+  overall_status: 'healthy' | 'warning' | 'critical' | string;
+  alerts_count: number;
+  critical_count: number;
+  warning_count: number;
+  info_count: number;
+  alerts: AdminAlert[];
+  next_best_action: {
+    label: string;
+    href: string;
+    priority: string;
+  };
+  policy: {
+    external_notifications_enabled: boolean;
+    automatic_model_promotion: boolean;
+    note: string;
+  };
+};
+
+export const mockAdminAlertsReport: AdminAlertsReport = {
+  status: 'ok',
+  generated_at: '2026-05-03T13:00:00Z',
+  overall_status: 'warning',
+  alerts_count: 1,
+  critical_count: 0,
+  warning_count: 1,
+  info_count: 0,
+  alerts: [
+    {
+      id: 'feature_store_empty',
+      level: 'warning',
+      title: 'Feature Store à préparer',
+      message: "Le jeu de variables n'est pas encore prêt.",
+      area: 'feature_store',
+      recommended_action: 'Construire le Feature Store.',
+      action_href: '/admin',
+      blocking: false,
+      created_at: '2026-05-03T13:00:00Z',
+    },
+  ],
+  next_best_action: {
+    label: 'Construire le Feature Store.',
+    href: '/admin',
+    priority: 'warning',
+  },
+  policy: {
+    external_notifications_enabled: false,
+    automatic_model_promotion: false,
+    note: "Les alertes sont affichées dans l'admin sans notification externe.",
+  },
+};
+
 export type AdminWorkflowStatus = {
   refresh: { last_refresh_at: string | null; storage: string; matches_imported: number; predictions_imported: number };
   feature_store: { ready: boolean; snapshots_count: number; training_rows_available: number; target_coverage: number };
@@ -672,6 +747,17 @@ export type AdminWorkflowStatus = {
   latest_refresh_job?: RefreshJobStatus;
   latest_feature_store_job?: RefreshJobStatus;
   next_step: 'refresh_data' | 'build_feature_store' | 'train_candidate_model' | 'generate_shadow_predictions' | 'review_shadow_backtesting' | 'ready_for_hybrid_review' | string;
+  admin_alerts?: {
+  overall_status: string;
+  alerts_count: number;
+  critical_count: number;
+  warning_count: number;
+  next_best_action?: {
+    label: string;
+    href: string;
+    priority: string;
+  };
+};
 };
 
 export const predictions: Prediction[] = [
@@ -699,7 +785,7 @@ export const predictions: Prediction[] = [
       'Les signaux recents sont coherents',
     ],
     risks: ['Rotation possible', 'Fatigue europeenne moderee'],
-    disclaimer: 'Modele probabiliste. Aucune garantie de resultat.',
+    disclaimer: 'Modèle probabiliste. Aucune garantie de résultat.',
   },
   {
     id: 'marseille-rennes',
@@ -718,14 +804,14 @@ export const predictions: Prediction[] = [
     confidence: { score: 54, status: 'À ÉVITER' },
     flags: { trap_match: false, risk: true },
     recommendation: 'Prudence',
-    main_prediction: 'Match serre, nul fortement plausible',
+    main_prediction: 'Match serré, nul fortement plausible',
     explanation: [
-      'Ecart de niveau faible sur les dernieres semaines',
+      'Ecart de niveau faible sur les dèrnieres semaines',
       'Rennes reste dangereux en transition',
-      'Probabilite de nul elevee, lisibilite reduite',
+      'Probabilite de nul élevée, lisibilite réduite',
     ],
     risks: ['Forme recente irreguliere', 'Pression du contexte', 'High draw probability'],
-    disclaimer: 'Modele probabiliste. Aucune garantie de resultat.',
+    disclaimer: 'Modèle probabiliste. Aucune garantie de résultat.',
   },
   {
     id: 'real-madrid-arsenal',
@@ -751,7 +837,7 @@ export const predictions: Prediction[] = [
       'La marge entre les issues reste moderee',
     ],
     risks: ['Qualite individuelle adverse', 'Transitions rapides', 'BTTS eleve'],
-    disclaimer: 'Modele probabiliste. Aucune garantie de resultat.',
+    disclaimer: 'Modèle probabiliste. Aucune garantie de résultat.',
   },
   {
     id: 'lille-monaco',
@@ -777,7 +863,7 @@ export const predictions: Prediction[] = [
       'Donnees recentes contradictoires, confiance reduite',
     ],
     risks: ['Inconsistent recent form', 'High draw probability', "Faible volume d'occasions"],
-    disclaimer: 'Modele probabiliste. Aucune garantie de resultat.',
+    disclaimer: 'Modèle probabiliste. Aucune garantie de résultat.',
   },
   {
     id: 'lens-nice',
@@ -1482,6 +1568,9 @@ export function buildDashboardSummary(source = 'mock'): DashboardSummary {
     model_governance_score: mockModelGovernance.promotion_readiness.score,
     model_governance_blockers_count: mockModelGovernance.promotion_readiness.blocking_reasons.length,
     model_promotion_ready: false,
+    admin_alerts_status: mockAdminAlertsReport.overall_status,
+    admin_alerts_count: mockAdminAlertsReport.alerts_count,
+    admin_critical_alerts_count: mockAdminAlertsReport.critical_count,
   };
 }
 
@@ -1667,6 +1756,13 @@ export const mockAdminWorkflowStatus: AdminWorkflowStatus = {
   latest_refresh_job: mockRefreshJobStatus,
   latest_feature_store_job: mockRefreshJobStatus,
   next_step: 'refresh_data',
+  admin_alerts: {
+  overall_status: mockAdminAlertsReport.overall_status,
+  alerts_count: mockAdminAlertsReport.alerts_count,
+  critical_count: mockAdminAlertsReport.critical_count,
+  warning_count: mockAdminAlertsReport.warning_count,
+  next_best_action: mockAdminAlertsReport.next_best_action,
+},
 };
 
 
