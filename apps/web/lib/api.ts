@@ -62,47 +62,50 @@
   type TrainingReport,
 } from '~/lib/mock-data';
 
+
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ||
   'https://footiq-pro-production.up.railway.app';
 
-async function safeFetchJson<T>(path: string, init?: RequestInit): Promise<T | null> {
-  if (!API_URL) {
-    return null;
-  }
+const IS_BUILD = process.env.NEXT_PHASE === 'phase-production-build';
+
+
+async function safeFetchJson<T>(path: string, init?: RequestInit, timeoutMs = 8000): Promise<T | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(`${API_URL}${path}`, {
+    const url = path.startsWith('http') ? path : `${API_URL}${path}`;
+
+    const response = await fetch(url, {
       ...init,
-      headers: { Accept: 'application/json', ...(init?.headers ?? {}) },
+      signal: controller.signal,
     });
 
     if (!response.ok) {
       return null;
     }
 
-    const contentType = response.headers.get('content-type') ?? '';
-
-    if (!contentType.includes('application/json')) {
-      return null;
-    }
-
-    const data = (await response.json()) as T;
-
-    return data;
+    return (await response.json()) as T;
   } catch {
     return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
 export async function getAdminAlerts(): Promise<AdminAlertsReport> {
-  const data = await safeFetchJson<AdminAlertsReport>('/admin/alerts');
+  if (IS_BUILD) return mockAdminAlertsReport;
+
+  const data = await safeFetchJson<AdminAlertsReport>('/admin/alerts', undefined, 3000);
 
   return data ?? mockAdminAlertsReport;
 }
 
 export async function getBackendHealth(): Promise<HealthResponse | null> {
-  return safeFetchJson<HealthResponse>('/health');
+  if (IS_BUILD) return null;
+
+  return safeFetchJson<HealthResponse>('/health', undefined, 3000);
 }
 
 export async function getHealth() {
@@ -110,125 +113,167 @@ export async function getHealth() {
 }
 
 export async function getPredictions(options?: { includeHybridEngine?: boolean; includeExplainability?: boolean; limit?: number; view?: MatchView }): Promise<Prediction[]> {
+  if (IS_BUILD) {
+    return predictions;
+  }
+
   const params = new URLSearchParams();
   if (options?.includeHybridEngine) params.set('include_hybrid_engine', 'true');
   if (options?.includeExplainability) params.set('include_explainability', 'true');
   if (options?.limit) params.set('limit', String(Math.min(Math.max(Math.round(options.limit), 1), 500)));
   if (options?.view) params.set('view', options.view);
+
   const query = params.toString();
-  const data = await safeFetchJson<Prediction[]>(`/predictions${query ? `?${query}` : ''}`);
+  const data = await safeFetchJson<Prediction[]>(`/predictions${query ? `?${query}` : ''}`, undefined, 3000);
 
   return Array.isArray(data) && data.length > 0 ? data : predictions;
 }
 
 export async function getPrediction(matchId: string): Promise<Prediction> {
-  const data = await safeFetchJson<Prediction>(`/predictions/${encodeURIComponent(matchId)}`);
+  if (IS_BUILD) return getMockPrediction(matchId);
+
+  const data = await safeFetchJson<Prediction>(`/predictions/${encodeURIComponent(matchId)}`, undefined, 3000);
 
   return data ?? getMockPrediction(matchId);
 }
 
 export async function getMatches(options?: { view?: MatchView; q?: string; status?: string; includeFinished?: boolean }): Promise<Match[]> {
+  if (IS_BUILD) {
+    return matches;
+  }
+
   const params = new URLSearchParams();
   if (options?.view) params.set('view', options.view);
   if (options?.q) params.set('q', options.q);
   if (options?.status) params.set('status', options.status);
   if (typeof options?.includeFinished === 'boolean') params.set('include_finished', String(options.includeFinished));
+
   const query = params.toString();
-  const data = await safeFetchJson<Match[]>(`/matches${query ? `?${query}` : ''}`);
+  const data = await safeFetchJson<Match[]>(`/matches${query ? `?${query}` : ''}`, undefined, 3000);
 
   return Array.isArray(data) && data.length > 0 ? data : matches;
 }
 
 export async function getMatch(matchId: string): Promise<Match> {
-  const data = await safeFetchJson<Match>(`/matches/${encodeURIComponent(matchId)}`);
+  if (IS_BUILD) return getMockMatch(matchId);
+
+  const data = await safeFetchJson<Match>(`/matches/${encodeURIComponent(matchId)}`, undefined, 3000);
 
   return data ?? getMockMatch(matchId);
 }
 
 export async function getTeams(): Promise<Team[]> {
-  const data = await safeFetchJson<Team[]>('/teams');
+  if (IS_BUILD) {
+    return teams;
+  }
+
+  const data = await safeFetchJson<Team[]>('/teams', undefined, 3000);
 
   return Array.isArray(data) && data.length > 0 ? data : teams;
 }
 
 export async function getTeam(teamId: string): Promise<Team> {
-  const data = await safeFetchJson<Team>(`/teams/${encodeURIComponent(teamId)}`);
+  if (IS_BUILD) return getMockTeam(teamId);
+
+  const data = await safeFetchJson<Team>(`/teams/${encodeURIComponent(teamId)}`, undefined, 3000);
 
   return data ?? getMockTeam(teamId);
 }
 
 
 export async function getModels(): Promise<ModelsMetadata> {
-  const data = await safeFetchJson<ModelsMetadata>('/models');
+  if (IS_BUILD) return mockModelsMetadata;
+
+  const data = await safeFetchJson<ModelsMetadata>('/models', undefined, 3000);
 
   return data ?? mockModelsMetadata;
 }
 
 export async function getModelComparison(): Promise<ModelComparison> {
-  const data = await safeFetchJson<ModelComparison>('/models/comparison');
+  if (IS_BUILD) return mockModelComparison;
+
+  const data = await safeFetchJson<ModelComparison>('/models/comparison', undefined, 3000);
 
   return data ?? mockModelComparison;
 }
 
 export async function getPredictionSnapshots(): Promise<PredictionSnapshot[]> {
-  const data = await safeFetchJson<PredictionSnapshot[]>('/predictions/snapshots');
+  if (IS_BUILD) return mockPredictionSnapshots;
+
+  const data = await safeFetchJson<PredictionSnapshot[]>('/predictions/snapshots', undefined, 3000);
 
   return Array.isArray(data) ? data : mockPredictionSnapshots;
 }
 
 export async function getBacktesting(): Promise<BacktestingReport> {
-  const data = await safeFetchJson<BacktestingReport>('/backtesting');
+  if (IS_BUILD) return mockBacktestingReport;
 
+  const data = await safeFetchJson<BacktestingReport>('/backtesting', undefined, 3000);
   return data ?? mockBacktestingReport;
 }
 
 export async function getFeatureSummary(): Promise<FeatureSummary> {
-  const data = await safeFetchJson<FeatureSummary>('/features/summary');
+  if (IS_BUILD) return mockFeatureSummary;
 
+  const data = await safeFetchJson<FeatureSummary>('/features/summary', undefined, 3000);
   return data ?? mockFeatureSummary;
 }
 
 export async function getFeatureDataset(limit = 100): Promise<FeatureDatasetRow[]> {
+  if (IS_BUILD) return mockFeatureDataset;
+
   const safeLimit = Math.min(Math.max(Math.round(limit), 1), 500);
-  const data = await safeFetchJson<FeatureDatasetRow[]>(`/features/dataset?limit=${safeLimit}`);
+  const data = await safeFetchJson<FeatureDatasetRow[]>(`/features/dataset?limit=${safeLimit}`, undefined, 3000);
 
   return Array.isArray(data) ? data : mockFeatureDataset;
 }
 
 export async function getFeatureQualityReport(limit = 1000): Promise<DatasetQualityReport> {
+  if (IS_BUILD) return mockFeatureQualityReport;
+
   const safeLimit = Math.min(Math.max(Math.round(limit), 1), 5000);
-  const data = await safeFetchJson<DatasetQualityReport>(`/features/quality-report?limit=${safeLimit}`);
+  const data = await safeFetchJson<DatasetQualityReport>(`/features/quality-report?limit=${safeLimit}`, undefined, 3000);
 
   return data ?? mockFeatureQualityReport;
 }
 
 export async function getMlStatus(): Promise<MlStatus> {
-  const data = await safeFetchJson<MlStatus>('/ml/status');
+  if (IS_BUILD) return mockMlStatus;
 
+  const data = await safeFetchJson<MlStatus>('/ml/status', undefined, 3000);
   return data ?? mockMlStatus;
 }
 
 export async function getMlFeatureImportance(): Promise<FeatureImportanceRow[]> {
-  const data = await safeFetchJson<FeatureImportanceRow[]>('/ml/feature-importance');
+  if (IS_BUILD) return mockMlFeatureImportance;
 
-  return Array.isArray(data) ? data : mockMlFeatureImportance;
+  const data = await safeFetchJson<FeatureImportanceRow[]>('/ml/feature-importance', undefined, 3000);
+  return data ?? mockMlFeatureImportance;
 }
 
 export async function getMlComparison(): Promise<MlComparison> {
-  const data = await safeFetchJson<MlComparison>('/ml/comparison');
+  if (IS_BUILD) return mockMlComparison;
 
+  const data = await safeFetchJson<MlComparison>('/ml/comparison', undefined, 3000);
   return data ?? mockMlComparison;
 }
 
 export async function getMlShadowSummary(): Promise<MlShadowSummary> {
-  const data = await safeFetchJson<MlShadowSummary>('/ml/shadow-summary');
+  if (IS_BUILD) return mockMlShadowSummary;
 
+  const data = await safeFetchJson<MlShadowSummary>('/ml/shadow-summary', undefined, 3000);
   return data ?? mockMlShadowSummary;
 }
 
 export async function getMlShadowPredictions(limit = 100, view: MatchView = 'all'): Promise<MlShadowRow[]> {
+  if (IS_BUILD) return mockMlShadowPredictions;
+
   const safeLimit = Math.min(Math.max(Math.round(limit), 1), 500);
-  const data = await safeFetchJson<MlShadowRow[]>(`/ml/shadow-predictions?limit=${safeLimit}&view=${encodeURIComponent(view)}`);
+  const data = await safeFetchJson<MlShadowRow[]>(
+    `/ml/shadow-predictions?limit=${safeLimit}&view=${encodeURIComponent(view)}`,
+    undefined,
+    3000,
+  );
 
   return Array.isArray(data) ? data : mockMlShadowPredictions;
 }
@@ -299,45 +344,71 @@ export async function trainCandidateModel(options?: { modelType?: string; limit?
 }
 
 export async function getPerformance(): Promise<PerformanceMetrics> {
-  const data = await safeFetchJson<PerformanceMetrics>('/performance');
+  if (IS_BUILD) {
+    return performanceMetrics;
+  }
+
+  const data = await safeFetchJson<PerformanceMetrics>('/performance', undefined, 3000);
 
   return data ?? performanceMetrics;
 }
 
 export async function getDashboardSummary(): Promise<DashboardSummary> {
-  const data = await safeFetchJson<DashboardSummary>('/dashboard/summary');
+  if (IS_BUILD) {
+    return buildDashboardSummary();
+  }
+
+  const data = await safeFetchJson<DashboardSummary>('/dashboard/summary', undefined, 3000);
 
   return data ?? buildDashboardSummary();
 }
 
 export async function getRefreshStatus(): Promise<RefreshResponse | null> {
-  return safeFetchJson<RefreshResponse>('/admin/refresh-status');
+  if (IS_BUILD) return null;
+
+  return safeFetchJson<RefreshResponse>('/admin/refresh-status', undefined, 3000);
 }
 
 
 export async function getHybridEngineSummary(options?: { limit?: number; view?: MatchView }): Promise<HybridEngineSummary> {
+  if (IS_BUILD) return mockHybridEngineSummary;
+
   const limit = Math.min(Math.max(Math.round(options?.limit ?? 200), 1), 1000);
   const view = options?.view ?? 'upcoming';
-  const data = await safeFetchJson<HybridEngineSummary>(`/hybrid/engine-summary?limit=${limit}&view=${encodeURIComponent(view)}`);
+  const data = await safeFetchJson<HybridEngineSummary>(
+    `/hybrid/engine-summary?limit=${limit}&view=${encodeURIComponent(view)}`,
+    undefined,
+    3000,
+  );
 
   return data ?? mockHybridEngineSummary;
 }
 
 export async function getHybridSummary(): Promise<HybridSummary> {
-  const data = await safeFetchJson<HybridSummary>('/hybrid/summary');
+  if (IS_BUILD) return mockHybridSummary;
+
+  const data = await safeFetchJson<HybridSummary>('/hybrid/summary', undefined, 3000);
 
   return data ?? mockHybridSummary;
 }
 
 export async function getExplainabilitySummary(limit = 200, view: MatchView = 'upcoming'): Promise<ExplainabilitySummary> {
+  if (IS_BUILD) return mockExplainabilitySummary;
+
   const safeLimit = Math.min(Math.max(Math.round(limit), 1), 1000);
-  const data = await safeFetchJson<ExplainabilitySummary>(`/explainability/summary?limit=${safeLimit}&view=${encodeURIComponent(view)}`);
+  const data = await safeFetchJson<ExplainabilitySummary>(
+    `/explainability/summary?limit=${safeLimit}&view=${encodeURIComponent(view)}`,
+    undefined,
+    3000
+  );
 
   return data ?? mockExplainabilitySummary;
 }
 
 export async function getAdminWorkflowStatus(): Promise<AdminWorkflowStatus> {
-  const data = await safeFetchJson<AdminWorkflowStatus>('/admin/workflow-status');
+  if (IS_BUILD) return mockAdminWorkflowStatus;
+
+  const data = await safeFetchJson<AdminWorkflowStatus>('/admin/workflow-status', undefined, 3000);
 
   return data ?? mockAdminWorkflowStatus;
 }
@@ -440,15 +511,21 @@ export async function buildFeatureStore(options?: { limit?: number; force?: bool
 }
 
 export async function getMlShadowBacktesting(limit = 500) {
+  if (IS_BUILD) return mockMlShadowBacktesting;
+
   const data = await safeFetchJson<typeof mockMlShadowBacktesting>(
-    `/ml/shadow-backtesting?limit=${encodeURIComponent(String(limit))}`
+    `/ml/shadow-backtesting?limit=${encodeURIComponent(String(limit))}`,
+    undefined,
+    3000,
   );
 
   return data ?? mockMlShadowBacktesting;
 }
 
 export async function getModelGovernance(): Promise<ModelGovernanceReport> {
-  const data = await safeFetchJson<ModelGovernanceReport>('/models/governance');
+  if (IS_BUILD) return mockModelGovernance;
+
+  const data = await safeFetchJson<ModelGovernanceReport>('/models/governance', undefined, 3000);
 
   return data ?? mockModelGovernance;
 }
