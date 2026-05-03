@@ -53,23 +53,35 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    if (!refreshJobId) {
-      return undefined;
-    }
+  if (!refreshJobId) {
+    return undefined;
+  }
 
-    let cancelled = false;
+  let cancelled = false;
 
-    async function poll() {
+  async function poll() {
+    try {
       const job = await getRefreshJobStatus(refreshJobId ?? undefined);
+
       if (cancelled) return;
+
       setRefreshJob(job);
 
-      if (job.status === 'success' && job.result) {
-        setRefreshInfo(job.result as RefreshResponse);
+      if (job.status === 'success') {
+        if (job.result) {
+          setRefreshInfo(job.result as RefreshResponse);
+        } else {
+          getRefreshStatus().then(setRefreshInfo).catch(() => undefined);
+        }
+
         setIsRefreshing(false);
         setRefreshJobId(null);
+
         getAdminWorkflowStatus().then(setWorkflowStatus).catch(() => undefined);
         getFeatureQualityReport().then(setFeatureQuality).catch(() => undefined);
+        getModelGovernance().then(setModelGovernance).catch(() => undefined);
+
+        return;
       }
 
       if (job.status === 'error') {
@@ -77,35 +89,52 @@ export default function AdminPage() {
         setIsRefreshing(false);
         setRefreshJobId(null);
       }
-    }
-
-    poll();
-    const interval = window.setInterval(poll, 2000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
-  }, [refreshJobId]);
-
-  useEffect(() => {
-    if (!featureStoreJobId) {
-      return undefined;
-    }
-
-    let cancelled = false;
-
-    async function poll() {
-      const job = await getFeatureStoreJobStatus(featureStoreJobId ?? undefined);
+    } catch (error) {
       if (cancelled) return;
+
+      setError(error instanceof Error ? error.message : 'Suivi du job d’actualisation indisponible.');
+      setIsRefreshing(false);
+      setRefreshJobId(null);
+    }
+  }
+
+  poll();
+  const interval = window.setInterval(poll, 2000);
+
+  return () => {
+    cancelled = true;
+    window.clearInterval(interval);
+  };
+}, [refreshJobId]);
+
+useEffect(() => {
+  if (!featureStoreJobId) {
+    return undefined;
+  }
+
+  let cancelled = false;
+
+  async function poll() {
+    try {
+      const job = await getFeatureStoreJobStatus(featureStoreJobId ?? undefined);
+
+      if (cancelled) return;
+
       setFeatureStoreJob(job);
 
-      if (job.status === 'success' && job.result) {
-        setFeatureBuildInfo(job.result as BuildFeatureStoreResponse);
+      if (job.status === 'success') {
+        if (job.result) {
+          setFeatureBuildInfo(job.result as BuildFeatureStoreResponse);
+        }
+
         setIsBuildingFeatures(false);
         setFeatureStoreJobId(null);
+
         getAdminWorkflowStatus().then(setWorkflowStatus).catch(() => undefined);
         getFeatureQualityReport().then(setFeatureQuality).catch(() => undefined);
+        getModelGovernance().then(setModelGovernance).catch(() => undefined);
+
+        return;
       }
 
       if (job.status === 'error') {
@@ -113,62 +142,68 @@ export default function AdminPage() {
         setIsBuildingFeatures(false);
         setFeatureStoreJobId(null);
       }
-    }
+    } catch (error) {
+      if (cancelled) return;
 
-    poll();
-    const interval = window.setInterval(poll, 2000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
-  }, [featureStoreJobId]);
-
-  async function handleRefresh() {
-    setIsRefreshing(true);
-    setError(null);
-
-
-    try {
-      const result = await refreshData();
-
-      if (!result) {
-        setError('Refresh unavailable. Check the admin key or backend.');
-        setIsRefreshing(false);
-        return;
-      }
-
-      if (result.status === 'error') {
-        setError(result.detail ?? result.error ?? 'Refresh refused.');
-        setIsRefreshing(false);
-        return;
-      }
-
-      if (result.status === 'accepted' && result.job_id) {
-        setRefreshJobId(result.job_id);
-        setRefreshJob({
-          job_id: result.job_id,
-          status: 'running',
-          started_at: new Date().toISOString(),
-          finished_at: null,
-          duration_ms: null,
-          result: null,
-          error: null,
-        });
-        return;
-      }
-
-      setRefreshInfo(result);
-      setIsRefreshing(false);
-      getAdminWorkflowStatus().then(setWorkflowStatus).catch(() => undefined);
-      getFeatureQualityReport().then(setFeatureQuality).catch(() => undefined);
-    } catch {
-      setError('Refresh impossible pour le moment.');
-      setIsRefreshing(false);
-    } finally {
-      // A background job keeps the running state until polling reports success or error.
+      setError(error instanceof Error ? error.message : 'Suivi du job Feature Store indisponible.');
+      setIsBuildingFeatures(false);
+      setFeatureStoreJobId(null);
     }
   }
+
+  poll();
+  const interval = window.setInterval(poll, 2000);
+
+  return () => {
+    cancelled = true;
+    window.clearInterval(interval);
+  };
+}, [featureStoreJobId]);
+
+async function handleRefresh() {
+  setIsRefreshing(true);
+  setError(null);
+  setRefreshJob(null);
+  setRefreshJobId(null);
+
+  try {
+    const response = await refreshData();
+      if (!response) {
+    setError('Actualisation impossible.');
+    setIsRefreshing(false);
+    return;
+}
+    setRefreshInfo(response);
+
+    if (response.status === 'accepted' && response.job_id) {
+      setRefreshJobId(response.job_id);
+      return;
+    }
+
+    if (response.status === 'error') {
+      setError(response.detail ?? response.error ?? 'Actualisation impossible.');
+      setIsRefreshing(false);
+      return;
+    }
+
+    const [refreshStatus, workflow, quality, governance] = await Promise.all([
+      getRefreshStatus().catch(() => null),
+      getAdminWorkflowStatus().catch(() => null),
+      getFeatureQualityReport().catch(() => null),
+      getModelGovernance().catch(() => null),
+    ]);
+
+    if (refreshStatus) setRefreshInfo(refreshStatus);
+    if (workflow) setWorkflowStatus(workflow);
+    if (quality) setFeatureQuality(quality);
+    if (governance) setModelGovernance(governance);
+
+    setIsRefreshing(false);
+  } catch (error) {
+    setError(error instanceof Error ? error.message : 'Actualisation impossible.');
+    setIsRefreshing(false);
+  }
+}
 
   async function handleTrainCandidate() {
     setIsTraining(true);
@@ -202,10 +237,10 @@ export default function AdminPage() {
       setShadowResult(result);
 
       if (result.status === 'error') {
-        setError(result.detail ?? 'G?n?ration des pr?dictions shadow impossible.');
+        setError(result.detail ?? 'Génération des prédiction shadow impossible.');
       }
     } catch {
-      setError('G?n?ration des pr?dictions shadow indisponible pour le moment.');
+      setError('Génération des prédictions shadow indisponible pour le moment.');
     } finally {
       setIsGeneratingShadow(false);
     }
@@ -582,6 +617,4 @@ export default function AdminPage() {
     </ProtectedRoute>
   );
 }
-
-
 
