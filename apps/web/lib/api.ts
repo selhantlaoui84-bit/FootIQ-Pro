@@ -20,6 +20,7 @@
   mockMlShadowBacktesting,
   mockHybridSummary,
   mockHybridEngineSummary,
+  mockExplainabilitySummary,
   mockAdminWorkflowStatus,
   mockRefreshJobStatus,
   buildDashboardSummary,
@@ -48,6 +49,7 @@
   type HealthResponse,
   type HybridSummary,
   type HybridEngineSummary,
+  type ExplainabilitySummary,
   type PerformanceMetrics,
   type Prediction,
   type RefreshJobStatus,
@@ -97,9 +99,10 @@ export async function getHealth() {
   return getBackendHealth();
 }
 
-export async function getPredictions(options?: { includeHybridEngine?: boolean; limit?: number; view?: MatchView }): Promise<Prediction[]> {
+export async function getPredictions(options?: { includeHybridEngine?: boolean; includeExplainability?: boolean; limit?: number; view?: MatchView }): Promise<Prediction[]> {
   const params = new URLSearchParams();
   if (options?.includeHybridEngine) params.set('include_hybrid_engine', 'true');
+  if (options?.includeExplainability) params.set('include_explainability', 'true');
   if (options?.limit) params.set('limit', String(Math.min(Math.max(Math.round(options.limit), 1), 500)));
   if (options?.view) params.set('view', options.view);
   const query = params.toString();
@@ -314,6 +317,13 @@ export async function getHybridSummary(): Promise<HybridSummary> {
   const data = await safeFetchJson<HybridSummary>('/hybrid/summary');
 
   return data ?? mockHybridSummary;
+}
+
+export async function getExplainabilitySummary(limit = 200, view: MatchView = 'upcoming'): Promise<ExplainabilitySummary> {
+  const safeLimit = Math.min(Math.max(Math.round(limit), 1), 1000);
+  const data = await safeFetchJson<ExplainabilitySummary>(`/explainability/summary?limit=${safeLimit}&view=${encodeURIComponent(view)}`);
+
+  return data ?? mockExplainabilitySummary;
 }
 
 export async function getAdminWorkflowStatus(): Promise<AdminWorkflowStatus> {

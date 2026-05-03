@@ -167,6 +167,25 @@ export default function DashboardPage({ matches, predictions, summary, mlStatus,
         </div>
       </section>
 
+      <section className="card explainabilityCard">
+        <p className="eyebrow">Explicabilité</p>
+        <h2>Lecture des facteurs</h2>
+        <div className="compactDataGrid four">
+          <Link className="metric clickable-card" href="/performance#explainability">
+            <span>Version</span>
+            <strong>{summary.explainability_version ?? 'explainability-v1'}</strong>
+          </Link>
+          <Link className="metric clickable-card" href="/performance#explainability">
+            <span>Explications risque élevé</span>
+            <strong>{summary.high_risk_explanations_count ?? 0}</strong>
+          </Link>
+          <Link className="metric clickable-card" href="/performance#explainability">
+            <span>Explications piège</span>
+            <strong>{summary.trap_risk_explanations_count ?? 0}</strong>
+          </Link>
+        </div>
+      </section>
+
       <section className="card qualityCard">
         <p className="eyebrow">Qualité dataset</p>
         <h2>Anti-leakage</h2>

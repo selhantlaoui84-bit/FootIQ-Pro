@@ -1122,3 +1122,74 @@ input::placeholder {
 .issueTable { margin-top: 16px; }
 .leakageWarning { border-color: rgba(255, 91, 91, 0.35); }
 
+.explainabilityCard {
+  border-color: rgba(125, 211, 252, 0.28);
+  box-shadow: 0 0 42px rgba(56, 189, 248, 0.07);
+}
+
+.factorGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  margin: 14px 0 22px;
+}
+
+.factorCard,
+.explanationPanel,
+.explainabilityPreview {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.55);
+  padding: 14px;
+}
+
+.factorCard {
+  display: grid;
+  gap: 10px;
+}
+
+.factorCard.positive {
+  border-color: rgba(74, 222, 128, 0.36);
+  background: rgba(34, 197, 94, 0.08);
+}
+
+.factorCard.negative {
+  border-color: rgba(251, 191, 36, 0.38);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.factorCard.neutral {
+  border-color: rgba(148, 163, 184, 0.24);
+}
+
+.factorStrength {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.16);
+}
+
+.factorStrength span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #38bdf8, #22c55e);
+}
+
+.explanationList {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.explainabilityPreview {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.explainabilityPreview strong {
+  color: var(--text);
+}
+

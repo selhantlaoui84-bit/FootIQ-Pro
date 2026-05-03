@@ -33,6 +33,7 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
   const shadow = prediction.shadow;
   const hybrid = prediction.hybrid;
   const hybridEngine = prediction.hybrid_engine;
+  const explainability = prediction.explainability;
 
   return (
     <ProtectedRoute>
@@ -203,6 +204,40 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
           </section>
         )}
 
+        {explainability && (
+          <section className="card explainabilityCard">
+            <h2 className="metricHelp">
+              Pourquoi cette prédiction ?
+              <InfoTooltip content="Cette couche transforme les signaux statistiques en facteurs lisibles, sans garantir le résultat." />
+            </h2>
+            <p>{explainability.summary}</p>
+            <div className="dataList">
+              <span>Signal officiel <strong>{explainability.official_signal}</strong></span>
+              <span className="metricHelp">
+                Lecture confiance
+                <InfoTooltip content="Lecture qualitative de la confiance du modèle. Elle mesure la lisibilité du match, pas une certitude." />
+                <strong>{explainability.confidence_reading}</strong>
+              </span>
+            </div>
+
+            <FactorGrid title="Facteurs favorables" factors={explainability.top_positive_factors} kind="positive" />
+            <FactorGrid title="Points de prudence" factors={explainability.top_negative_factors} kind="negative" />
+
+            {(explainability.risk_notes.length > 0 ||
+              explainability.data_quality_notes.length > 0 ||
+              explainability.hybrid_notes.length > 0) && (
+              <div className="sectionSplit">
+                <ExplanationList title="Notes de risque" items={explainability.risk_notes} />
+                <ExplanationList title="Qualité des données" items={explainability.data_quality_notes} />
+                <ExplanationList title="Lecture hybride" items={explainability.hybrid_notes} />
+              </div>
+            )}
+
+            <div className="banner info">{explainability.plain_language}</div>
+            <div className="notice">{explainability.disclaimer}</div>
+          </section>
+        )}
+
         <section className="sectionSplit">
           <article className="card accent">
             <h2>Recommandation FootIQ</h2>
@@ -248,6 +283,51 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
         </div>
       </Layout>
     </ProtectedRoute>
+  );
+}
+
+function FactorGrid({
+  title,
+  factors,
+  kind,
+}: {
+  title: string;
+  factors: NonNullable<Prediction['explainability']>['top_positive_factors'];
+  kind: 'positive' | 'negative' | 'neutral';
+}) {
+  if (!factors.length) return null;
+  return (
+    <div>
+      <h3 className="metricHelp">
+        {title}
+        <InfoTooltip content="Les facteurs sont des signaux statistiques: ils orientent la lecture sans établir de causalité." />
+      </h3>
+      <div className="factorGrid">
+        {factors.map((factor) => (
+          <article className={`factorCard ${kind}`} key={`${factor.feature}-${factor.label}`}>
+            <div className="cardTop compact">
+              <strong>{factor.label}</strong>
+              <span className={`badge ${factor.impact}`}>{factor.impact}</span>
+            </div>
+            <span>Valeur: {factor.value ?? 'N/A'}</span>
+            <div className="factorStrength">
+              <span style={{ width: `${factor.strength}%` }} />
+            </div>
+            <p>{factor.message}</p>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ExplanationList({ title, items }: { title: string; items: string[] }) {
+  if (!items.length) return null;
+  return (
+    <article className="explanationPanel">
+      <h3>{title}</h3>
+      <ul className="explanationList">{items.map((item) => <li key={item}>{item}</li>)}</ul>
+    </article>
   );
 }
 

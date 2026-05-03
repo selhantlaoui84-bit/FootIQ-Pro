@@ -13,7 +13,7 @@ type PredictionsProps = {
 };
 
 export const getStaticProps: GetStaticProps<PredictionsProps> = async () => ({
-  props: { predictions: await getPredictions({ includeHybridEngine: true, limit: 100, view: 'upcoming' }) },
+  props: { predictions: await getPredictions({ includeHybridEngine: true, includeExplainability: true, limit: 100, view: 'upcoming' }) },
   revalidate: 120,
 });
 
@@ -162,6 +162,20 @@ function PredictionCard({ prediction }: { prediction: Prediction }) {
         <span className={`decisionBadge ${prediction.hybrid_engine.decision_level}`}>
           {hybridLabel(prediction.hybrid_engine.decision_label)}
         </span>
+      )}
+      {prediction.explainability && (
+        <div className="explainabilityPreview">
+          {prediction.explainability.top_positive_factors[0] && (
+            <span>
+              Favorable <strong>{prediction.explainability.top_positive_factors[0].label}</strong>
+            </span>
+          )}
+          {(prediction.explainability.risk_notes[0] || prediction.explainability.top_negative_factors[0]?.label) && (
+            <span>
+              Prudence <strong>{prediction.explainability.risk_notes[0] ?? prediction.explainability.top_negative_factors[0]?.label}</strong>
+            </span>
+          )}
+        </div>
       )}
       <p>{prediction.explanation[0]}</p>
     </Link>

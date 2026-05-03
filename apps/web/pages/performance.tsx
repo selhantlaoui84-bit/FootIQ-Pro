@@ -9,6 +9,7 @@ import {
   getMlFeatureImportance,
   getHybridEngineSummary,
   getHybridSummary,
+  getExplainabilitySummary,
   getMlComparison,
   getMlStatus,
   getMlShadowBacktesting,
@@ -23,6 +24,7 @@ import type {
   FeatureImportanceRow,
   FeatureSummary,
   HybridEngineSummary,
+  ExplainabilitySummary,
   HybridSummary,
   MlComparison,
   MlStatus,
@@ -47,6 +49,7 @@ type PerformanceProps = {
   shadowBacktesting: MlShadowBacktesting;
   hybridSummary: HybridSummary;
   hybridEngineSummary: HybridEngineSummary;
+  explainabilitySummary: ExplainabilitySummary;
   featureImportance: FeatureImportanceRow[];
 };
 
@@ -64,6 +67,7 @@ export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
     shadowBacktesting,
     hybridSummary,
     hybridEngineSummary,
+    explainabilitySummary,
     featureImportance,
   ] = await Promise.all([
     getPerformance(),
@@ -78,6 +82,7 @@ export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
     getMlShadowBacktesting(1000),
     getHybridSummary(),
     getHybridEngineSummary(),
+    getExplainabilitySummary(200, 'upcoming'),
     getMlFeatureImportance(),
   ]);
 
@@ -95,6 +100,7 @@ export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
       shadowBacktesting,
       hybridSummary,
       hybridEngineSummary,
+      explainabilitySummary,
       featureImportance,
     },
     revalidate: 120,
@@ -114,6 +120,7 @@ export default function PerformancePage({
   shadowBacktesting,
   hybridSummary,
   hybridEngineSummary,
+  explainabilitySummary,
   featureImportance,
 }: PerformanceProps) {
   const report = {
@@ -160,6 +167,7 @@ export default function PerformancePage({
   const candidate = performance.ml_candidate ?? mlStatus.latest_candidate;
   const hybrid = performance.hybrid_summary ?? hybridSummary;
   const hybridEngine = performance.hybrid_engine_summary ?? hybridEngineSummary;
+  const explainability = performance.explainability_summary ?? explainabilitySummary;
   const datasetQuality = performance.dataset_quality ?? featureQuality;
   const candidateImportance = candidate.feature_importance?.length ? candidate.feature_importance : featureImportance;
 
@@ -473,6 +481,43 @@ export default function PerformancePage({
           <div className="quickActions">
             <Link className="button secondary" href="/performance#shadow-backtesting">Backtesting shadow</Link>
             <Link className="button secondary" href="/performance#shadow-ml">Shadow ML</Link>
+          </div>
+        </section>
+
+        <section className="card explainabilityCard sectionAnchor" id="explainability">
+          <p className="eyebrow">Explicabilité</p>
+          <h2>Explicabilité des prédictions</h2>
+          <p>Cette couche traduit les signaux du modèle en facteurs lisibles. Elle aide à comprendre la prédiction, sans garantir le résultat.</p>
+          <div className="compactDataGrid four">
+            <div className="metric"><span>Version</span><strong>{explainability.version}</strong></div>
+            <div className="metric"><span>Prédictions analysées</span><strong>{explainability.processed_predictions}</strong></div>
+            <div className="metric"><span>Haute confiance</span><strong>{explainability.high_confidence_count}</strong></div>
+            <div className="metric"><span>Faible confiance</span><strong>{explainability.low_confidence_count}</strong></div>
+            <div className="metric"><span>Risque élevé</span><strong>{explainability.high_risk_count}</strong></div>
+            <div className="metric"><span>Risque piège</span><strong>{explainability.trap_risk_count}</strong></div>
+          </div>
+          <div className="sectionSplit">
+            <article className="explanationPanel">
+              <h3>Facteurs favorables fréquents</h3>
+              <div className="dataList">
+                {Object.entries(explainability.most_common_positive_factors).map(([label, count]) => (
+                  <span key={label}>{label} <strong>{count}</strong></span>
+                ))}
+              </div>
+            </article>
+            <article className="explanationPanel">
+              <h3>Points de prudence fréquents</h3>
+              <div className="dataList">
+                {Object.entries(explainability.most_common_negative_factors).map(([label, count]) => (
+                  <span key={label}>{label} <strong>{count}</strong></span>
+                ))}
+              </div>
+            </article>
+          </div>
+          <div className="banner info">{explainability.note}</div>
+          <div className="quickActions">
+            <Link className="button secondary" href="/predictions">Voir les prédictions</Link>
+            <Link className="button secondary" href="/matches">Voir les matchs</Link>
           </div>
         </section>
 

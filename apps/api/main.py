@@ -18,6 +18,7 @@ from services.data_quality import build_dataset_quality_report
 from services.feature_store import build_feature_snapshots, summarize_feature_store
 from services.hybrid_decision import build_hybrid_decision
 from services.hybrid_engine import build_hybrid_engine_decision
+from services.explainability import build_explainability_summary, build_prediction_explanation
 from services.football_data_client import (
     get_champions_league_matches,
     get_champions_league_teams,
@@ -414,6 +415,12 @@ def _hybrid_engine_summary(limit: int = 200, view: str = "upcoming"):
     }
 
 
+def _explainability_summary(limit: int = 200, view: str = "upcoming"):
+    safe_limit = max(1, min(int(limit or 200), 1000))
+    selected_predictions = _filter_predictions_for_view(_available_predictions(), view=view)[:safe_limit]
+    return build_explainability_summary(selected_predictions, limit=safe_limit)
+
+
 def _admin_workflow_status():
     refresh = _refresh_status()
     feature = _feature_summary()
@@ -520,6 +527,7 @@ def _dashboard_summary():
     shadow_backtesting = _shadow_backtesting_report()
     hybrid_summary = _hybrid_summary()
     hybrid_engine = _hybrid_engine_summary(limit=100, view="upcoming")
+    explainability = _explainability_summary(limit=100, view="upcoming")
     candidate_metadata = load_latest_candidate_metadata()
     dataset_quality = _dataset_quality_report(limit=1000)
 
@@ -561,6 +569,9 @@ def _dashboard_summary():
         "hybrid_engine_recommendation": hybrid_engine.get("recommendation"),
         "hybrid_engine_strong_count": hybrid_engine.get("summary", {}).get("strong_count", 0),
         "hybrid_engine_avoid_count": hybrid_engine.get("summary", {}).get("avoid_count", 0),
+        "explainability_version": explainability.get("version"),
+        "high_risk_explanations_count": explainability.get("high_risk_count", 0),
+        "trap_risk_explanations_count": explainability.get("trap_risk_count", 0),
         "dataset_quality_safe_for_training": dataset_quality.get("safe_for_training", False),
         "dataset_quality_score": dataset_quality.get("average_quality_score", 0),
         "dataset_quality_recommendation": dataset_quality.get("recommendation", "insufficient_data"),
@@ -626,25 +637,29 @@ def match_detail(match_id: str):
 def list_predictions(
     include_hybrid: bool = False,
     include_hybrid_engine: bool = False,
+    include_explainability: bool = False,
     limit: int = Query(default=100, ge=1, le=500),
     view: str = Query(default="upcoming", pattern="^(all|upcoming|history)$"),
 ):
     predictions = _available_predictions()
-    if not include_hybrid and not include_hybrid_engine:
+    if not include_hybrid and not include_hybrid_engine and not include_explainability:
         return predictions
 
     selected_predictions = _filter_predictions_for_view(predictions, view=view)[:limit]
     shadow_lookup, shadow_rows = _shadow_lookup(limit=2000)
     shadow_backtesting = calculate_shadow_backtest_report(_available_matches(), shadow_rows) if include_hybrid_engine else None
-    return [
-        _prediction_with_shadow(
+    enriched_predictions = []
+    for prediction in selected_predictions:
+        enriched = _prediction_with_shadow(
             prediction,
             include_hybrid_engine=include_hybrid_engine,
             shadow_lookup=shadow_lookup,
             shadow_backtesting=shadow_backtesting,
         )
-        for prediction in selected_predictions
-    ]
+        if include_explainability:
+            enriched["explainability"] = build_prediction_explanation(enriched, enriched.get("hybrid_engine"))
+        enriched_predictions.append(enriched)
+    return enriched_predictions
 
 
 
@@ -661,7 +676,9 @@ def prediction_detail(match_id: str):
 
     shadow_lookup, shadow_rows = _shadow_lookup(limit=2000)
     shadow_backtesting = calculate_shadow_backtest_report(_available_matches(), shadow_rows)
-    return _prediction_with_shadow(prediction, shadow_lookup=shadow_lookup, shadow_backtesting=shadow_backtesting)
+    enriched = _prediction_with_shadow(prediction, shadow_lookup=shadow_lookup, shadow_backtesting=shadow_backtesting)
+    enriched["explainability"] = build_prediction_explanation(enriched, enriched.get("hybrid_engine"))
+    return enriched
 
 
 @app.get("/teams")
@@ -814,6 +831,14 @@ def hybrid_summary():
     return _hybrid_summary()
 
 
+@app.get("/explainability/summary")
+def explainability_summary(
+    limit: int = Query(default=200, ge=1, le=1000),
+    view: str = Query(default="upcoming", pattern="^(all|upcoming|history)$"),
+):
+    return _explainability_summary(limit=limit, view=view)
+
+
 @app.get("/models")
 def models():
     metadata = get_model_metadata()
@@ -899,6 +924,7 @@ def model_performance():
         "ml_shadow_backtesting": shadow_backtesting,
         "hybrid_summary": _hybrid_summary(),
         "hybrid_engine_summary": _hybrid_engine_summary(limit=200, view="upcoming"),
+        "explainability_summary": _explainability_summary(limit=200, view="upcoming"),
         "dataset_quality": dataset_quality,
         "candidate_is_production": False,
         "predictions_tracked": len(predictions),

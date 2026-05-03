@@ -1,6 +1,42 @@
 export type ConfidenceStatus = 'FIABLE' | 'MOYEN' | 'A EVITER' | 'À ÉVITER';
 export type Recommendation = 'Exploitable' | 'Prudence' | 'À éviter' | 'À éviter';
 
+export type ExplainabilityFactor = {
+  feature: string;
+  label: string;
+  value: number | string | null;
+  impact: 'positive' | 'negative' | 'neutral' | string;
+  strength: number;
+  message: string;
+};
+
+export type PredictionExplainability = {
+  version: string;
+  summary: string;
+  official_signal: string;
+  confidence_reading: string;
+  top_positive_factors: ExplainabilityFactor[];
+  top_negative_factors: ExplainabilityFactor[];
+  neutral_factors: ExplainabilityFactor[];
+  risk_notes: string[];
+  data_quality_notes: string[];
+  hybrid_notes: string[];
+  plain_language: string;
+  disclaimer: string;
+};
+
+export type ExplainabilitySummary = {
+  version: string;
+  processed_predictions: number;
+  high_confidence_count: number;
+  low_confidence_count: number;
+  high_risk_count: number;
+  trap_risk_count: number;
+  most_common_positive_factors: Record<string, number>;
+  most_common_negative_factors: Record<string, number>;
+  note: string;
+};
+
 export type Prediction = {
   id: string;
   match_id: string;
@@ -54,6 +90,7 @@ export type Prediction = {
   shadow?: { prediction?: MlShadowPrediction | null; comparison?: MlShadowComparison | null };
   hybrid?: HybridDecision;
   hybrid_engine?: HybridEngineDecision;
+  explainability?: PredictionExplainability;
 };
 
 export type MatchView = 'all' | 'upcoming' | 'history';
@@ -443,6 +480,7 @@ export type PerformanceMetrics = {
   ml_shadow_backtesting?: MlShadowBacktesting;
   hybrid_summary?: HybridSummary;
   hybrid_engine_summary?: HybridEngineSummary;
+  explainability_summary?: ExplainabilitySummary;
   dataset_quality?: DatasetQualityReport;
   candidate_is_production?: boolean;
   model_versions?: Record<string, ModelComparisonRow>;
@@ -509,6 +547,9 @@ export type DashboardSummary = {
   hybrid_engine_recommendation?: string;
   hybrid_engine_strong_count?: number;
   hybrid_engine_avoid_count?: number;
+  explainability_version?: string;
+  high_risk_explanations_count?: number;
+  trap_risk_explanations_count?: number;
   dataset_quality_safe_for_training?: boolean;
   dataset_quality_score?: number;
   dataset_quality_recommendation?: string;
@@ -778,6 +819,59 @@ export const matches: Match[] = [
     winner: 'HOME_TEAM',
   },
 ];
+
+export const mockPredictionExplainability: PredictionExplainability = {
+  version: 'explainability-v1',
+  summary: 'Le modèle officiel oriente la lecture vers domicile avec une probabilité principale de 61%.',
+  official_signal: 'Signal officiel: domicile, porté par plusieurs facteurs favorables et quelques points de prudence.',
+  confidence_reading: 'Signal lisible: plusieurs indicateurs convergent, sans certitude de résultat.',
+  top_positive_factors: [
+    {
+      feature: 'elo_delta',
+      label: 'Écart Elo',
+      value: 42,
+      impact: 'positive',
+      strength: 70,
+      message: 'Ce signal penche vers le domicile et soutient le choix domicile.',
+    },
+    {
+      feature: 'data_quality_score',
+      label: 'Qualité des données',
+      value: 82,
+      impact: 'positive',
+      strength: 82,
+      message: 'La qualité des données renforce la lisibilité statistique.',
+    },
+  ],
+  top_negative_factors: [
+    {
+      feature: 'draw_risk_score',
+      label: 'Risque de match nul',
+      value: 58,
+      impact: 'negative',
+      strength: 58,
+      message: 'Le risque de nul reste un point de prudence.',
+    },
+  ],
+  neutral_factors: [],
+  risk_notes: ['Le niveau de risque reste surveillé, mais ne domine pas la lecture.'],
+  data_quality_notes: ['La qualité des données est suffisante pour une lecture probabiliste.'],
+  hybrid_notes: ['Le ML shadow peut compléter la lecture sans remplacer le modèle officiel.'],
+  plain_language: 'Cette explication traduit les signaux statistiques disponibles avant le match. Elle aide à comprendre la prédiction, sans prouver la cause du résultat futur.',
+  disclaimer: 'Modèle probabiliste. Aucune garantie de résultat.',
+};
+
+export const mockExplainabilitySummary: ExplainabilitySummary = {
+  version: 'explainability-v1',
+  processed_predictions: predictions.length,
+  high_confidence_count: predictions.filter((prediction) => prediction.confidence.score >= 75).length,
+  low_confidence_count: predictions.filter((prediction) => prediction.confidence.score < 55).length,
+  high_risk_count: predictions.filter((prediction) => (prediction.risk_score ?? 0) >= 65 || prediction.flags.risk).length,
+  trap_risk_count: predictions.filter((prediction) => prediction.flags.trap_match).length,
+  most_common_positive_factors: { 'Écart Elo': 2, 'Qualité des données': 2 },
+  most_common_negative_factors: { 'Risque de match nul': 2, 'Score de risque': 1 },
+  note: "L'explicabilité décrit les signaux du modèle sans garantir le résultat.",
+};
 
 export const teams: Team[] = [
   {
@@ -1193,6 +1287,7 @@ export const performanceMetrics: PerformanceMetrics = {
   ml_candidate: mockTrainingReport,
   ml_comparison: mockMlComparison,
   ml_shadow_summary: mockMlShadowSummary,
+  explainability_summary: mockExplainabilitySummary,
   candidate_is_production: false,
   dataset_quality: mockFeatureQualityReport,
   model_versions: mockModelComparison.model_versions,
@@ -1255,6 +1350,9 @@ export function buildDashboardSummary(source = 'mock'): DashboardSummary {
     ml_shadow_summary: mockMlShadowSummary,
     shadow_disagreement_count: mockMlShadowSummary.disagreement_count,
     shadow_high_disagreement_count: mockMlShadowSummary.high_disagreement_count,
+    explainability_version: mockExplainabilitySummary.version,
+    high_risk_explanations_count: mockExplainabilitySummary.high_risk_count,
+    trap_risk_explanations_count: mockExplainabilitySummary.trap_risk_count,
     dataset_quality_safe_for_training: mockFeatureQualityReport.safe_for_training,
     dataset_quality_score: mockFeatureQualityReport.average_quality_score,
     dataset_quality_recommendation: mockFeatureQualityReport.recommendation,
@@ -1279,10 +1377,11 @@ export function isAvoidStatus(status: string) {
 }
 
 export function getMockPrediction(id: string) {
-  return (
+  const prediction = (
     predictions.find((prediction) => prediction.id === id || prediction.match_id === id || prediction.slug === id) ??
     predictions[0]
   );
+  return { ...prediction, explainability: prediction.explainability ?? mockPredictionExplainability };
 }
 
 export function getMockMatch(id: string) {
