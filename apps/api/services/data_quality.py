@@ -4,7 +4,6 @@ from typing import Any
 
 
 LEAKAGE_KEYWORDS = [
-    "score",
     "winner",
     "result",
     "full_time",
@@ -13,6 +12,39 @@ LEAKAGE_KEYWORDS = [
     "away_goals",
     "actual",
     "target",
+]
+
+SAFE_FEATURE_NAMES = [
+    "elo_delta",
+    "form_delta",
+    "attack_delta",
+    "defense_delta",
+    "draw_risk_score",
+    "data_quality_score",
+    "risk_score",
+    "trap_match_score",
+    "expected_home",
+    "expected_away",
+    "over_2_5_probability",
+    "btts_probability",
+    "home_probability",
+    "draw_probability",
+    "away_probability",
+]
+
+BLOCKED_FEATURE_NAMES = [
+    "score_full_time_home",
+    "score_full_time_away",
+    "score_half_time_home",
+    "score_half_time_away",
+    "winner",
+    "actual_result",
+    "result",
+    "target_result",
+    "home_goals",
+    "away_goals",
+    "final_score",
+    "full_time_result",
 ]
 
 ALLOWED_TARGET_FIELDS = [
@@ -35,18 +67,16 @@ CORE_FEATURES = [
     "away_probability",
 ]
 
-SAFE_SCORE_FEATURES = {
-    "data_quality_score",
-    "draw_risk_score",
-    "risk_score",
-    "trap_match_score",
-}
-
 
 def is_potential_leakage_feature(feature_name: str) -> bool:
     normalized = str(feature_name or "").lower()
-    if normalized in SAFE_SCORE_FEATURES:
+    if normalized in SAFE_FEATURE_NAMES:
         return False
+    if normalized in BLOCKED_FEATURE_NAMES:
+        return True
+    if "score" in normalized:
+        match_score_context = ("final", "full_time", "half_time", "home", "away", "goals")
+        return any(context in normalized for context in match_score_context)
     return any(keyword in normalized for keyword in LEAKAGE_KEYWORDS)
 
 
@@ -142,6 +172,11 @@ def build_dataset_quality_report(rows: list[dict[str, Any]], limit: int = 1000) 
             "safe_for_training": False,
             "recommendation": "insufficient_data",
             "recommendation_reason": "Aucune ligne de Feature Store disponible pour le controle qualite.",
+            "safe_feature_names": SAFE_FEATURE_NAMES,
+            "blocked_feature_names": BLOCKED_FEATURE_NAMES,
+            "observed_feature_names": [],
+            "leakage_detection_mode": "strict_feature_only",
+            "sample_checked_rows": [],
             "sample_issues": [],
         }
 
@@ -152,6 +187,7 @@ def build_dataset_quality_report(rows: list[dict[str, Any]], limit: int = 1000) 
     average_quality_score = round(sum(item["quality_score"] for item in inspections) / rows_checked)
 
     leakage_features = sorted({name for item in inspections for name in item["leakage_features"]})
+    observed_feature_names = sorted({name for row in checked_rows for name in (row.get("features") or {}).keys()})
     missing_core_features: dict[str, int] = {}
     target_field_coverage: dict[str, int] = {field: 0 for field in ALLOWED_TARGET_FIELDS}
 
@@ -166,6 +202,16 @@ def build_dataset_quality_report(rows: list[dict[str, Any]], limit: int = 1000) 
         for item in inspections
         if item["status"] in {"warning", "blocked"}
     ][:20]
+    sample_checked_rows = [
+        {
+            "match_id": item["match_id"],
+            "feature_names": sorted((checked_rows[index].get("features") or {}).keys()),
+            "target_fields": item["target_fields"],
+            "leakage_features": item["leakage_features"],
+            "status": item["status"],
+        }
+        for index, item in enumerate(inspections[:5])
+    ]
 
     status = "ok"
     recommendation = "safe_to_train"
@@ -198,8 +244,13 @@ def build_dataset_quality_report(rows: list[dict[str, Any]], limit: int = 1000) 
         "leakage_features_detected": leakage_features,
         "missing_core_features": missing_core_features,
         "target_field_coverage": target_field_coverage,
+        "safe_feature_names": SAFE_FEATURE_NAMES,
+        "blocked_feature_names": BLOCKED_FEATURE_NAMES,
+        "observed_feature_names": observed_feature_names,
+        "leakage_detection_mode": "strict_feature_only",
         "safe_for_training": safe_for_training,
         "recommendation": recommendation,
         "recommendation_reason": reason,
+        "sample_checked_rows": sample_checked_rows,
         "sample_issues": sample_issues,
     }

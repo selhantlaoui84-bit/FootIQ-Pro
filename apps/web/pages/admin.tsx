@@ -252,6 +252,11 @@ export default function AdminPage() {
             <div className="metric"><span>Score qualité</span><strong>{featureQuality?.average_quality_score ?? 0}/100</strong></div>
             <div className="metric"><span>Lignes bloquées</span><strong>{featureQuality?.blocked_rows ?? 0}</strong></div>
             <div className="metric"><span>Alertes</span><strong>{featureQuality?.warning_rows ?? 0}</strong></div>
+            <div className="metric"><span>Mode détection</span><strong>{featureQuality?.leakage_detection_mode ?? 'strict_feature_only'}</strong></div>
+            <div className="metric"><span>Features observées</span><strong>{featureQuality?.observed_feature_names?.length ?? 0}</strong></div>
+          </div>
+          <div className="banner info">
+            `risk_score`, `trap_match_score` et `data_quality_score` sont autorisés: ce sont des métriques modèle pré-match, pas des scores finaux.
           </div>
           {(featureQuality?.leakage_features_detected?.length ?? 0) > 0 && (
             <div className="banner error leakageWarning">

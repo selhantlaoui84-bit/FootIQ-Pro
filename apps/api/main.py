@@ -1179,16 +1179,28 @@ def train_candidate_model_endpoint(
         feature_rows = _training_dataset(limit=limit)
 
     dataset_quality = build_dataset_quality_report(feature_rows, limit=limit)
+    rows_loaded = len(feature_rows or [])
+    rows_with_target = dataset_quality.get("rows_with_target", 0)
     if not dataset_quality.get("safe_for_training", False) and not bypass_quality_gate:
         return {
             "status": "blocked",
             "reason": dataset_quality.get("recommendation_reason"),
+            "rows_loaded": rows_loaded,
+            "rows_with_target": rows_with_target,
+            "quality_recommendation": dataset_quality.get("recommendation"),
+            "quality_recommendation_reason": dataset_quality.get("recommendation_reason"),
             "dataset_quality": dataset_quality,
             "note": "Entraînement bloqué pour éviter une fuite de données.",
         }
 
     report = train_candidate_model(feature_rows, model_type=model_type)
+    report["rows_loaded"] = rows_loaded
+    report["rows_with_target"] = rows_with_target
+    report["quality_recommendation"] = dataset_quality.get("recommendation")
+    report["quality_recommendation_reason"] = dataset_quality.get("recommendation_reason")
     report["dataset_quality"] = dataset_quality
+    if report.get("status") == "insufficient_data":
+        report["minimum_required_rows"] = 30
     if bypass_quality_gate and not dataset_quality.get("safe_for_training", False):
         report["warning"] = "Quality gate bypassed by admin request. Dataset quality alerts were ignored."
     return report

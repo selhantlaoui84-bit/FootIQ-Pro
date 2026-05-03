@@ -235,9 +235,20 @@ export type DatasetQualityReport = {
   leakage_features_detected: string[];
   missing_core_features: Record<string, number>;
   target_field_coverage: Record<string, number>;
+  safe_feature_names?: string[];
+  blocked_feature_names?: string[];
+  observed_feature_names?: string[];
+  leakage_detection_mode?: string;
   safe_for_training: boolean;
   recommendation: 'safe_to_train' | 'review_warnings' | 'blocked_leakage_detected' | 'insufficient_data' | string;
   recommendation_reason: string;
+  sample_checked_rows?: Array<{
+    match_id: string;
+    feature_names: string[];
+    target_fields: string[];
+    leakage_features: string[];
+    status: string;
+  }>;
   sample_issues: DatasetQualityRowIssue[];
 };
 
@@ -267,6 +278,11 @@ export type TrainingReport = {
   detail?: string;
   reason?: string;
   warning?: string;
+  rows_loaded?: number;
+  rows_with_target?: number;
+  quality_recommendation?: string;
+  quality_recommendation_reason?: string;
+  minimum_required_rows?: number;
   dataset_quality?: DatasetQualityReport;
 };
 
@@ -909,9 +925,27 @@ export const mockFeatureQualityReport: DatasetQualityReport = {
     over_2_5: 0,
     btts: 0,
   },
+  safe_feature_names: mockFeatureSummary.feature_names,
+  blocked_feature_names: [
+    'score_full_time_home',
+    'score_full_time_away',
+    'score_half_time_home',
+    'score_half_time_away',
+    'winner',
+    'actual_result',
+    'result',
+    'target_result',
+    'home_goals',
+    'away_goals',
+    'final_score',
+    'full_time_result',
+  ],
+  observed_feature_names: [],
+  leakage_detection_mode: 'strict_feature_only',
   safe_for_training: false,
   recommendation: 'insufficient_data',
   recommendation_reason: 'Aucune ligne supervisee disponible pour le controle qualite.',
+  sample_checked_rows: [],
   sample_issues: [],
 };
 

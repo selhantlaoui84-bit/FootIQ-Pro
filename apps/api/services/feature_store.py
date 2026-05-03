@@ -3,24 +3,23 @@
 from services.backtesting import get_match_result
 
 
-LEAKAGE_KEYWORDS = (
-    "score",
-    "winner",
-    "result",
-    "full_time",
-    "half_time",
-    "home_goals",
-    "away_goals",
-    "actual",
-    "target",
-)
-
-SAFE_SCORE_FEATURES = {
-    "data_quality_score",
+FEATURE_SNAPSHOT_COLUMNS = [
+    "elo_delta",
+    "form_delta",
+    "attack_delta",
+    "defense_delta",
     "draw_risk_score",
+    "data_quality_score",
     "risk_score",
     "trap_match_score",
-}
+    "expected_home",
+    "expected_away",
+    "over_2_5_probability",
+    "btts_probability",
+    "home_probability",
+    "draw_probability",
+    "away_probability",
+]
 
 
 def build_target_from_match(match: dict) -> dict | None:
@@ -47,16 +46,7 @@ def _number(value, default=0):
 
 
 def _sanitize_features(features: dict) -> dict:
-    safe = {}
-    for name, value in (features or {}).items():
-        normalized = str(name).lower()
-        if normalized in SAFE_SCORE_FEATURES:
-            safe[name] = value
-            continue
-        if any(keyword in normalized for keyword in LEAKAGE_KEYWORDS):
-            continue
-        safe[name] = value
-    return safe
+    return {name: (features or {}).get(name, 0) for name in FEATURE_SNAPSHOT_COLUMNS}
 
 
 def build_feature_snapshot(match: dict, all_matches: list[dict], prediction: dict) -> dict:

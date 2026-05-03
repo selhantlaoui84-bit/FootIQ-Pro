@@ -298,12 +298,24 @@ export default function PerformancePage({
             <div className="metric"><span>Lignes bloquées</span><strong>{datasetQuality.blocked_rows}</strong></div>
             <div className="metric"><span>Alertes</span><strong>{datasetQuality.warning_rows}</strong></div>
             <div className="metric"><span>Recommandation</span><strong>{datasetQuality.recommendation}</strong></div>
+            <div className="metric"><span>Mode détection</span><strong>{datasetQuality.leakage_detection_mode ?? 'strict_feature_only'}</strong></div>
+            <div className="metric"><span>Features observées</span><strong>{datasetQuality.observed_feature_names?.length ?? 0}</strong></div>
           </div>
           <div className={`banner ${datasetQuality.safe_for_training ? 'success' : 'warning'}`}>
             {datasetQuality.recommendation_reason}
           </div>
+          <div className="banner info">
+            `risk_score`, `trap_match_score` et `data_quality_score` sont des métriques modèle autorisées. Elles ne correspondent pas au score final du match.
+          </div>
           {(datasetQuality.leakage_features_detected?.length ?? 0) > 0 && (
             <div className="banner error leakageWarning">Fuites détectées: {datasetQuality.leakage_features_detected.join(', ')}</div>
+          )}
+          {(datasetQuality.observed_feature_names?.length ?? 0) > 0 && (
+            <div className="tagCloud">
+              {datasetQuality.observed_feature_names?.map((featureName) => (
+                <span className="badge" key={featureName}>{featureName}</span>
+              ))}
+            </div>
           )}
           <div className="metricTable issueTable">
             <div className="metricTableRow header">
