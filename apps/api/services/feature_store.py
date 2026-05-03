@@ -86,7 +86,7 @@ def build_feature_snapshot(match: dict, all_matches: list[dict], prediction: dic
     }
 
 
-def build_feature_snapshots(matches: list[dict], predictions: list[dict]) -> list[dict]:
+def build_feature_snapshots(matches: list[dict], predictions: list[dict], target_matches: list[dict] | None = None) -> list[dict]:
     predictions_by_id = {
         prediction.get("match_id") or prediction.get("id") or prediction.get("slug"): prediction
         for prediction in predictions or []
@@ -94,7 +94,8 @@ def build_feature_snapshots(matches: list[dict], predictions: list[dict]) -> lis
     }
     snapshots = []
 
-    for match in matches or []:
+    selected_matches = target_matches if target_matches is not None else matches
+    for match in selected_matches or []:
         match_id = match.get("match_id") or match.get("id") or match.get("slug")
         prediction = predictions_by_id.get(match_id)
         if prediction is None:

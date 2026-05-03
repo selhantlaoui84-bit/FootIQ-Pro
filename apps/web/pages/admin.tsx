@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
-import { buildFeatureStore, generateShadowPredictions, getAdminWorkflowStatus, getBackendHealth, getFeatureQualityReport, getRefreshJobStatus, getRefreshStatus, refreshData, trainCandidateModel } from '~/lib/api';
+import { buildFeatureStore, generateShadowPredictions, getAdminWorkflowStatus, getBackendHealth, getFeatureQualityReport, getFeatureStoreJobStatus, getRefreshJobStatus, getRefreshStatus, refreshData, trainCandidateModel } from '~/lib/api';
 import { useAuth } from '~/lib/auth';
 import type { AdminWorkflowStatus, BuildFeatureStoreResponse, DatasetQualityReport, GenerateShadowPredictionsResponse, HealthResponse, MatchView, RefreshJobStatus, RefreshResponse, TrainingReport } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
@@ -16,6 +16,8 @@ export default function AdminPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isBuildingFeatures, setIsBuildingFeatures] = useState(false);
   const [featureBuildInfo, setFeatureBuildInfo] = useState<BuildFeatureStoreResponse | null>(null);
+  const [featureStoreJob, setFeatureStoreJob] = useState<RefreshJobStatus | null>(null);
+  const [featureStoreJobId, setFeatureStoreJobId] = useState<string | null>(null);
   const [featureQuality, setFeatureQuality] = useState<DatasetQualityReport | null>(null);
   const [isTraining, setIsTraining] = useState(false);
   const [modelType, setModelType] = useState('random_forest');
@@ -57,7 +59,7 @@ export default function AdminPage() {
       setRefreshJob(job);
 
       if (job.status === 'success' && job.result) {
-        setRefreshInfo(job.result);
+        setRefreshInfo(job.result as RefreshResponse);
         setIsRefreshing(false);
         setRefreshJobId(null);
         getAdminWorkflowStatus().then(setWorkflowStatus).catch(() => undefined);
@@ -79,6 +81,42 @@ export default function AdminPage() {
       window.clearInterval(interval);
     };
   }, [refreshJobId]);
+
+  useEffect(() => {
+    if (!featureStoreJobId) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    async function poll() {
+      const job = await getFeatureStoreJobStatus(featureStoreJobId ?? undefined);
+      if (cancelled) return;
+      setFeatureStoreJob(job);
+
+      if (job.status === 'success' && job.result) {
+        setFeatureBuildInfo(job.result as BuildFeatureStoreResponse);
+        setIsBuildingFeatures(false);
+        setFeatureStoreJobId(null);
+        getAdminWorkflowStatus().then(setWorkflowStatus).catch(() => undefined);
+        getFeatureQualityReport().then(setFeatureQuality).catch(() => undefined);
+      }
+
+      if (job.status === 'error') {
+        setError(job.error ?? 'Construction du Feature Store en erreur.');
+        setIsBuildingFeatures(false);
+        setFeatureStoreJobId(null);
+      }
+    }
+
+    poll();
+    const interval = window.setInterval(poll, 2000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [featureStoreJobId]);
 
   async function handleRefresh() {
     setIsRefreshing(true);
@@ -170,6 +208,7 @@ export default function AdminPage() {
   async function handleBuildFeatureStore() {
     setIsBuildingFeatures(true);
     setError(null);
+    let acceptedJob = false;
 
     try {
       const result = await buildFeatureStore({ limit: 500, force: false });
@@ -177,12 +216,27 @@ export default function AdminPage() {
 
       if (result.status === 'error') {
         setError(result.detail ?? 'Construction du Feature Store impossible.');
+      } else if (result.status === 'accepted' && result.job_id) {
+        acceptedJob = true;
+        setFeatureStoreJobId(result.job_id);
+        setFeatureStoreJob({
+          job_id: result.job_id,
+          status: 'running',
+          started_at: new Date().toISOString(),
+          finished_at: null,
+          duration_ms: null,
+          result: null,
+          error: null,
+        });
+        return;
       }
       getFeatureQualityReport().then(setFeatureQuality).catch(() => undefined);
     } catch {
       setError('Construction du Feature Store indisponible pour le moment.');
     } finally {
-      setIsBuildingFeatures(false);
+      if (!acceptedJob) {
+        setIsBuildingFeatures(false);
+      }
     }
   }
 
@@ -317,12 +371,20 @@ export default function AdminPage() {
           >
             {isBuildingFeatures ? 'Construction...' : 'Construire le Feature Store'}
           </button>
+          {featureStoreJob && (
+            <div className="banner info">
+              Statut job Feature Store: {featureStoreJob.status}
+              {featureStoreJob.duration_ms ? ` · Durée ${featureStoreJob.duration_ms} ms` : ''}
+            </div>
+          )}
           {featureBuildInfo && (
             <div className="dataList">
               <span>Statut <strong>{featureBuildInfo.status}</strong></span>
+              <span>Job <strong>{featureBuildInfo.job_id ?? featureStoreJob?.job_id ?? 'N/A'}</strong></span>
               <span>Stockage <strong>{featureBuildInfo.storage ?? 'mémoire'}</strong></span>
               <span>Snapshots créés <strong>{featureBuildInfo.feature_snapshots_built ?? 0}</strong></span>
               <span>Snapshots sauvegardés <strong>{featureBuildInfo.feature_snapshots_saved ?? 0}</strong></span>
+              <span>Durée <strong>{featureBuildInfo.duration_ms ?? featureStoreJob?.duration_ms ?? 0} ms</strong></span>
               <span>Lignes entraînables <strong>{featureBuildInfo.training_rows_available ?? 0}</strong></span>
               <span>Couverture cible <strong>{featureBuildInfo.target_coverage ?? 0}%</strong></span>
               <span>Feature set <strong>{featureBuildInfo.feature_set_version ?? 'pre-match-advanced-v1'}</strong></span>

@@ -484,6 +484,7 @@ def _admin_workflow_status():
             "warning_rows": dataset_quality.get("warning_rows", 0),
         },
         "latest_refresh_job": runtime_store.get_latest_refresh_job(),
+        "latest_feature_store_job": runtime_store.get_latest_feature_store_job(),
         "next_step": next_step,
     }
 
@@ -1025,82 +1026,106 @@ def refresh_job_status(job_id: str | None = None):
     return runtime_store.get_refresh_job(job_id)
 
 
+def run_build_feature_store_job(job_id: str | None = None, limit: int = 500, force: bool = False) -> dict[str, Any]:
+    started_at = time.perf_counter()
+    if job_id:
+        runtime_store.update_feature_store_job(job_id, status="running")
+    now = datetime.now(timezone.utc).isoformat()
+
+    try:
+        safe_limit = max(1, min(int(limit or 500), 2000))
+        matches = _available_matches()
+        predictions = _available_predictions()
+
+        existing_keys = set()
+        if not force:
+            try:
+                existing_keys = repository.get_feature_snapshot_keys(model_version=MODEL_VERSION)
+            except Exception:
+                existing_keys = set()
+
+        target_matches = []
+        skipped_count = 0
+        for match in matches:
+            match_id = match.get("match_id") or match.get("id") or match.get("slug")
+            key = f"{match_id}:{MODEL_VERSION}"
+            if not force and key in existing_keys:
+                skipped_count += 1
+                continue
+            target_matches.append(match)
+            if len(target_matches) >= safe_limit:
+                break
+
+        selected_items = build_feature_snapshots(matches, predictions, target_matches=target_matches)
+        saved_count = repository.save_feature_snapshots(selected_items)
+        storage = "postgresql" if saved_count > 0 else "memory"
+
+        if storage == "memory" and selected_items:
+            runtime_store.set_feature_snapshots(selected_items)
+
+        training_rows_available = sum(1 for item in selected_items if item.get("target") is not None)
+        target_coverage = round((training_rows_available / len(selected_items)) * 100) if selected_items else 0
+        feature_summary = summarize_feature_store(selected_items)
+        duration_ms = round((time.perf_counter() - started_at) * 1000)
+
+        result = {
+            "status": "ok",
+            "storage": storage,
+            "feature_snapshots_built": len(selected_items),
+            "feature_snapshots_saved": saved_count,
+            "feature_snapshots_skipped": skipped_count,
+            "training_rows_available": training_rows_available,
+            "target_coverage": target_coverage,
+            "feature_set_version": feature_summary.get("feature_set_version") or "pre-match-advanced-v1",
+            "advanced_feature_coverage": feature_summary.get("advanced_feature_coverage"),
+            "model_version": MODEL_VERSION,
+            "duration_ms": duration_ms,
+            "limit": safe_limit,
+            "force": force,
+            "created_at": now,
+            "note": "Feature Store construit sur une liste cible bornee avant calcul des features avancees.",
+        }
+        if job_id:
+            runtime_store.finish_feature_store_job(job_id, result)
+        return result
+    except Exception as exc:
+        if job_id:
+            runtime_store.fail_feature_store_job(job_id, exc)
+        raise
+
+
 @app.post("/admin/build-feature-store")
 def build_feature_store(
+    background_tasks: BackgroundTasks,
     x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
     limit: int = Query(default=500, ge=1, le=2000),
     force: bool = Query(default=False),
 ) -> dict[str, Any]:
     _require_admin_key(x_admin_key)
-
-    now = datetime.now(timezone.utc).isoformat()
-
-    matches = _available_matches()
-    predictions = _available_predictions()
-
-    existing_keys = set()
-    if not force:
-        try:
-            existing_keys = repository.get_feature_snapshot_keys(model_version=MODEL_VERSION)
-        except Exception:
-            existing_keys = set()
-
-    all_feature_items = build_feature_snapshots(matches, predictions)
-
-    selected_items = []
-    skipped_count = 0
-
-    for item in all_feature_items:
-        match_id = item.get("match_id")
-        model_version = item.get("model_version") or MODEL_VERSION
-        key = f"{match_id}:{model_version}"
-
-        if not force and key in existing_keys:
-            skipped_count += 1
-            continue
-
-        selected_items.append(item)
-
-        if len(selected_items) >= limit:
-            break
-
-    saved_count = repository.save_feature_snapshots(selected_items)
-
-    if saved_count > 0:
-        storage = "postgresql"
-    else:
-        storage = "memory"
-
-    if storage == "memory" and selected_items:
-        runtime_store.set_feature_snapshots(selected_items)
-
-    training_rows_available = sum(
-        1 for item in selected_items if item.get("target") is not None
-    )
-
-    target_coverage = (
-        round((training_rows_available / len(selected_items)) * 100)
-        if selected_items
-        else 0
-    )
-    feature_summary = summarize_feature_store(selected_items)
-
+    job_id = str(uuid.uuid4())
+    runtime_store.start_feature_store_job(job_id)
+    background_tasks.add_task(run_build_feature_store_job, job_id, limit, force)
     return {
-        "status": "ok",
-        "storage": storage,
-        "feature_snapshots_built": len(selected_items),
-        "feature_snapshots_saved": saved_count,
-        "feature_snapshots_skipped": skipped_count,
-        "training_rows_available": training_rows_available,
-        "target_coverage": target_coverage,
-        "feature_set_version": feature_summary.get("feature_set_version"),
-        "advanced_feature_coverage": feature_summary.get("advanced_feature_coverage"),
-        "model_version": MODEL_VERSION,
-        "limit": limit,
-        "force": force,
-        "created_at": now,
-        "note": "Use force=true to rebuild existing snapshots.",
+        "status": "accepted",
+        "job_id": job_id,
+        "message": "Construction du Feature Store lancée.",
+        "next_check_endpoint": f"/admin/feature-store-job-status?job_id={job_id}",
     }
+
+
+@app.post("/admin/build-feature-store-sync")
+def build_feature_store_sync(
+    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
+    limit: int = Query(default=500, ge=1, le=2000),
+    force: bool = Query(default=False),
+) -> dict[str, Any]:
+    _require_admin_key(x_admin_key)
+    return run_build_feature_store_job(limit=limit, force=force)
+
+
+@app.get("/admin/feature-store-job-status")
+def feature_store_job_status(job_id: str | None = None):
+    return runtime_store.get_feature_store_job(job_id)
 
 
 @app.post("/admin/generate-shadow-predictions")

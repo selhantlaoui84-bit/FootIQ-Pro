@@ -343,6 +343,26 @@ export async function getRefreshJobStatus(jobId?: string): Promise<RefreshJobSta
   }
 }
 
+export async function getFeatureStoreJobStatus(jobId?: string): Promise<RefreshJobStatus> {
+  const query = jobId ? `?job_id=${encodeURIComponent(jobId)}` : '';
+  try {
+    const response = await fetch(`/api/admin/feature-store-job-status${query}`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+    const contentType = response.headers.get('content-type') ?? '';
+    const body = contentType.includes('application/json') ? await response.json() : null;
+
+    if (!response.ok) {
+      return { ...mockRefreshJobStatus, status: 'error', error: body?.detail ?? `Feature Store job status failed with status ${response.status}` };
+    }
+
+    return (body as RefreshJobStatus) ?? mockRefreshJobStatus;
+  } catch (error) {
+    return { ...mockRefreshJobStatus, status: 'error', error: error instanceof Error ? error.message : 'Feature Store job status failed' };
+  }
+}
+
 export async function refreshData(): Promise<RefreshResponse | null> {
   try {
     const response = await fetch('/api/admin/refresh-data', {

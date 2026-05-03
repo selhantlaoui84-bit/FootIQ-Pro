@@ -188,7 +188,7 @@ export type RefreshJobStatus = {
   started_at: string | null;
   finished_at: string | null;
   duration_ms: number | null;
-  result: RefreshResponse | null;
+  result: Record<string, unknown> | null;
   error: string | null;
 };
 
@@ -299,6 +299,9 @@ export type TrainingReport = {
 
 export type BuildFeatureStoreResponse = {
   status: string;
+  job_id?: string;
+  message?: string;
+  next_check_endpoint?: string;
   storage?: string;
   feature_snapshots_built?: number;
   feature_snapshots_saved?: number;
@@ -308,6 +311,7 @@ export type BuildFeatureStoreResponse = {
   feature_set_version?: string | null;
   advanced_feature_coverage?: AdvancedFeatureCoverage;
   model_version?: string;
+  duration_ms?: number;
   created_at?: string;
   note?: string;
   detail?: string;
@@ -618,6 +622,7 @@ export type AdminWorkflowStatus = {
     warning_rows: number;
   };
   latest_refresh_job?: RefreshJobStatus;
+  latest_feature_store_job?: RefreshJobStatus;
   next_step: 'refresh_data' | 'build_feature_store' | 'train_candidate_model' | 'generate_shadow_predictions' | 'review_shadow_backtesting' | 'ready_for_hybrid_review' | string;
 };
 
@@ -1448,6 +1453,7 @@ export const mockAdminWorkflowStatus: AdminWorkflowStatus = {
     warning_rows: mockFeatureQualityReport.warning_rows,
   },
   latest_refresh_job: mockRefreshJobStatus,
+  latest_feature_store_job: mockRefreshJobStatus,
   next_step: 'refresh_data',
 };
 
