@@ -1,11 +1,8 @@
 ﻿import os
-import time
-import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
-
-from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Query, Request, Response
+from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from data import repository
@@ -14,11 +11,7 @@ from data.database import init_db
 from data.mock_data import MATCHES, PERFORMANCE, TEAMS, get_match as get_mock_match
 from data.mock_data import get_prediction as get_mock_prediction
 from data.mock_data import get_team as get_mock_team
-from services.data_quality import build_dataset_quality_report
 from services.feature_store import build_feature_snapshots, summarize_feature_store
-from services.hybrid_decision import build_hybrid_decision
-from services.hybrid_engine import build_hybrid_engine_decision
-from services.explainability import build_explainability_summary, build_prediction_explanation
 from services.football_data_client import (
     get_champions_league_matches,
     get_champions_league_teams,
@@ -26,19 +19,12 @@ from services.football_data_client import (
     get_ligue1_teams,
 )
 from services.backtesting import calculate_backtest_report, calculate_snapshot_backtest, get_match_result
+from services.shadow_backtesting import calculate_shadow_backtest_report
 from services.elo_model import calculate_team_elos
-from services.ml_training import (
-    FEATURE_COLUMNS,
-    MODEL_VERSION as ML_CANDIDATE_VERSION,
-    candidate_model_exists,
-    load_latest_candidate_metadata,
-    train_candidate_model,
-)
-from services.ml_shadow import compare_shadow_to_production, generate_shadow_prediction
 from services.model_registry import get_model_metadata
+from services.model_monitoring import build_monitoring_report
 from services.prediction_engine import generate_prediction_from_match
 from services.prediction_engine import MODEL_VERSION
-from services.shadow_backtesting import calculate_shadow_backtest_report
 
 
 @asynccontextmanager
@@ -125,136 +111,6 @@ def _prediction_for_match(match: dict, all_matches: list[dict] | None = None, el
     return generate_prediction_from_match(match, all_matches or _available_matches(), elo_ratings)
 
 
-def _is_finished(match: dict) -> bool:
-    return str(match.get("status", "")).upper() == "FINISHED"
-
-
-def _kickoff_ts(match: dict) -> float:
-    value = match.get("kickoff") or ""
-    try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp()
-    except Exception:
-        return 0
-
-
-def _filter_matches(matches: list[dict], status: str | None = None, q: str | None = None, include_finished: bool = True, view: str = "all"):
-    result = list(matches or [])
-    normalized_view = (view or "all").lower()
-    if normalized_view == "upcoming":
-        result = [match for match in result if not _is_finished(match)]
-        result.sort(key=_kickoff_ts)
-    elif normalized_view == "history":
-        result = [match for match in result if _is_finished(match)]
-        result.sort(key=_kickoff_ts, reverse=True)
-    else:
-        if not include_finished:
-            result = [match for match in result if not _is_finished(match)]
-        result.sort(key=lambda match: (_is_finished(match), _kickoff_ts(match)))
-
-    if status:
-        wanted = status.upper()
-        if wanted == "UPCOMING":
-            result = [match for match in result if not _is_finished(match)]
-        elif wanted == "FINISHED":
-            result = [match for match in result if _is_finished(match)]
-        else:
-            result = [match for match in result if str(match.get("status", "")).upper() == wanted]
-
-    if q:
-        needle = q.strip().lower()
-        result = [
-            match
-            for match in result
-            if needle in " ".join(
-                str(match.get(key, ""))
-                for key in ("home_team", "away_team", "competition", "slug", "match_id", "id")
-            ).lower()
-        ]
-    return result
-
-
-def _shadow_memory_rows():
-    return runtime_store.get_ml_shadow_predictions()
-
-
-def _shadow_summary():
-    stored = repository.get_ml_shadow_summary()
-    if stored.get("shadow_predictions_count"):
-        return stored
-    rows = _shadow_memory_rows()
-    available = [row for row in rows if (row.get("shadow_prediction") or {}).get("available")]
-    same = [row for row in rows if (row.get("comparison") or {}).get("same_pick") is True]
-    disagreements = [row for row in rows if (row.get("comparison") or {}).get("same_pick") is False]
-    high = [row for row in rows if (row.get("comparison") or {}).get("disagreement_level") == "high"]
-    return {
-        "shadow_predictions_count": len(rows),
-        "available_count": len(available),
-        "unavailable_count": len(rows) - len(available),
-        "same_pick_count": len(same),
-        "disagreement_count": len(disagreements),
-        "high_disagreement_count": len(high),
-        "candidate_model_version": ML_CANDIDATE_VERSION if rows else None,
-    }
-
-
-def _find_shadow(match_id: str):
-    stored = repository.get_ml_shadow_prediction(match_id)
-    if stored:
-        return stored
-    return next((row for row in _shadow_memory_rows() if row.get("match_id") == match_id), None)
-
-
-def _shadow_lookup(limit: int = 2000):
-    rows = repository.get_ml_shadow_predictions(limit=limit) or _shadow_memory_rows()
-    lookup = {}
-    for row in rows:
-        match_id = row.get("match_id")
-        if match_id and match_id not in lookup:
-            lookup[match_id] = row
-    return lookup, rows
-
-
-def _prediction_with_shadow(
-    prediction: dict,
-    include_hybrid_engine: bool = True,
-    shadow_lookup: dict | None = None,
-    shadow_backtesting: dict | None = None,
-):
-    match_id = prediction.get("match_id") or prediction.get("id") or prediction.get("slug")
-    shadow = (shadow_lookup or {}).get(match_id) if shadow_lookup is not None else _find_shadow(match_id)
-    enriched = dict(prediction)
-    if shadow:
-        enriched["shadow"] = {
-            "prediction": shadow.get("shadow_prediction"),
-            "comparison": shadow.get("comparison"),
-        }
-    enriched["hybrid"] = build_hybrid_decision(enriched, enriched.get("shadow"))
-    if include_hybrid_engine:
-        enriched["hybrid_engine"] = build_hybrid_engine_decision(
-            enriched,
-            enriched.get("shadow"),
-            shadow_backtesting or _shadow_backtesting_report(),
-        )
-    return enriched
-
-
-def _prediction_time(prediction: dict) -> float:
-    return _kickoff_ts(prediction)
-
-
-def _filter_predictions_for_view(predictions: list[dict], view: str = "upcoming"):
-    normalized_view = (view or "upcoming").lower()
-    result = list(predictions or [])
-    if normalized_view == "history":
-        result = [item for item in result if _is_finished(item)]
-        result.sort(key=_prediction_time, reverse=True)
-    elif normalized_view == "all":
-        result.sort(key=lambda item: (_is_finished(item), _prediction_time(item)))
-    else:
-        result = [item for item in result if not _is_finished(item)]
-        result.sort(key=_prediction_time)
-    return result
-
 
 
 def _available_feature_snapshots():
@@ -280,13 +136,13 @@ def _training_dataset(model_version: str | None = None, limit: int = 100):
         snapshots = [item for item in snapshots if item.get("model_version") == model_version]
     return [item for item in snapshots if item.get("target")][:limit]
 
-
-def _dataset_quality_report(limit: int = 1000):
-    safe_limit = max(1, min(int(limit or 1000), 5000))
-    rows = repository.get_training_dataset(limit=safe_limit)
-    if not rows:
-        rows = _available_feature_snapshots()[:safe_limit]
-    return build_dataset_quality_report(rows, limit=safe_limit)
+def _model_monitoring_report(periods: list[str] | None = None, shadow_limit: int = 2000):
+    return build_monitoring_report(
+        _available_matches(),
+        _available_predictions(),
+        repository.get_ml_shadow_predictions(limit=shadow_limit),
+        periods=periods or ["7d", "30d", "90d", "all"],
+    )
 
 
 def _feature_csv(rows: list[dict]) -> str:
@@ -337,165 +193,6 @@ def _refresh_status():
     return runtime_store.get_refresh_status()
 
 
-def _shadow_backtesting_report(limit: int = 2000):
-    return calculate_shadow_backtest_report(
-        _available_matches(),
-        repository.get_ml_shadow_predictions(limit=limit) or _shadow_memory_rows(),
-    )
-
-
-def _hybrid_summary():
-    shadow_backtesting = _shadow_backtesting_report()
-    recommendation = "insufficient_data"
-    reason = "Donn?es shadow insuffisantes pour recommander un usage hybride."
-    activation_recommendation = shadow_backtesting.get("activation_recommendation")
-
-    if shadow_backtesting.get("evaluated_matches", 0) <= 0:
-        recommendation = "insufficient_data"
-        reason = "Aucun backtesting shadow exploitable pour le moment."
-    elif activation_recommendation in {"consider_hybrid", "candidate_ready_for_limited_rollout"}:
-        recommendation = "use_hybrid_advisory"
-        reason = "Le candidat ML peut ?tre utilis? comme signal consultatif, sans remplacer Elo/Poisson."
-    else:
-        recommendation = "keep_official"
-        reason = "Le mod?le officiel Elo/Poisson reste prioritaire; le ML reste en observation."
-
-    return {
-        "mode": "official_with_shadow_advisory",
-        "candidate_is_production": False,
-        "production_model_version": MODEL_VERSION,
-        "shadow_summary": _shadow_summary(),
-        "shadow_backtesting": shadow_backtesting,
-        "recommendation": recommendation,
-        "reason": reason,
-    }
-
-
-def _hybrid_engine_summary(limit: int = 200, view: str = "upcoming"):
-    started_at = time.perf_counter()
-    safe_limit = max(1, min(int(limit or 200), 1000))
-    selected_predictions = _filter_predictions_for_view(_available_predictions(), view=view)[:safe_limit]
-    shadow_lookup, shadow_rows = _shadow_lookup(limit=2000)
-    shadow_backtesting = calculate_shadow_backtest_report(_available_matches(), shadow_rows)
-    summary = {"strong_count": 0, "medium_count": 0, "weak_count": 0, "avoid_count": 0, "unknown_count": 0}
-
-    for prediction in selected_predictions:
-        enriched = _prediction_with_shadow(
-            prediction,
-            include_hybrid_engine=False,
-            shadow_lookup=shadow_lookup,
-            shadow_backtesting=shadow_backtesting,
-        )
-        decision = build_hybrid_engine_decision(enriched, enriched.get("shadow"), shadow_backtesting)
-        level = decision.get("decision_level", "unknown")
-        key = f"{level}_count" if level in {"strong", "medium", "weak", "avoid", "unknown"} else "unknown_count"
-        summary[key] = summary.get(key, 0) + 1
-
-    shadow_count = len(shadow_rows)
-    recommendation = "hybrid_advisory_active" if shadow_count > 0 else "insufficient_shadow_data"
-    reason = "Le moteur hybride v1 est actif comme couche consultative." if shadow_count > 0 else "Aucune donn?e shadow suffisante pour alimenter le moteur hybride."
-    duration_ms = round((time.perf_counter() - started_at) * 1000)
-
-    return {
-        "engine_version": "hybrid-engine-v1",
-        "mode": "official_with_hybrid_advisory",
-        "candidate_is_production": False,
-        "official_prediction_stays_primary": True,
-        "production_model_version": MODEL_VERSION,
-        "limit": safe_limit,
-        "view": view,
-        "processed_predictions": len(selected_predictions),
-        "duration_ms": duration_ms,
-        "shadow_evaluated_matches": shadow_backtesting.get("evaluated_matches", 0),
-        "shadow_accuracy": shadow_backtesting.get("shadow_accuracy", 0),
-        "shadow_activation_recommendation": shadow_backtesting.get("activation_recommendation", "do_not_activate"),
-        "summary": summary,
-        "recommendation": recommendation,
-        "reason": reason,
-    }
-
-
-def _explainability_summary(limit: int = 200, view: str = "upcoming"):
-    safe_limit = max(1, min(int(limit or 200), 1000))
-    selected_predictions = _filter_predictions_for_view(_available_predictions(), view=view)[:safe_limit]
-    return build_explainability_summary(selected_predictions, limit=safe_limit)
-
-
-def _admin_workflow_status():
-    refresh = _refresh_status()
-    feature = _feature_summary()
-    candidate = load_latest_candidate_metadata()
-    shadow = _shadow_summary()
-    shadow_backtesting = _shadow_backtesting_report()
-    hybrid = _hybrid_summary()
-    dataset_quality = _dataset_quality_report(limit=1000)
-
-    if not refresh.get("last_refresh_at"):
-        next_step = "refresh_data"
-    elif feature.get("snapshots_count", 0) <= 0:
-        next_step = "build_feature_store"
-    elif not dataset_quality.get("safe_for_training", False):
-        next_step = "review_dataset_quality"
-    elif candidate.get("status", "not_trained") in {"not_trained", "insufficient_data", "error"}:
-        next_step = "train_candidate_model"
-    elif shadow.get("shadow_predictions_count", 0) <= 0:
-        next_step = "generate_shadow_predictions"
-    elif shadow_backtesting.get("evaluated_matches", 0) <= 0:
-        next_step = "review_shadow_backtesting"
-    else:
-        next_step = "ready_for_hybrid_review"
-
-    return {
-        "refresh": {
-            "last_refresh_at": refresh.get("last_refresh_at"),
-            "storage": refresh.get("storage", "memory"),
-            "matches_imported": refresh.get("matches_imported", 0),
-            "predictions_imported": refresh.get("predictions_imported", 0),
-        },
-        "feature_store": {
-            "ready": feature.get("snapshots_count", 0) > 0,
-            "snapshots_count": feature.get("snapshots_count", 0),
-            "training_rows_available": feature.get("with_target_count", 0),
-            "target_coverage": feature.get("target_coverage", 0),
-        },
-        "feature_engineering": {
-            "feature_set_version": feature.get("feature_set_version") or dataset_quality.get("feature_set_version"),
-            "advanced_feature_coverage": (feature.get("advanced_feature_coverage") or dataset_quality.get("advanced_feature_coverage") or {}).get("coverage_percent", 0),
-        },
-        "candidate_model": {
-            "trained": candidate.get("status") == "ok",
-            "status": candidate.get("status", "not_trained"),
-            "model_version": candidate.get("model_version"),
-            "accuracy": candidate.get("accuracy"),
-        },
-        "shadow_predictions": {
-            "generated": shadow.get("shadow_predictions_count", 0) > 0,
-            "count": shadow.get("shadow_predictions_count", 0),
-            "disagreement_count": shadow.get("disagreement_count", 0),
-        },
-        "shadow_backtesting": {
-            "ready": shadow_backtesting.get("evaluated_matches", 0) > 0,
-            "evaluated_matches": shadow_backtesting.get("evaluated_matches", 0),
-            "shadow_accuracy": shadow_backtesting.get("shadow_accuracy", 0),
-            "activation_recommendation": shadow_backtesting.get("activation_recommendation", "do_not_activate"),
-        },
-        "hybrid": {
-            "mode": hybrid.get("mode"),
-            "recommendation": hybrid.get("recommendation"),
-        },
-        "dataset_quality": {
-            "safe_for_training": dataset_quality.get("safe_for_training", False),
-            "recommendation": dataset_quality.get("recommendation", "insufficient_data"),
-            "average_quality_score": dataset_quality.get("average_quality_score", 0),
-            "blocked_rows": dataset_quality.get("blocked_rows", 0),
-            "warning_rows": dataset_quality.get("warning_rows", 0),
-        },
-        "latest_refresh_job": runtime_store.get_latest_refresh_job(),
-        "latest_feature_store_job": runtime_store.get_latest_feature_store_job(),
-        "next_step": next_step,
-    }
-
-
 def _dashboard_summary():
     matches = _available_matches()
     teams = _available_teams()
@@ -506,8 +203,6 @@ def _dashboard_summary():
     medium = [item for item in predictions if item["confidence"]["status"] == "MOYEN"]
     avoid = [item for item in predictions if item["confidence"]["status"] in {"Ã€ Ã‰VITER", "A EVITER"}]
     traps = [item for item in predictions if item["flags"]["trap_match"]]
-    finished_matches_count = len([item for item in matches if _is_finished(item)])
-    upcoming_matches_count = len(matches) - finished_matches_count
     average_risk_score = 0
     if predictions:
         average_risk_score = round(sum(item.get("risk_score", 0) for item in predictions) / len(predictions))
@@ -524,19 +219,16 @@ def _dashboard_summary():
 
     comparison = calculate_snapshot_backtest(matches, repository.get_prediction_snapshots())
     feature_summary = _feature_summary()
-    shadow_backtesting = _shadow_backtesting_report()
-    hybrid_summary = _hybrid_summary()
-    hybrid_engine = _hybrid_engine_summary(limit=100, view="upcoming")
-    explainability = _explainability_summary(limit=100, view="upcoming")
-    candidate_metadata = load_latest_candidate_metadata()
-    dataset_quality = _dataset_quality_report(limit=1000)
+    shadow_backtesting = calculate_shadow_backtest_report(
+        matches,
+        repository.get_ml_shadow_predictions(limit=2000),
+    )
 
     return {
         "total_matches": total_matches,
         "teams_count": len(teams),
         "predictions_count": len(predictions),
-        "upcoming_matches_count": upcoming_matches_count,
-        "historical_matches_count": finished_matches_count,
+        "upcoming_matches_count": total_matches,
         "reliable_matches_count": len(reliable),
         "medium_matches_count": len(medium),
         "avoid_matches_count": len(avoid),
@@ -550,31 +242,7 @@ def _dashboard_summary():
         "feature_snapshots_count": feature_summary["snapshots_count"],
         "training_rows_available": feature_summary["with_target_count"],
         "target_coverage": feature_summary["target_coverage"],
-        "feature_set_version": feature_summary.get("feature_set_version") or dataset_quality.get("feature_set_version"),
-        "advanced_feature_coverage": feature_summary.get("advanced_feature_coverage") or dataset_quality.get("advanced_feature_coverage"),
         "feature_store_ready": feature_summary["snapshots_count"] > 0,
-        "ml_candidate_status": candidate_metadata.get("status", "not_trained"),
-        "ml_candidate_accuracy": candidate_metadata.get("accuracy"),
-        "ml_candidate_model_version": candidate_metadata.get("model_version", "ml-candidate-v1"),
-        "ml_shadow_summary": _shadow_summary(),
-        "shadow_disagreement_count": _shadow_summary().get("disagreement_count", 0),
-        "shadow_high_disagreement_count": _shadow_summary().get("high_disagreement_count", 0),
-        "shadow_evaluated_matches": shadow_backtesting.get("evaluated_matches", 0),
-        "shadow_accuracy": shadow_backtesting.get("shadow_accuracy", 0),
-        "shadow_activation_recommendation": shadow_backtesting.get("activation_recommendation", "do_not_activate"),
-        "hybrid_recommendation": hybrid_summary.get("recommendation"),
-        "hybrid_mode": hybrid_summary.get("mode"),
-        "hybrid_candidate_is_production": hybrid_summary.get("candidate_is_production", False),
-        "hybrid_engine_version": hybrid_engine.get("engine_version"),
-        "hybrid_engine_recommendation": hybrid_engine.get("recommendation"),
-        "hybrid_engine_strong_count": hybrid_engine.get("summary", {}).get("strong_count", 0),
-        "hybrid_engine_avoid_count": hybrid_engine.get("summary", {}).get("avoid_count", 0),
-        "explainability_version": explainability.get("version"),
-        "high_risk_explanations_count": explainability.get("high_risk_count", 0),
-        "trap_risk_explanations_count": explainability.get("trap_risk_count", 0),
-        "dataset_quality_safe_for_training": dataset_quality.get("safe_for_training", False),
-        "dataset_quality_score": dataset_quality.get("average_quality_score", 0),
-        "dataset_quality_recommendation": dataset_quality.get("recommendation", "insufficient_data"),
         "evaluated_matches": backtest["evaluated_matches"],
         "result_accuracy": backtest["result_accuracy"],
         "average_brier_score": backtest["average_brier_score"],
@@ -592,6 +260,9 @@ def _dashboard_summary():
         "last_refresh_at": status.get("last_refresh_at"),
         "source": status.get("source", "mock"),
         "storage": status.get("storage", "memory"),
+        "shadow_evaluated_matches": shadow_backtesting.get("evaluated_matches", 0),
+        "shadow_accuracy": shadow_backtesting.get("shadow_accuracy", 0),
+        "shadow_activation_recommendation": shadow_backtesting.get("activation_recommendation", "do_not_activate"),
     }
 
 
@@ -615,13 +286,8 @@ def health():
 
 
 @app.get("/matches")
-def list_matches(
-    status: str | None = None,
-    q: str | None = None,
-    include_finished: bool = True,
-    view: str = Query(default="all", pattern="^(all|upcoming|history)$"),
-):
-    return _filter_matches(_available_matches(), status=status, q=q, include_finished=include_finished, view=view)
+def list_matches():
+    return _available_matches()
 
 
 @app.get("/matches/{match_id}")
@@ -634,32 +300,8 @@ def match_detail(match_id: str):
 
 
 @app.get("/predictions")
-def list_predictions(
-    include_hybrid: bool = False,
-    include_hybrid_engine: bool = False,
-    include_explainability: bool = False,
-    limit: int = Query(default=100, ge=1, le=500),
-    view: str = Query(default="upcoming", pattern="^(all|upcoming|history)$"),
-):
-    predictions = _available_predictions()
-    if not include_hybrid and not include_hybrid_engine and not include_explainability:
-        return predictions
-
-    selected_predictions = _filter_predictions_for_view(predictions, view=view)[:limit]
-    shadow_lookup, shadow_rows = _shadow_lookup(limit=2000)
-    shadow_backtesting = calculate_shadow_backtest_report(_available_matches(), shadow_rows) if include_hybrid_engine else None
-    enriched_predictions = []
-    for prediction in selected_predictions:
-        enriched = _prediction_with_shadow(
-            prediction,
-            include_hybrid_engine=include_hybrid_engine,
-            shadow_lookup=shadow_lookup,
-            shadow_backtesting=shadow_backtesting,
-        )
-        if include_explainability:
-            enriched["explainability"] = build_prediction_explanation(enriched, enriched.get("hybrid_engine"))
-        enriched_predictions.append(enriched)
-    return enriched_predictions
+def list_predictions():
+    return _available_predictions()
 
 
 
@@ -674,11 +316,7 @@ def prediction_detail(match_id: str):
     if prediction is None:
         raise HTTPException(status_code=404, detail="Prediction not found")
 
-    shadow_lookup, shadow_rows = _shadow_lookup(limit=2000)
-    shadow_backtesting = calculate_shadow_backtest_report(_available_matches(), shadow_rows)
-    enriched = _prediction_with_shadow(prediction, shadow_lookup=shadow_lookup, shadow_backtesting=shadow_backtesting)
-    enriched["explainability"] = build_prediction_explanation(enriched, enriched.get("hybrid_engine"))
-    return enriched
+    return prediction
 
 
 @app.get("/teams")
@@ -715,128 +353,6 @@ def feature_export(model_version: str | None = None):
             rows = [item for item in rows if item.get("model_version") == model_version]
         rows = rows[:5000]
     return Response(content=_feature_csv(rows), media_type="text/csv")
-
-
-@app.get("/features/quality-report")
-def feature_quality_report(limit: int = Query(default=1000, ge=1, le=5000)):
-    return _dataset_quality_report(limit=limit)
-
-
-@app.get("/ml/status")
-def ml_status():
-    metadata = load_latest_candidate_metadata()
-    return {
-        "status": metadata.get("status", "not_trained"),
-        "latest_candidate": metadata,
-        "feature_store": _feature_summary(),
-        "dataset_quality": _dataset_quality_report(limit=1000),
-        "candidate_model_exists": candidate_model_exists(),
-        "production_model_version": MODEL_VERSION,
-        "candidate_is_production": False,
-    }
-
-
-def _ml_comparison():
-    production_report = calculate_backtest_report(_available_matches(), _available_predictions())
-    candidate = load_latest_candidate_metadata()
-    candidate_status = candidate.get("status", "not_trained")
-    candidate_accuracy = candidate.get("accuracy")
-    candidate_brier = candidate.get("brier_score_1x2")
-    production_accuracy = production_report.get("result_accuracy")
-    production_brier = production_report.get("average_brier_score")
-
-    winner_by_accuracy = None
-    if candidate_status == "ok" and candidate_accuracy is not None and production_accuracy is not None:
-        if candidate_accuracy > production_accuracy:
-            winner_by_accuracy = "candidate"
-        elif production_accuracy > candidate_accuracy:
-            winner_by_accuracy = "production"
-
-    winner_by_brier = None
-    if candidate_status == "ok" and candidate_brier is not None and production_brier is not None:
-        if candidate_brier < production_brier:
-            winner_by_brier = "candidate"
-        elif production_brier < candidate_brier:
-            winner_by_brier = "production"
-
-    return {
-        "production_model_version": MODEL_VERSION,
-        "candidate_model_version": ML_CANDIDATE_VERSION,
-        "candidate_is_production": False,
-        "production": {
-            "evaluated_matches": production_report.get("evaluated_matches", 0),
-            "result_accuracy": production_accuracy or 0,
-            "average_brier_score": production_brier or 0,
-            "calibration_score": production_report.get("calibration_score", 0),
-        },
-        "candidate": {
-            "status": candidate_status,
-            "rows_used": candidate.get("rows_used", 0),
-            "accuracy": candidate_accuracy,
-            "log_loss": candidate.get("log_loss"),
-            "brier_score_1x2": candidate_brier,
-            "trained_at": candidate.get("trained_at"),
-        },
-        "winner_by_accuracy": winner_by_accuracy,
-        "winner_by_brier": winner_by_brier,
-        "note": "Le modèle ML candidat est évalué mais n'est pas encore utilisé en production.",
-    }
-
-
-@app.get("/ml/feature-importance")
-def ml_feature_importance():
-    metadata = load_latest_candidate_metadata()
-    return metadata.get("feature_importance") or []
-
-
-@app.get("/ml/shadow-summary")
-def ml_shadow_summary():
-    return {
-        **_shadow_summary(),
-        "candidate_is_production": False,
-        "production_model_version": MODEL_VERSION,
-    }
-
-
-@app.get("/ml/shadow-predictions")
-def ml_shadow_predictions(limit: int = Query(default=100, ge=1, le=500), view: str = Query(default="all", pattern="^(all|upcoming|history)$")):
-    rows = repository.get_ml_shadow_predictions(limit=limit) or _shadow_memory_rows()
-    match_ids = {
-        match.get("match_id") or match.get("id") or match.get("slug")
-        for match in _filter_matches(_available_matches(), view=view)
-    }
-    if view != "all":
-        rows = [row for row in rows if row.get("match_id") in match_ids]
-    return rows[:limit]
-
-
-@app.get("/ml/shadow-backtesting")
-def ml_shadow_backtesting(limit: int = Query(default=500, ge=1, le=2000)):
-    shadow_records = repository.get_ml_shadow_predictions(limit=limit) or _shadow_memory_rows()
-    return calculate_shadow_backtest_report(_available_matches(), shadow_records)
-
-
-@app.get("/ml/comparison")
-def ml_comparison():
-    return _ml_comparison()
-
-
-@app.get("/hybrid/engine-summary")
-def hybrid_engine_summary(limit: int = Query(default=200, ge=1, le=1000), view: str = Query(default="upcoming", pattern="^(all|upcoming|history)$")):
-    return _hybrid_engine_summary(limit=limit, view=view)
-
-
-@app.get("/hybrid/summary")
-def hybrid_summary():
-    return _hybrid_summary()
-
-
-@app.get("/explainability/summary")
-def explainability_summary(
-    limit: int = Query(default=200, ge=1, le=1000),
-    view: str = Query(default="upcoming", pattern="^(all|upcoming|history)$"),
-):
-    return _explainability_summary(limit=limit, view=view)
 
 
 @app.get("/models")
@@ -880,6 +396,18 @@ def debug_finished_matches():
 def backtesting_report():
     return calculate_backtest_report(_available_matches(), _available_predictions())
 
+@app.get("/ml/shadow-backtesting")
+def ml_shadow_backtesting(limit: int = Query(default=500, ge=1, le=2000)):
+    shadow_records = repository.get_ml_shadow_predictions(limit=limit)
+    return calculate_shadow_backtest_report(_available_matches(), shadow_records)
+
+@app.get("/monitoring/model")
+def model_monitoring(
+    periods: str = Query(default="7d,30d,90d,all"),
+    shadow_limit: int = Query(default=2000, ge=1, le=5000),
+):
+    parsed_periods = [item.strip() for item in periods.split(",") if item.strip()]
+    return _model_monitoring_report(parsed_periods, shadow_limit)
 
 @app.get("/performance")
 def model_performance():
@@ -898,8 +426,11 @@ def model_performance():
     comparison = calculate_snapshot_backtest(_available_matches(), repository.get_prediction_snapshots())
     snapshots_count = sum(item.get("snapshots", 0) for item in comparison["model_versions"].values())
     feature_summary = _feature_summary()
-    shadow_backtesting = _shadow_backtesting_report()
-    dataset_quality = _dataset_quality_report(limit=1000)
+    shadow_backtesting = calculate_shadow_backtest_report(
+        _available_matches(),
+        repository.get_ml_shadow_predictions(limit=2000),
+    )
+    monitoring_report = _model_monitoring_report(["7d", "30d", "90d", "all"], 2000)  
 
     return {
         **PERFORMANCE,
@@ -914,19 +445,7 @@ def model_performance():
         "feature_snapshots_count": feature_summary["snapshots_count"],
         "training_rows_available": feature_summary["with_target_count"],
         "target_coverage": feature_summary["target_coverage"],
-        "feature_set_version": feature_summary.get("feature_set_version") or dataset_quality.get("feature_set_version"),
-        "advanced_feature_coverage": feature_summary.get("advanced_feature_coverage") or dataset_quality.get("advanced_feature_coverage"),
-        "feature_columns_count": len(FEATURE_COLUMNS),
         "feature_store_ready": feature_summary["snapshots_count"] > 0,
-        "ml_candidate": load_latest_candidate_metadata(),
-        "ml_comparison": _ml_comparison(),
-        "ml_shadow_summary": _shadow_summary(),
-        "ml_shadow_backtesting": shadow_backtesting,
-        "hybrid_summary": _hybrid_summary(),
-        "hybrid_engine_summary": _hybrid_engine_summary(limit=200, view="upcoming"),
-        "explainability_summary": _explainability_summary(limit=200, view="upcoming"),
-        "dataset_quality": dataset_quality,
-        "candidate_is_production": False,
         "predictions_tracked": len(predictions),
         "tracked": len(predictions) or PERFORMANCE["tracked"],
         "averageConfidence": str(average_confidence or PERFORMANCE["averageConfidence"]),
@@ -937,12 +456,28 @@ def model_performance():
         "avoid_count": len(avoid),
         "trap_match_count": len(traps),
         "latest_refresh": _refresh_status(),
+        "ml_shadow_backtesting": shadow_backtesting,
+        "model_monitoring": monitoring_report,
     }
 
 
 @app.get("/dashboard/summary")
 def dashboard_summary():
-    return _dashboard_summary()
+    summary = _dashboard_summary()
+
+    monitoring_report = _model_monitoring_report(["30d"], 2000)
+    monitoring_30d = monitoring_report.get("periods", {}).get("30d", {})
+    monitoring_official_30d = monitoring_30d.get("official", {})
+    monitoring_trend = monitoring_report.get("trend_summary", {})
+
+    return {
+        **summary,
+        "monitoring_status": monitoring_trend.get("monitoring_status", "unknown"),
+        "monitoring_accuracy_30d": monitoring_official_30d.get("result_accuracy", 0),
+        "monitoring_brier_30d": monitoring_official_30d.get("average_brier_score"),
+        "monitoring_shadow_edge": monitoring_trend.get("shadow_edge", "unknown"),
+        "monitoring_alerts_count": len(monitoring_report.get("alerts", [])),
+    }
 
 
 @app.get("/admin/refresh-status")
@@ -950,321 +485,126 @@ def refresh_status():
     return {"status": "ok", **_refresh_status()}
 
 
-@app.get("/admin/workflow-status")
-def admin_workflow_status():
-    return _admin_workflow_status()
-
-
-def run_refresh_data_job(job_id: str | None = None) -> dict:
-    started_at = time.perf_counter()
-    if job_id:
-        runtime_store.update_refresh_job(job_id, status="running")
-
-    try:
-        source = "mock"
-        matches = MATCHES
-        teams = TEAMS
-
-        if os.getenv("FOOTBALL_DATA_API_KEY"):
-            external_matches = get_ligue1_matches() + get_champions_league_matches()
-            external_teams = get_ligue1_teams() + get_champions_league_teams()
-
-            if external_matches or external_teams:
-                source = "football-data.org"
-                matches = external_matches or MATCHES
-                teams = external_teams or TEAMS
-
-        elo_ratings = calculate_team_elos(matches)
-        predictions = [_prediction_for_match(match, matches, elo_ratings) for match in matches]
-        storage = "memory"
-        snapshots_saved = 0
-        warning = None
-
-        data_saved = repository.save_matches(matches) and repository.save_teams(teams) and repository.save_predictions(predictions)
-        if data_saved:
-            storage = "postgresql"
-            repository.save_refresh_log(source, storage, len(matches), len(teams))
-            try:
-                snapshots_saved = repository.save_prediction_snapshots(predictions)
-            except Exception:
-                snapshots_saved = 0
-                warning = "Les donn?es et pr?dictions ont ?t? actualis?es, mais la sauvegarde des snapshots a ?chou?."
-
-        runtime_store.set_matches(matches)
-        runtime_store.set_teams(teams)
-        runtime_store.set_predictions(predictions)
-        runtime_store.set_source(source)
-        runtime_store.set_storage(storage)
-        status = runtime_store.get_refresh_status()
-        duration_ms = round((time.perf_counter() - started_at) * 1000)
-
-        result = {
-            "status": "ok",
-            "source": source,
-            "storage": storage,
-            "matches_imported": status["matches_imported"],
-            "teams_imported": status["teams_imported"],
-            "predictions_imported": status["predictions_imported"],
-            "snapshots_saved": snapshots_saved,
-            "refresh_duration_ms": duration_ms,
-            "next_recommended_actions": [
-                "build_feature_store",
-                "train_candidate_model",
-                "generate_shadow_predictions",
-            ],
-            "last_refresh_at": status["last_refresh_at"],
-            "warning": warning,
-        }
-        if job_id:
-            runtime_store.finish_refresh_job(job_id, result)
-        return result
-    except Exception as exc:
-        if job_id:
-            runtime_store.fail_refresh_job(job_id, str(exc))
-        raise
-
-
 @app.post("/admin/refresh-data")
-def refresh_data(
-    background_tasks: BackgroundTasks,
-    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
-):
+def refresh_data(x_admin_key: str | None = Header(default=None, alias="X-Admin-Key")):
     _require_admin_key(x_admin_key)
-    job_id = str(uuid.uuid4())
-    runtime_store.start_refresh_job(job_id)
-    background_tasks.add_task(run_refresh_data_job, job_id)
+
+    source = "mock"
+    matches = MATCHES
+    teams = TEAMS
+
+    if os.getenv("FOOTBALL_DATA_API_KEY"):
+        external_matches = get_ligue1_matches() + get_champions_league_matches()
+        external_teams = get_ligue1_teams() + get_champions_league_teams()
+
+        if external_matches or external_teams:
+            source = "football-data.org"
+            matches = external_matches or MATCHES
+            teams = external_teams or TEAMS
+
+    elo_ratings = calculate_team_elos(matches)
+    predictions = [_prediction_for_match(match, matches, elo_ratings) for match in matches]
+    feature_snapshots = []
+    storage = "memory"
+
+    snapshots_saved = 0
+    feature_snapshots_saved = 0
+    if repository.save_matches(matches) and repository.save_teams(teams) and repository.save_predictions(predictions):
+        storage = "postgresql"
+        repository.save_refresh_log(source, storage, len(matches), len(teams))
+        snapshots_saved = repository.save_prediction_snapshots(predictions)
+        #feature_snapshots_saved = repository.save_feature_snapshots(feature_snapshots)
+
+    #runtime_store.set_feature_snapshots(feature_snapshots)
+    runtime_store.set_matches(matches)
+    runtime_store.set_teams(teams)
+    runtime_store.set_predictions(predictions)
+    runtime_store.set_source(source)
+    runtime_store.set_storage(storage)
+    status = runtime_store.get_refresh_status()
+
     return {
-        "status": "accepted",
-        "job_id": job_id,
-        "message": "Actualisation lanc?e. Consultez le statut du job.",
-        "next_check_endpoint": f"/admin/refresh-job-status?job_id={job_id}",
+        "status": "ok",
+        "source": source,
+        "storage": storage,
+        "matches_imported": status["matches_imported"],
+        "teams_imported": status["teams_imported"],
+        "predictions_imported": status["predictions_imported"],
+        "snapshots_saved": snapshots_saved,
+        "feature_snapshots_saved": feature_snapshots_saved,
+        "training_rows_available": sum(1 for item in feature_snapshots if item.get("target")),
+        "last_refresh_at": status["last_refresh_at"],
     }
-
-
-@app.post("/admin/refresh-data-sync")
-def refresh_data_sync(x_admin_key: str | None = Header(default=None, alias="X-Admin-Key")):
-    _require_admin_key(x_admin_key)
-    return run_refresh_data_job()
-
-
-@app.get("/admin/refresh-job-status")
-def refresh_job_status(job_id: str | None = None):
-    return runtime_store.get_refresh_job(job_id)
-
-
-def run_build_feature_store_job(job_id: str | None = None, limit: int = 500, force: bool = False) -> dict[str, Any]:
-    started_at = time.perf_counter()
-    if job_id:
-        runtime_store.update_feature_store_job(job_id, status="running")
-    now = datetime.now(timezone.utc).isoformat()
-
-    try:
-        safe_limit = max(1, min(int(limit or 500), 2000))
-        matches = _available_matches()
-        predictions = _available_predictions()
-
-        existing_keys = set()
-        if not force:
-            try:
-                existing_keys = repository.get_feature_snapshot_keys(model_version=MODEL_VERSION)
-            except Exception:
-                existing_keys = set()
-
-        target_matches = []
-        skipped_count = 0
-        for match in matches:
-            match_id = match.get("match_id") or match.get("id") or match.get("slug")
-            key = f"{match_id}:{MODEL_VERSION}"
-            if not force and key in existing_keys:
-                skipped_count += 1
-                continue
-            target_matches.append(match)
-            if len(target_matches) >= safe_limit:
-                break
-
-        selected_items = build_feature_snapshots(matches, predictions, target_matches=target_matches)
-        saved_count = repository.save_feature_snapshots(selected_items)
-        storage = "postgresql" if saved_count > 0 else "memory"
-
-        if storage == "memory" and selected_items:
-            runtime_store.set_feature_snapshots(selected_items)
-
-        training_rows_available = sum(1 for item in selected_items if item.get("target") is not None)
-        target_coverage = round((training_rows_available / len(selected_items)) * 100) if selected_items else 0
-        feature_summary = summarize_feature_store(selected_items)
-        duration_ms = round((time.perf_counter() - started_at) * 1000)
-
-        result = {
-            "status": "ok",
-            "storage": storage,
-            "feature_snapshots_built": len(selected_items),
-            "feature_snapshots_saved": saved_count,
-            "feature_snapshots_skipped": skipped_count,
-            "training_rows_available": training_rows_available,
-            "target_coverage": target_coverage,
-            "feature_set_version": feature_summary.get("feature_set_version") or "pre-match-advanced-v1",
-            "advanced_feature_coverage": feature_summary.get("advanced_feature_coverage"),
-            "model_version": MODEL_VERSION,
-            "duration_ms": duration_ms,
-            "limit": safe_limit,
-            "force": force,
-            "created_at": now,
-            "note": "Feature Store construit sur une liste cible bornee avant calcul des features avancees.",
-        }
-        if job_id:
-            runtime_store.finish_feature_store_job(job_id, result)
-        return result
-    except Exception as exc:
-        if job_id:
-            runtime_store.fail_feature_store_job(job_id, exc)
-        raise
-
-
 @app.post("/admin/build-feature-store")
 def build_feature_store(
-    background_tasks: BackgroundTasks,
     x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
     limit: int = Query(default=500, ge=1, le=2000),
     force: bool = Query(default=False),
-) -> dict[str, Any]:
-    _require_admin_key(x_admin_key)
-    job_id = str(uuid.uuid4())
-    runtime_store.start_feature_store_job(job_id)
-    background_tasks.add_task(run_build_feature_store_job, job_id, limit, force)
-    return {
-        "status": "accepted",
-        "job_id": job_id,
-        "message": "Construction du Feature Store lancée.",
-        "next_check_endpoint": f"/admin/feature-store-job-status?job_id={job_id}",
-    }
-
-
-@app.post("/admin/build-feature-store-sync")
-def build_feature_store_sync(
-    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
-    limit: int = Query(default=500, ge=1, le=2000),
-    force: bool = Query(default=False),
-) -> dict[str, Any]:
-    _require_admin_key(x_admin_key)
-    return run_build_feature_store_job(limit=limit, force=force)
-
-
-@app.get("/admin/feature-store-job-status")
-def feature_store_job_status(job_id: str | None = None):
-    return runtime_store.get_feature_store_job(job_id)
-
-
-@app.post("/admin/generate-shadow-predictions")
-def generate_shadow_predictions_endpoint(
-    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
-    limit: int = Query(default=500, ge=1, le=2000),
-    force: bool = Query(default=False),
-    view: str = Query(default="upcoming", pattern="^(all|upcoming|history)$"),
 ) -> dict[str, Any]:
     _require_admin_key(x_admin_key)
 
     now = datetime.now(timezone.utc).isoformat()
-    all_matches = _available_matches()
-    target_matches = _filter_matches(all_matches, view=view)
+
+    matches = _available_matches()
     predictions = _available_predictions()
-    predictions_by_id = {
-        item.get("match_id") or item.get("id") or item.get("slug"): item
-        for item in predictions
-    }
 
-    existing_ids = set()
+    existing_keys = set()
     if not force:
-        existing_rows = repository.get_ml_shadow_predictions(limit=2000) or _shadow_memory_rows()
-        existing_ids = {row.get("match_id") for row in existing_rows if row.get("match_id")}
+        try:
+            existing_keys = repository.get_feature_snapshot_keys(model_version=MODEL_VERSION)
+        except Exception:
+            existing_keys = set()
 
-    items = []
-    elo_ratings = calculate_team_elos(all_matches)
+    all_feature_items = build_feature_snapshots(matches, predictions)
 
-    for match in target_matches:
-        match_id = match.get("match_id") or match.get("id") or match.get("slug")
-        if not match_id or (not force and match_id in existing_ids):
+    selected_items = []
+    skipped_count = 0
+
+    for item in all_feature_items:
+        match_id = item.get("match_id")
+        model_version = item.get("model_version") or MODEL_VERSION
+        key = f"{match_id}:{model_version}"
+
+        if not force and key in existing_keys:
+            skipped_count += 1
             continue
 
-        production_prediction = predictions_by_id.get(match_id) or _prediction_for_match(match, all_matches, elo_ratings)
-        shadow_prediction = generate_shadow_prediction(match, production_prediction)
-        comparison = compare_shadow_to_production(production_prediction, shadow_prediction)
-        items.append(
-            {
-                "match_id": match_id,
-                "production_prediction": production_prediction,
-                "shadow_prediction": shadow_prediction,
-                "comparison": comparison,
-                "created_at": now,
-            }
-        )
+        selected_items.append(item)
 
-        if len(items) >= limit:
+        if len(selected_items) >= limit:
             break
 
-    saved_count = repository.save_ml_shadow_predictions(items)
-    storage = "postgresql" if saved_count > 0 else "memory"
-    if storage == "memory" and items:
-        previous_rows = [] if force else _shadow_memory_rows()
-        runtime_store.set_ml_shadow_predictions(items + previous_rows)
+    saved_count = repository.save_feature_snapshots(selected_items)
 
-    available_count = sum(1 for item in items if item["shadow_prediction"].get("available"))
-    same_pick_count = sum(1 for item in items if item["comparison"].get("same_pick") is True)
-    disagreement_count = sum(1 for item in items if item["comparison"].get("same_pick") is False)
-    high_disagreement_count = sum(1 for item in items if item["comparison"].get("disagreement_level") == "high")
+    if saved_count > 0:
+        storage = "postgresql"
+    else:
+        storage = "memory"
+
+    if storage == "memory" and selected_items:
+        runtime_store.set_feature_snapshots(selected_items)
+
+    training_rows_available = sum(
+        1 for item in selected_items if item.get("target") is not None
+    )
+
+    target_coverage = (
+        round((training_rows_available / len(selected_items)) * 100)
+        if selected_items
+        else 0
+    )
 
     return {
         "status": "ok",
         "storage": storage,
-        "view": view,
-        "shadow_predictions_generated": len(items),
-        "shadow_predictions_saved": saved_count if storage == "postgresql" else len(items),
-        "available_count": available_count,
-        "unavailable_count": len(items) - available_count,
-        "same_pick_count": same_pick_count,
-        "disagreement_count": disagreement_count,
-        "high_disagreement_count": high_disagreement_count,
-        "candidate_is_production": False,
+        "feature_snapshots_built": len(selected_items),
+        "feature_snapshots_saved": saved_count,
+        "feature_snapshots_skipped": skipped_count,
+        "training_rows_available": training_rows_available,
+        "target_coverage": target_coverage,
+        "model_version": MODEL_VERSION,
+        "limit": limit,
+        "force": force,
         "created_at": now,
-        "note": "Les pr?dictions ML shadow sont calcul?es en parall?le et ne remplacent pas le mod?le officiel.",
+        "note": "Use force=true to rebuild existing snapshots.",
     }
-
-
-@app.post("/admin/train-candidate-model")
-def train_candidate_model_endpoint(
-    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
-    model_type: str = Query(default="random_forest"),
-    limit: int = Query(default=5000, ge=1, le=10000),
-    bypass_quality_gate: bool = Query(default=False),
-) -> dict[str, Any]:
-    _require_admin_key(x_admin_key)
-
-    feature_rows = repository.get_training_dataset(limit=limit)
-    if not feature_rows:
-        feature_rows = _training_dataset(limit=limit)
-
-    dataset_quality = build_dataset_quality_report(feature_rows, limit=limit)
-    rows_loaded = len(feature_rows or [])
-    rows_with_target = dataset_quality.get("rows_with_target", 0)
-    if not dataset_quality.get("safe_for_training", False) and not bypass_quality_gate:
-        return {
-            "status": "blocked",
-            "reason": dataset_quality.get("recommendation_reason"),
-            "rows_loaded": rows_loaded,
-            "rows_with_target": rows_with_target,
-            "quality_recommendation": dataset_quality.get("recommendation"),
-            "quality_recommendation_reason": dataset_quality.get("recommendation_reason"),
-            "dataset_quality": dataset_quality,
-            "note": "Entraînement bloqué pour éviter une fuite de données.",
-        }
-
-    report = train_candidate_model(feature_rows, model_type=model_type)
-    report["rows_loaded"] = rows_loaded
-    report["rows_with_target"] = rows_with_target
-    report["quality_recommendation"] = dataset_quality.get("recommendation")
-    report["quality_recommendation_reason"] = dataset_quality.get("recommendation_reason")
-    report["dataset_quality"] = dataset_quality
-    if report.get("status") == "insufficient_data":
-        report["minimum_required_rows"] = 30
-    if bypass_quality_gate and not dataset_quality.get("safe_for_training", False):
-        report["warning"] = "Quality gate bypassed by admin request. Dataset quality alerts were ignored."
-    return report
