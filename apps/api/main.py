@@ -14,6 +14,7 @@ from data.mock_data import MATCHES, PERFORMANCE, TEAMS, get_match as get_mock_ma
 from data.mock_data import get_prediction as get_mock_prediction
 from data.mock_data import get_team as get_mock_team
 from services.feature_store import build_feature_snapshots, summarize_feature_store
+from services.data_quality import build_dataset_quality_report
 from services.football_data_client import (
     get_champions_league_matches,
     get_champions_league_teams,
@@ -355,6 +356,17 @@ def feature_export(model_version: str | None = None):
             rows = [item for item in rows if item.get("model_version") == model_version]
         rows = rows[:5000]
     return Response(content=_feature_csv(rows), media_type="text/csv")
+
+
+@app.get("/features/quality-report")
+def feature_quality_report(limit: int = Query(default=1000, ge=1, le=5000)):
+    rows = repository.get_training_dataset(limit=limit)
+
+    if not rows:
+        snapshots = _available_feature_snapshots()
+        rows = [item for item in snapshots if item.get("target")][:limit]
+
+    return build_dataset_quality_report(rows, limit=limit)
 
 
 @app.get("/models")
