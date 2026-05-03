@@ -1,45 +1,31 @@
 ﻿import type { NextApiRequest, NextApiResponse } from 'next';
 
-const DEFAULT_API_URL = 'https://footiq-pro-production.up.railway.app';
-
-function getApiUrl() {
-  return (process.env.NEXT_PUBLIC_API_URL || DEFAULT_API_URL).replace(/\/$/, '');
-}
-
-async function parseJsonSafely(response: Response) {
-  const contentType = response.headers.get('content-type') ?? '';
-  const text = await response.text();
-
-  if (!contentType.includes('application/json')) {
-    return { status: 'error', detail: text || 'Non JSON response from backend' };
-  }
-
-  try {
-    return JSON.parse(text);
-  } catch {
-    return { status: 'error', detail: 'Invalid JSON response from backend' };
-  }
-}
+const API_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ?? 'https://footiq-pro-production.up.railway.app';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'GET') {
-    res.setHeader('Allow', 'GET');
-    return res.status(405).json({ status: 'error', detail: 'Method not allowed' });
+    return res.status(405).json({ detail: 'Method not allowed' });
   }
 
-  const rawJobId = Array.isArray(req.query.job_id) ? req.query.job_id[0] : req.query.job_id;
-  const query = rawJobId ? `?job_id=${encodeURIComponent(rawJobId)}` : '';
+  const jobId = typeof req.query.job_id === 'string' ? req.query.job_id : '';
+  const url = jobId
+    ? `${API_URL}/admin/refresh-job-status?job_id=${encodeURIComponent(jobId)}`
+    : `${API_URL}/admin/refresh-job-status`;
 
   try {
-    const backendResponse = await fetch(`${getApiUrl()}/admin/refresh-job-status${query}`, {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-    });
-    const body = await parseJsonSafely(backendResponse);
-    return res.status(backendResponse.status).json(body);
+    const response = await fetch(url);
+    const text = await response.text();
+
+    let data: unknown;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { detail: text || response.statusText };
+    }
+
+    return res.status(response.status).json(data);
   } catch (error) {
-    return res.status(502).json({
-      status: 'error',
+    return res.status(500).json({
       detail: error instanceof Error ? error.message : 'Refresh job status proxy failed',
     });
   }

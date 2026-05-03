@@ -1,57 +1,38 @@
 ﻿import type { NextApiRequest, NextApiResponse } from 'next';
 
-const DEFAULT_API_URL = 'https://footiq-pro-production.up.railway.app';
-
-function getApiUrl() {
-  return (process.env.NEXT_PUBLIC_API_URL || DEFAULT_API_URL).replace(/\/$/, '');
-}
-
-async function parseJsonSafely(response: Response) {
-  const contentType = response.headers.get('content-type') ?? '';
-  const text = await response.text();
-
-  if (!contentType.includes('application/json')) {
-    return { status: 'error', detail: text || 'Non JSON response from backend' };
-  }
-
-  try {
-    return JSON.parse(text);
-  } catch {
-    return { status: 'error', detail: 'Invalid JSON response from backend' };
-  }
-}
+const API_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ?? 'https://footiq-pro-production.up.railway.app';
+const ADMIN_API_KEY = process.env.ADMIN_API_KEY;
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
-    res.setHeader('Allow', 'POST');
-    return res.status(405).json({ status: 'error', detail: 'Method not allowed' });
+    return res.status(405).json({ detail: 'Method not allowed' });
   }
 
-  const adminKey = process.env.ADMIN_API_KEY || process.env.NEXT_PUBLIC_ADMIN_API_KEY;
-
-  if (!adminKey) {
-    return res.status(500).json({
-      status: 'error',
-      detail: 'ADMIN_API_KEY is not configured on the web server',
-    });
+  if (!ADMIN_API_KEY) {
+    return res.status(500).json({ detail: 'ADMIN_API_KEY is missing on Vercel server environment.' });
   }
 
   try {
-    const backendResponse = await fetch(`${getApiUrl()}/admin/refresh-data`, {
+    const response = await fetch(`${API_URL}/admin/refresh-data`, {
       method: 'POST',
       headers: {
-        Accept: 'application/json',
-        'X-Admin-Key': adminKey,
+        'X-Admin-Key': ADMIN_API_KEY,
       },
     });
 
-    const body = await parseJsonSafely(backendResponse);
+    const text = await response.text();
 
-    return res.status(backendResponse.status).json(body);
+    let data: unknown;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { detail: text || response.statusText };
+    }
+
+    return res.status(response.status).json(data);
   } catch (error) {
-    return res.status(502).json({
-      status: 'error',
-      detail: error instanceof Error ? error.message : 'Refresh proxy failed',
+    return res.status(500).json({
+      detail: error instanceof Error ? error.message : 'Admin refresh proxy failed',
     });
   }
 }

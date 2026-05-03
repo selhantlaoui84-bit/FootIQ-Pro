@@ -1,62 +1,49 @@
-import type { NextApiRequest, NextApiResponse } from "next";
+import type { NextApiRequest, NextApiResponse } from 'next';
 
-const API_URL =
-  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ||
-  "https://footiq-pro-production.up.railway.app";
+const API_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ?? 'https://footiq-pro-production.up.railway.app';
+const ADMIN_API_KEY = process.env.ADMIN_API_KEY;
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== "POST") {
-    return res.status(405).json({
-      status: "error",
-      detail: "Method not allowed",
-    });
+  if (req.method !== 'POST') {
+    return res.status(405).json({ detail: 'Method not allowed' });
   }
 
-  const adminKey = process.env.ADMIN_API_KEY || process.env.NEXT_PUBLIC_ADMIN_API_KEY;
-
-  if (!adminKey) {
-    return res.status(500).json({
-      status: "error",
-      detail: "ADMIN_API_KEY is not configured on the web server",
-    });
+  if (!ADMIN_API_KEY) {
+    return res.status(500).json({ detail: 'ADMIN_API_KEY is missing on Vercel server environment.' });
   }
 
-  const rawModelType = Array.isArray(req.query.model_type) ? req.query.model_type[0] : req.query.model_type;
-  const rawLimit = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
-  const rawBypass = Array.isArray(req.query.bypass_quality_gate) ? req.query.bypass_quality_gate[0] : req.query.bypass_quality_gate;
-  const modelType = rawModelType ?? "random_forest";
-  const limit = rawLimit ?? "5000";
-  const bypass = rawBypass ?? "false";
+  const modelType = typeof req.query.model_type === 'string' ? req.query.model_type : 'random_forest';
+  const limit = typeof req.query.limit === 'string' ? req.query.limit : '5000';
+  const bypassQualityGate =
+    typeof req.query.bypass_quality_gate === 'string' ? req.query.bypass_quality_gate : 'false';
+
+  const url =
+    `${API_URL}/admin/train-candidate-model` +
+    `?model_type=${encodeURIComponent(modelType)}` +
+    `&limit=${encodeURIComponent(limit)}` +
+    `&bypass_quality_gate=${encodeURIComponent(bypassQualityGate)}`;
 
   try {
-    const response = await fetch(
-      `${API_URL}/admin/train-candidate-model?model_type=${encodeURIComponent(modelType)}&limit=${encodeURIComponent(limit)}&bypass_quality_gate=${encodeURIComponent(bypass)}`,
-      {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-          "X-Admin-Key": adminKey,
-        },
-      }
-    );
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'X-Admin-Key': ADMIN_API_KEY,
+      },
+    });
 
     const text = await response.text();
-    let body: unknown;
 
+    let data: unknown;
     try {
-      body = JSON.parse(text);
+      data = JSON.parse(text);
     } catch {
-      body = {
-        status: "error",
-        detail: text || "Non JSON response from backend",
-      };
+      data = { detail: text || response.statusText };
     }
 
-    return res.status(response.status).json(body);
+    return res.status(response.status).json(data);
   } catch (error) {
     return res.status(500).json({
-      status: "error",
-      detail: error instanceof Error ? error.message : "Candidate training proxy failed",
+      detail: error instanceof Error ? error.message : 'Candidate training proxy failed',
     });
   }
 }

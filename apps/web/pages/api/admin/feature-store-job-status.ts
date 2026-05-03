@@ -1,42 +1,32 @@
-import type { NextApiRequest, NextApiResponse } from "next";
+import type { NextApiRequest, NextApiResponse } from 'next';
 
-const API_URL =
-  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ||
-  "https://footiq-pro-production.up.railway.app";
+const API_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ?? 'https://footiq-pro-production.up.railway.app';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== "GET") {
-    return res.status(405).json({
-      status: "error",
-      detail: "Method not allowed",
-    });
+  if (req.method !== 'GET') {
+    return res.status(405).json({ detail: 'Method not allowed' });
   }
 
-  const rawJobId = Array.isArray(req.query.job_id) ? req.query.job_id[0] : req.query.job_id;
-  const query = rawJobId ? `?job_id=${encodeURIComponent(rawJobId)}` : "";
+  const jobId = typeof req.query.job_id === 'string' ? req.query.job_id : '';
+  const url = jobId
+    ? `${API_URL}/admin/feature-store-job-status?job_id=${encodeURIComponent(jobId)}`
+    : `${API_URL}/admin/feature-store-job-status`;
 
   try {
-    const response = await fetch(`${API_URL}/admin/feature-store-job-status${query}`, {
-      method: "GET",
-      headers: { Accept: "application/json" },
-    });
+    const response = await fetch(url);
     const text = await response.text();
-    let body: unknown;
 
+    let data: unknown;
     try {
-      body = JSON.parse(text);
+      data = JSON.parse(text);
     } catch {
-      body = {
-        status: "error",
-        detail: text || "Non JSON response from backend",
-      };
+      data = { detail: text || response.statusText };
     }
 
-    return res.status(response.status).json(body);
+    return res.status(response.status).json(data);
   } catch (error) {
     return res.status(500).json({
-      status: "error",
-      detail: error instanceof Error ? error.message : "Feature Store job status proxy failed",
+      detail: error instanceof Error ? error.message : 'Feature Store job status proxy failed',
     });
   }
 }
