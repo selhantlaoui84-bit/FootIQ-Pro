@@ -1,0 +1,41 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: footiq_pro
+      POSTGRES_USER: footiq_pro
+      POSTGRES_PASSWORD: footiq_pro
+    ports:
+      - "5432:5432"
+    volumes:
+      - footiq_postgres_data:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      ENV: development
+      DATABASE_URL: postgresql://footiq_pro:footiq_pro@db:5432/footiq_pro
+      FOOTIQ_COMPETITIONS: FL1,CL,PL,PD,SA,BL1
+      CORS_ORIGINS: http://localhost:3000
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+
+  web:
+    working_dir: /app/apps/web
+    image: node:20-alpine
+    command: sh -c "npm install && npm run dev -- --hostname 0.0.0.0"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8080
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+    depends_on:
+      - api
+
+volumes:
+  footiq_postgres_data:
