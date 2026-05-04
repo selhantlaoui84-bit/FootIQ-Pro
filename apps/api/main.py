@@ -1,4 +1,4 @@
-﻿import os
+import os
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from data import repository
 from data import runtime_store
-from data.database import init_db
+from data.database import get_database_url, init_db
 from data.mock_data import MATCHES, PERFORMANCE, TEAMS, get_match as get_mock_match
 from data.mock_data import get_prediction as get_mock_prediction
 from data.mock_data import get_team as get_mock_team
@@ -35,15 +35,29 @@ from services.prediction_engine import MODEL_VERSION
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    env = os.getenv("ENV", "development").lower()
+    if env == "production" and not get_database_url():
+        raise RuntimeError("DATABASE_URL is required in production")
     init_db()
     yield
 
 
 app = FastAPI(title="FootIQ Pro API", version="0.5.0", lifespan=lifespan)
 
+env = os.getenv("ENV", "development").lower()
+if env == "production":
+    cors_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
+else:
+    cors_origins = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=cors_origins,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -382,7 +396,7 @@ def _dashboard_summary():
     total_matches = len(matches)
     reliable = [item for item in predictions if item["confidence"]["status"] == "FIABLE"]
     medium = [item for item in predictions if item["confidence"]["status"] == "MOYEN"]
-    avoid = [item for item in predictions if item["confidence"]["status"] in {"Ã€ Ã‰VITER", "A EVITER"}]
+    avoid = [item for item in predictions if item["confidence"]["status"] in {"À ÉVITER", "A EVITER"}]
     traps = [item for item in predictions if item["flags"]["trap_match"]]
     average_risk_score = 0
     if predictions:
@@ -653,7 +667,7 @@ def model_performance():
         average_risk_score = round(sum(item.get("risk_score", 0) for item in predictions) / len(predictions))
     reliable = [item for item in predictions if item["confidence"]["status"] == "FIABLE"]
     medium = [item for item in predictions if item["confidence"]["status"] == "MOYEN"]
-    avoid = [item for item in predictions if item["confidence"]["status"] in {"Ã€ Ã‰VITER", "A EVITER"}]
+    avoid = [item for item in predictions if item["confidence"]["status"] in {"À ÉVITER", "A EVITER"}]
     traps = [item for item in predictions if item["flags"]["trap_match"]]
 
     comparison = calculate_snapshot_backtest(_available_matches(), repository.get_prediction_snapshots())

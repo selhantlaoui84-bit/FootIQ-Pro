@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: footiq-pro-api
+    env: python
+    buildCommand: cd apps/api && pip install -r requirements.txt
+    startCommand: cd apps/api && python -m uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: FOOTBALL_DATA_API_KEY
+        sync: false
+      - key: FOOTIQ_COMPETITIONS
+        value: FL1,CL,PL,PD,SA,BL1
+      - key: ADMIN_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false

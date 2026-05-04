@@ -94,29 +94,29 @@ def _recommendation(confidence_score: int, risk_score: int) -> str:
 def _main_prediction(home_team: str, away_team: str, probabilities: dict) -> str:
     winner = max(probabilities, key=probabilities.get)
     if winner == "home":
-        return f"{home_team} pr?sente l'avantage probabiliste principal"
+        return f"{home_team} présente l'avantage probabiliste principal"
     if winner == "away":
-        return f"{away_team} pr?sente l'avantage probabiliste principal"
-    return "Le nul ressort comme un sc?nario significatif"
+        return f"{away_team} présente l'avantage probabiliste principal"
+    return "Le nul ressort comme un scénario significatif"
 
 
 def _explanation(features: dict, elo_features: dict, probabilities: dict, goals: dict) -> list[str]:
     items = []
     if abs(elo_features["elo_delta"]) >= 80:
-        leader = "domicile" if elo_features["elo_delta"] > 0 else "ext?rieur"
+        leader = "domicile" if elo_features["elo_delta"] > 0 else "extérieur"
         items.append(f"L'?cart Elo donne un avantage mesur? au camp {leader}.")
     else:
         items.append("Les ratings Elo restent proches, ce qui limite la certitude du signal.")
 
     if abs(features["form_delta"]) >= 0.15:
-        side = "domicile" if features["form_delta"] > 0 else "ext?rieur"
-        items.append(f"La dynamique r?cente penche l?g?rement c?t? {side}.")
+        side = "domicile" if features["form_delta"] > 0 else "extérieur"
+        items.append(f"La dynamique récente penche légèrement côté {side}.")
     else:
-        items.append("La forme r?cente ne cr?e pas de rupture nette entre les ?quipes.")
+        items.append("La forme récente ne crée pas de rupture nette entre les équipes.")
 
     items.append(f"Le mod?le Poisson projette un score le plus probable de {goals['most_likely_score']}.")
     if probabilities["draw"] >= 30:
-        items.append("La probabilit? de nul reste ?lev?e, ce qui r?duit la lisibilit?.")
+        items.append("La probabilité de nul reste élevée, ce qui réduit la lisibilité.")
     return items[:4]
 
 
@@ -186,7 +186,7 @@ def generate_prediction_from_match(match: dict, all_matches: list[dict] | None =
         "main_prediction": _main_prediction(home_team, away_team, probabilities),
         "explanation": _explanation(features, elo_features, probabilities, goals),
         "risks": _risks(features, probabilities, risk_score),
-        "disclaimer": "Mod?le probabilistique. Aucune garantie de r?sultat.",
+        "disclaimer": "Modèle probabilistique. Aucune garantie de résultat.",
     }
 
 
