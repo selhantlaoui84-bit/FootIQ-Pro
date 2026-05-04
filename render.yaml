@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: footiq-pro-api
+    env: python
+    rootDir: apps/api
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m uvicorn main:app --host 0.0.0.0 --port $PORT --log-level warning
+    healthCheckPath: /health
+    envVars:
+      - key: ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: footiq-pro-db
+          property: connectionString
+      - key: FOOTIQ_COMPETITIONS
+        value: FL1,CL,PL,PD,SA,BL1
+      - key: FOOTBALL_DATA_API_KEY
+        sync: false
+      - key: ADMIN_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+
+databases:
+  - name: footiq-pro-db
+    databaseName: footiq_pro
+    user: footiq_pro
