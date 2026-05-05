@@ -223,6 +223,7 @@ def _workflow_status_compact():
         },
         "latest_refresh_job": latest_refresh_job,
         "latest_feature_store_job": latest_feature_store_job,
+        "cron": runtime_store.get_cron_status(),
         "next_step": next_step,
     }
 
@@ -510,6 +511,24 @@ def _require_admin_key(x_admin_key: str | None):
         raise HTTPException(status_code=401, detail="Invalid admin key")
 
 
+def _is_production() -> bool:
+    return os.getenv("ENV", os.getenv("ENVIRONMENT", "development")).lower() == "production"
+
+
+def _require_refresh_configuration():
+    missing = []
+    if not os.getenv("DATABASE_URL"):
+        missing.append("DATABASE_URL")
+    if not os.getenv("FOOTBALL_DATA_API_KEY"):
+        missing.append("FOOTBALL_DATA_API_KEY")
+
+    if missing and _is_production():
+        raise HTTPException(
+            status_code=500,
+            detail=f"Backend refresh misconfigured: missing {', '.join(missing)}",
+        )
+
+
 @app.get("/admin/alerts")
 def admin_alerts():
     return _admin_alerts_report()
@@ -785,6 +804,7 @@ def run_refresh_data_job(job_id: str | None = None) -> dict:
     started = time.perf_counter()
 
     try:
+        _require_refresh_configuration()
         source = "mock"
         matches = MATCHES
         teams = TEAMS
@@ -841,6 +861,7 @@ def run_refresh_data_job(job_id: str | None = None) -> dict:
             "predictions_imported": len(predictions),
             "snapshots_saved": snapshots_saved,
             "refresh_duration_ms": duration_ms,
+            "duration_ms": duration_ms,
             "next_recommended_actions": [
                 "build_feature_store",
                 "train_candidate_model",
@@ -860,7 +881,12 @@ def run_refresh_data_job(job_id: str | None = None) -> dict:
     except Exception as exc:
         if job_id:
             runtime_store.fail_refresh_job(job_id, str(exc))
+        else:
+            runtime_store.release_refresh_lock()
         raise
+    finally:
+        if not job_id:
+            runtime_store.release_refresh_lock()
 
 
 @app.post("/admin/refresh-data")
@@ -869,6 +895,15 @@ def refresh_data(
     x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
 ):
     _require_admin_key(x_admin_key)
+
+    if not runtime_store.acquire_refresh_lock():
+        latest = runtime_store.get_refresh_job()
+        return {
+            "status": "accepted",
+            "job_id": latest.get("job_id"),
+            "message": "Un refresh est déjà en cours.",
+            "next_check_endpoint": f"/admin/refresh-job-status?job_id={latest.get('job_id')}",
+        }
 
     job_id = str(uuid.uuid4())
     runtime_store.start_refresh_job(job_id)
@@ -885,6 +920,8 @@ def refresh_data(
 @app.post("/admin/refresh-data-sync")
 def refresh_data_sync(x_admin_key: str | None = Header(default=None, alias="X-Admin-Key")):
     _require_admin_key(x_admin_key)
+    if not runtime_store.acquire_refresh_lock():
+        raise HTTPException(status_code=409, detail="Un refresh est déjà en cours.")
     return run_refresh_data_job(None)
 
 
@@ -984,7 +1021,12 @@ def run_build_feature_store_job(
     except Exception as exc:
         if job_id:
             runtime_store.fail_feature_store_job(job_id, str(exc))
+        else:
+            runtime_store.release_feature_store_lock()
         raise
+    finally:
+        if not job_id:
+            runtime_store.release_feature_store_lock()
 
 
 @app.post("/admin/build-feature-store")
@@ -995,6 +1037,15 @@ def build_feature_store(
     force: bool = Query(default=False),
 ) -> dict[str, Any]:
     _require_admin_key(x_admin_key)
+
+    if not runtime_store.acquire_feature_store_lock():
+        latest = runtime_store.get_feature_store_job()
+        return {
+            "status": "accepted",
+            "job_id": latest.get("job_id"),
+            "message": "Une construction Feature Store est déjà en cours.",
+            "next_check_endpoint": f"/admin/feature-store-job-status?job_id={latest.get('job_id')}",
+        }
 
     job_id = str(uuid.uuid4())
     runtime_store.start_feature_store_job(job_id)
@@ -1015,9 +1066,116 @@ def build_feature_store_sync(
     force: bool = Query(default=False),
 ) -> dict[str, Any]:
     _require_admin_key(x_admin_key)
+    if not runtime_store.acquire_feature_store_lock():
+        raise HTTPException(status_code=409, detail="Une construction Feature Store est déjà en cours.")
     return run_build_feature_store_job(None, limit, force)
 
 
 @app.get("/admin/feature-store-job-status")
 def feature_store_job_status(job_id: str | None = None):
     return runtime_store.get_feature_store_job(job_id)
+
+
+@app.post("/admin/reset-stale-jobs")
+def reset_stale_jobs(x_admin_key: str | None = Header(default=None, alias="X-Admin-Key")):
+    _require_admin_key(x_admin_key)
+    return runtime_store.reset_stale_jobs()
+
+
+def _cron_next_step() -> str:
+    return _workflow_status_compact().get("next_step", "refresh_data")
+
+
+@app.post("/admin/cron/hourly-refresh")
+def cron_hourly_refresh(x_admin_key: str | None = Header(default=None, alias="X-Admin-Key")):
+    _require_admin_key(x_admin_key)
+
+    refresh_result = refresh_data_sync(x_admin_key)
+    feature_result: dict[str, Any]
+
+    if refresh_result.get("status") == "ok":
+        try:
+            feature_result = build_feature_store_sync(x_admin_key, limit=2000, force=False)
+        except HTTPException as exc:
+            feature_result = {"status": "error", "detail": exc.detail}
+        except Exception as exc:
+            feature_result = {"status": "error", "detail": str(exc)}
+    else:
+        feature_result = {"status": "skipped", "detail": "Refresh did not complete successfully."}
+
+    result = {
+        "status": "ok",
+        "refresh": {"status": refresh_result.get("status"), **refresh_result},
+        "feature_store": {"status": feature_result.get("status"), **feature_result},
+        "source": refresh_result.get("source"),
+        "storage": refresh_result.get("storage"),
+        "matches_imported": refresh_result.get("matches_imported", 0),
+        "feature_snapshots_saved": feature_result.get("feature_snapshots_saved", 0),
+        "next_step": _cron_next_step(),
+    }
+    runtime_store.set_cron_run("hourly_refresh", result)
+    return result
+
+
+def _finished_match_ids() -> set[str]:
+    finished = []
+    for match in _available_matches():
+        if str(match.get("status", "")).upper() != "FINISHED":
+            continue
+        match_id = match.get("match_id") or match.get("id") or match.get("slug")
+        if match_id and get_match_result(match) is not None:
+            finished.append(str(match_id))
+    return set(finished)
+
+
+@app.post("/admin/cron/match-finished-check")
+def cron_match_finished_check(x_admin_key: str | None = Header(default=None, alias="X-Admin-Key")):
+    _require_admin_key(x_admin_key)
+
+    before = runtime_store.get_last_finished_match_ids()
+    refresh_result = refresh_data_sync(x_admin_key)
+    current = _finished_match_ids()
+    detected = sorted(current - before)
+
+    if not detected:
+        result = {
+            "status": "noop",
+            "finished_matches_detected": 0,
+            "refresh_status": refresh_result.get("status"),
+            "feature_store_status": "skipped",
+            "backtesting_status": "skipped",
+            "next_step": _cron_next_step(),
+        }
+        runtime_store.set_last_finished_match_ids(current)
+        runtime_store.set_cron_run("match_finished_check", result)
+        return result
+
+    feature_result: dict[str, Any]
+
+    try:
+        feature_result = build_feature_store_sync(x_admin_key, limit=2000, force=False)
+    except HTTPException as exc:
+        feature_result = {"status": "error", "detail": exc.detail}
+    except Exception as exc:
+        feature_result = {"status": "error", "detail": str(exc)}
+
+    try:
+        backtesting = calculate_backtest_report(_available_matches(), _available_predictions())
+        backtesting_status = "ok"
+    except Exception as exc:
+        backtesting = {"detail": str(exc)}
+        backtesting_status = "error"
+
+    runtime_store.set_last_finished_match_ids(_finished_match_ids())
+    result = {
+        "status": "ok",
+        "finished_matches_detected": len(detected),
+        "finished_match_ids": detected,
+        "refresh_status": refresh_result.get("status"),
+        "feature_store_status": feature_result.get("status"),
+        "backtesting_status": backtesting_status,
+        "backtesting": backtesting,
+        "next_step": _cron_next_step(),
+    }
+    runtime_store.set_cron_run("match_finished_check", result)
+    return result

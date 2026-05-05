@@ -3,8 +3,11 @@ import assert from 'node:assert/strict';
 
 const refreshProxy = new URL('../pages/api/admin/refresh-data.ts', import.meta.url);
 const diagnosticsProxy = new URL('../pages/api/admin/diagnostics.ts', import.meta.url);
+const hourlyCron = new URL('../pages/api/cron/hourly-refresh.ts', import.meta.url);
+const matchFinishedCron = new URL('../pages/api/cron/match-finished-check.ts', import.meta.url);
 const adminPage = new URL('../pages/admin.tsx', import.meta.url);
 const backendMain = new URL('../../api/main.py', import.meta.url);
+const runtimeStore = new URL('../../api/data/runtime_store.py', import.meta.url);
 
 async function run() {
   const refreshSource = await readFile(refreshProxy, 'utf8');
@@ -14,6 +17,7 @@ async function run() {
 
   const diagnosticsSource = await readFile(diagnosticsProxy, 'utf8');
   assert.match(diagnosticsSource, /hasAdminApiKey/);
+  assert.match(diagnosticsSource, /hasCronSecret/);
   assert.match(diagnosticsSource, /Boolean\(adminApiKey\)/);
   assert.doesNotMatch(diagnosticsSource, /ADMIN_API_KEY\s*:/);
   assert.doesNotMatch(diagnosticsSource, /adminApiKey\s*:/);
@@ -29,6 +33,20 @@ async function run() {
   assert.match(backendSource, /data_imported = refresh_storage == "postgresql" and refresh_matches_imported > 0/);
   assert.match(backendSource, /next_step = "build_feature_store"/);
   assert.match(backendSource, /"data_imported": data_imported/);
+  assert.match(backendSource, /Backend refresh misconfigured: missing/);
+  assert.match(backendSource, /@app\.post\("\/admin\/cron\/hourly-refresh"\)/);
+  assert.match(backendSource, /@app\.post\("\/admin\/cron\/match-finished-check"\)/);
+
+  const runtimeSource = await readFile(runtimeStore, 'utf8');
+  assert.match(runtimeSource, /JOB_STALE_SECONDS = 15 \* 60/);
+  assert.match(runtimeSource, /failed_timeout/);
+
+  for (const cronSource of [await readFile(hourlyCron, 'utf8'), await readFile(matchFinishedCron, 'utf8')]) {
+    assert.match(cronSource, /CRON_SECRET missing on Vercel server environment/);
+    assert.match(cronSource, /Invalid cron authorization/);
+    assert.match(cronSource, /process\.env\.ADMIN_API_KEY/);
+    assert.equal(cronSource.includes(['NEXT', 'PUBLIC', 'ADMIN', 'API', 'KEY'].join('_')), false);
+  }
 }
 
 run()

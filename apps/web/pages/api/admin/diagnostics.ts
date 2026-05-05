@@ -65,10 +65,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const apiUrl = getApiUrl();
   const adminApiKey = process.env.ADMIN_API_KEY;
+  const cronSecret = process.env.CRON_SECRET;
   const base = {
     hasApiUrl: Boolean(apiUrl),
     apiUrlHost: getApiHost(apiUrl),
     hasAdminApiKey: Boolean(adminApiKey),
+    hasCronSecret: Boolean(cronSecret),
+    cronConfigured: Boolean(cronSecret),
   };
 
   if (!apiUrl) {

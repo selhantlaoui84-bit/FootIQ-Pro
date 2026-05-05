@@ -223,6 +223,8 @@ export type AdminDiagnosticsResponse = {
   hasApiUrl: boolean;
   apiUrlHost: string;
   hasAdminApiKey: boolean;
+  hasCronSecret?: boolean;
+  cronConfigured?: boolean;
   backendHealth: {
     status: 'ok' | 'error' | string;
     data?: unknown;
@@ -241,6 +243,7 @@ export type RefreshJobStatus = {
   job_id: string | null;
   status: 'idle' | 'running' | 'success' | 'error' | string;
   started_at: string | null;
+  updated_at?: string | null;
   finished_at: string | null;
   duration_ms: number | null;
   result: Record<string, unknown> | null;
@@ -770,6 +773,10 @@ export type AdminWorkflowStatus = {
   };
   latest_refresh_job?: RefreshJobStatus;
   latest_feature_store_job?: RefreshJobStatus;
+  cron?: {
+    hourly_refresh_last_run?: { ran_at?: string; result?: unknown } | null;
+    match_finished_check_last_run?: { ran_at?: string; result?: unknown } | null;
+  };
   next_step: 'refresh_data' | 'build_feature_store' | 'train_candidate_model' | 'generate_shadow_predictions' | 'review_shadow_backtesting' | 'ready_for_hybrid_review' | string;
   admin_alerts?: {
   overall_status: string;

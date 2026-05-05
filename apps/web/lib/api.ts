@@ -403,6 +403,25 @@ export async function getAdminDiagnostics(): Promise<AdminDiagnosticsResponse | 
   }
 }
 
+export async function resetStaleJobs(): Promise<{ status: string; reset_count?: number; detail?: string }> {
+  try {
+    const response = await fetch('/api/admin/reset-stale-jobs', {
+      method: 'POST',
+      headers: { Accept: 'application/json' },
+    });
+    const contentType = response.headers.get('content-type') ?? '';
+    const body = contentType.includes('application/json') ? await response.json() : null;
+
+    if (!response.ok) {
+      return { status: 'error', detail: body?.detail ?? `Reset stale jobs failed with status ${response.status}` };
+    }
+
+    return body as { status: string; reset_count?: number };
+  } catch (error) {
+    return { status: 'error', detail: error instanceof Error ? error.message : 'Reset stale jobs request failed' };
+  }
+}
+
 
 export async function getHybridEngineSummary(options?: { limit?: number; view?: MatchView }): Promise<HybridEngineSummary> {
   if (IS_BUILD) return mockHybridEngineSummary;
