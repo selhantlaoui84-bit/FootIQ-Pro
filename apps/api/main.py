@@ -886,6 +886,7 @@ def _feature_store_diagnostics(matches: list[dict] | None = None, predictions: l
     )
     snapshots = detailed.get("snapshots", [])
     first_snapshot = snapshots[0] if snapshots else None
+    last_save_report = repository.get_last_feature_snapshot_save_report()
 
     return {
         "matches_total": len(matches),
@@ -894,6 +895,11 @@ def _feature_store_diagnostics(matches: list[dict] | None = None, predictions: l
         "predictions_total": len(predictions),
         "generated_predictions_count": len(generated_predictions),
         "feature_snapshots_total": len(feature_snapshots),
+        "feature_snapshots_total_from_db": repository.count_feature_snapshots(),
+        "feature_snapshots_schema_ok": repository.feature_snapshots_schema_ok(),
+        "last_save_report": last_save_report,
+        "sample_snapshot_to_save": first_snapshot,
+        "save_error_sample": (last_save_report.get("errors") or [])[:5],
         "join_on_match_id_count": join_on_match_id,
         "join_on_id_count": join_on_id,
         "join_on_slug_count": join_on_slug,
@@ -1272,7 +1278,7 @@ def run_build_feature_store_job(
         elif len(feature_items) == 0:
             reason_if_zero_snapshots = "Matchs terminés avec score disponibles mais aucun snapshot créé. Vérifiez la jointure match/prédiction ou la génération à la volée."
         elif saved_count == 0 and storage == "postgresql":
-            reason_if_zero_snapshots = "Snapshots créés mais non sauvegardés en PostgreSQL. Vérifiez repository.save_feature_snapshots."
+            reason_if_zero_snapshots = "Snapshots créés en mémoire mais non sauvegardés en PostgreSQL."
         elif not feature_items:
             if matches_available == 0:
                 reason_if_zero_snapshots = "Aucun match disponible pour construire le Feature Store."
@@ -1292,7 +1298,7 @@ def run_build_feature_store_job(
         duration_ms = round((time.perf_counter() - started) * 1000)
 
         result = {
-            "status": "warning" if reason_if_zero_snapshots else "ok",
+            "status": "error" if len(feature_items) > 0 and saved_count == 0 and storage == "postgresql" else ("warning" if reason_if_zero_snapshots else "ok"),
             "storage": storage,
             "predictions_source": predictions_source,
             "matches_available": matches_available,
@@ -1306,6 +1312,7 @@ def run_build_feature_store_job(
             "snapshots_saved": saved_count,
             "feature_snapshots_failed": save_failed_count,
             "feature_save_errors_sample": save_errors,
+            "save_errors": save_errors,
             "feature_snapshots_skipped": skipped_count,
             "reason_if_zero_snapshots": reason_if_zero_snapshots,
             "rejection_reasons_count": rejection_reasons_count,
