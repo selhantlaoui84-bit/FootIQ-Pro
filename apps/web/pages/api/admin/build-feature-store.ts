@@ -12,7 +12,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
   }
 
-  const adminKey = process.env.ADMIN_API_KEY || process.env.NEXT_PUBLIC_ADMIN_API_KEY;
+  const adminKey = process.env.ADMIN_API_KEY;
 
   if (!adminKey) {
     return res.status(500).json({

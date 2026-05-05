@@ -770,7 +770,7 @@ export default function PerformancePage({
 
   <div className="banner info">
     <strong>Recommandation : </strong>
-    {shadowBacktesting.activation_recommendation} â€” {shadowBacktesting.recommendation_reason}
+    {shadowBacktesting.activation_recommendation} — {shadowBacktesting.recommendation_reason}
   </div>
 
   {shadowBacktesting.recent_evaluations?.length > 0 && (
@@ -875,6 +875,5 @@ export default function PerformancePage({
     </ProtectedRoute>
   );
 }
-
 
 
