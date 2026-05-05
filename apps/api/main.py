@@ -159,7 +159,8 @@ def _workflow_status_compact():
     )
     refresh_storage = refresh.get("storage", "memory")
     refresh_matches_imported = refresh.get("matches_imported", 0)
-    data_imported = refresh_storage == "postgresql" and refresh_matches_imported > 0
+    repository_matches_count = len(repository.get_matches())
+    data_imported = refresh_matches_imported > 0 or repository_matches_count > 0
     feature_ready = feature.get("snapshots_count", 0) > 0
     candidate_trained = ml_status.get("status") in {"ok", "trained", "success"}
     shadow_generated = shadow_summary.get("shadow_predictions_count", 0) > 0
@@ -395,17 +396,33 @@ def _feature_csv(rows: list[dict]) -> str:
 
 def _refresh_status():
     latest_log = repository.get_latest_refresh_log()
+    stored_matches = repository.get_matches()
+    stored_teams = repository.get_teams()
+    stored_predictions = repository.get_predictions()
+
     if latest_log:
         source = latest_log.get("source", "mock")
-        storage = latest_log.get("storage", "postgresql")
+        storage = "postgresql" if stored_matches else latest_log.get("storage", "postgresql")
         return {
             "source": source,
             "storage": storage,
-            "matches_imported": len(repository.get_matches()),
-            "teams_imported": len(repository.get_teams()),
-            "predictions_imported": len(repository.get_predictions()),
+            "matches_imported": len(stored_matches),
+            "teams_imported": len(stored_teams),
+            "predictions_imported": len(stored_predictions),
             "last_refresh_at": latest_log.get("last_refresh_at"),
             "warning": None if storage == "postgresql" else "PostgreSQL indisponible ou écriture échouée. Fallback mémoire utilisé.",
+        }
+
+    if stored_matches:
+        source = stored_matches[0].get("source") or "football-data.org"
+        return {
+            "source": source,
+            "storage": "postgresql",
+            "matches_imported": len(stored_matches),
+            "teams_imported": len(stored_teams),
+            "predictions_imported": len(stored_predictions),
+            "last_refresh_at": None,
+            "warning": None,
         }
 
     status = runtime_store.get_refresh_status()
@@ -798,7 +815,13 @@ def dashboard_summary():
 
 @app.get("/admin/refresh-status")
 def refresh_status():
-    return {"status": "ok", **_refresh_status()}
+    stable = _refresh_status()
+    return {
+        "status": "ok",
+        **stable,
+        "stable_refresh_status": stable,
+        "current_job": runtime_store.get_refresh_job(),
+    }
 
 def run_refresh_data_job(job_id: str | None = None) -> dict:
     started = time.perf_counter()
@@ -941,6 +964,9 @@ def run_build_feature_store_job(
 
         matches = _available_matches()
         predictions = _available_predictions()
+        matches_available = len(matches)
+        predictions_available = len(predictions)
+        finished_matches_available = sum(1 for match in matches if get_match_result(match) is not None)
 
         limit = max(1, min(int(limit or 500), 2000))
 
@@ -982,12 +1008,26 @@ def run_build_feature_store_job(
 
         saved_count = repository.save_feature_snapshots(feature_items)
 
-        storage = "postgresql" if saved_count > 0 else "memory"
+        source_refresh = _refresh_status()
+        storage = "postgresql" if source_refresh.get("storage") == "postgresql" or repository.get_matches() else "memory"
 
         if storage == "memory" and feature_items:
             runtime_store.set_feature_snapshots(feature_items)
 
         training_rows_available = sum(1 for item in feature_items if item.get("target") is not None)
+        reason_if_zero_snapshots = None
+
+        if not feature_items:
+            if matches_available == 0:
+                reason_if_zero_snapshots = "Aucun match disponible pour construire le Feature Store."
+            elif predictions_available == 0:
+                reason_if_zero_snapshots = "Aucune prédiction disponible pour construire le Feature Store."
+            elif finished_matches_available == 0:
+                reason_if_zero_snapshots = "Aucun match terminé avec score disponible pour construire des lignes entraînables."
+            elif skipped_count >= matches_available:
+                reason_if_zero_snapshots = "Tous les matchs disposent déjà d'un snapshot Feature Store pour cette version modèle."
+            else:
+                reason_if_zero_snapshots = "Aucun snapshot Feature Store construit avec les données disponibles."
 
         target_coverage = (
             round((training_rows_available / len(feature_items)) * 100)
@@ -998,11 +1038,15 @@ def run_build_feature_store_job(
         duration_ms = round((time.perf_counter() - started) * 1000)
 
         result = {
-            "status": "ok",
+            "status": "warning" if not feature_items else "ok",
             "storage": storage,
+            "matches_available": matches_available,
+            "predictions_available": predictions_available,
+            "finished_matches_available": finished_matches_available,
             "feature_snapshots_built": len(feature_items),
             "feature_snapshots_saved": saved_count,
             "feature_snapshots_skipped": skipped_count,
+            "reason_if_zero_snapshots": reason_if_zero_snapshots,
             "training_rows_available": training_rows_available,
             "target_coverage": target_coverage,
             "feature_set_version": "pre-match-advanced-v1",
@@ -1077,9 +1121,12 @@ def feature_store_job_status(job_id: str | None = None):
 
 
 @app.post("/admin/reset-stale-jobs")
-def reset_stale_jobs(x_admin_key: str | None = Header(default=None, alias="X-Admin-Key")):
+def reset_stale_jobs(
+    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
+    force: bool = Query(default=False),
+):
     _require_admin_key(x_admin_key)
-    return runtime_store.reset_stale_jobs()
+    return runtime_store.reset_stale_jobs(force=force, stale_seconds=5 * 60 if force else runtime_store.JOB_STALE_SECONDS)
 
 
 def _cron_next_step() -> str:
