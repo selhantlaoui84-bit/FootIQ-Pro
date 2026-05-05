@@ -1,6 +1,7 @@
 ﻿import os
 import time
 import uuid
+from collections import Counter
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
@@ -66,6 +67,74 @@ def _available_predictions():
 
     elo_ratings = calculate_team_elos(matches)
     return [_prediction_for_match(match, matches, elo_ratings) for match in matches]
+
+
+def _match_id(match: dict) -> str | None:
+    value = match.get("match_id") or match.get("id") or match.get("slug")
+    return str(value) if value is not None else None
+
+
+def _count_by_status(matches: list[dict]) -> dict[str, int]:
+    return dict(Counter(str(match.get("status") or "UNKNOWN").upper() for match in matches))
+
+
+def _kickoff_values(matches: list[dict]) -> list[str]:
+    return sorted(str(match.get("kickoff")) for match in matches if match.get("kickoff"))
+
+
+def _has_score(match: dict) -> bool:
+    return get_match_result(match) is not None or (
+        match.get("score_full_time_home") is not None and match.get("score_full_time_away") is not None
+    )
+
+
+def _matches_structure_report(matches: list[dict] | None = None) -> dict[str, Any]:
+    matches = matches if matches is not None else _available_matches()
+    statuses = _count_by_status(matches)
+    kickoffs = _kickoff_values(matches)
+    finished = [match for match in matches if str(match.get("status", "")).upper() == "FINISHED"]
+    finished_with_scores = [match for match in finished if get_match_result(match) is not None]
+    matches_with_scores = [match for match in matches if _has_score(match)]
+    raw_json_with_score = [
+        match for match in matches
+        if isinstance(match.get("raw_json"), dict)
+        and isinstance((match.get("raw_json") or {}).get("score"), dict)
+        and (((match.get("raw_json") or {}).get("score") or {}).get("fullTime") or {}).get("home") is not None
+        and (((match.get("raw_json") or {}).get("score") or {}).get("fullTime") or {}).get("away") is not None
+    ]
+
+    competitions = Counter(str(match.get("competition") or "Unknown") for match in matches)
+
+    def sample(match: dict) -> dict:
+        return {
+            "id": _match_id(match),
+            "home_team": match.get("home_team"),
+            "away_team": match.get("away_team"),
+            "competition": match.get("competition"),
+            "kickoff": match.get("kickoff"),
+            "status": match.get("status"),
+            "raw_status": match.get("raw_status"),
+            "score_full_time_home": match.get("score_full_time_home"),
+            "score_full_time_away": match.get("score_full_time_away"),
+            "winner": match.get("winner"),
+            "raw_json_score": (match.get("raw_json") or {}).get("score") if isinstance(match.get("raw_json"), dict) else None,
+        }
+
+    return {
+        "total_matches": len(matches),
+        "count_by_status": statuses,
+        "first_kickoff": kickoffs[0] if kickoffs else None,
+        "last_kickoff": kickoffs[-1] if kickoffs else None,
+        "matches_with_scores": len(matches_with_scores),
+        "finished_matches": len(finished),
+        "finished_with_scores": len(finished_with_scores),
+        "finished_without_scores": max(0, len(finished) - len(finished_with_scores)),
+        "raw_json_with_score_count": len(raw_json_with_score),
+        "sample_statuses": sorted(statuses.keys())[:20],
+        "sample_matches_with_raw_json": [sample(match) for match in matches if isinstance(match.get("raw_json"), dict)][:5],
+        "sample_matches_with_score_columns": [sample(match) for match in matches_with_scores[:5]],
+        "competitions_breakdown": dict(competitions),
+    }
 
 
 def _find_match(match_id: str):
@@ -161,6 +230,8 @@ def _workflow_status_compact():
     refresh_matches_imported = refresh.get("matches_imported", 0)
     repository_matches_count = len(repository.get_matches())
     data_imported = refresh_matches_imported > 0 or repository_matches_count > 0
+    structure = _matches_structure_report(_available_matches())
+    finished_with_scores = structure.get("finished_with_scores", 0)
     feature_ready = feature.get("snapshots_count", 0) > 0
     candidate_trained = ml_status.get("status") in {"ok", "trained", "success"}
     shadow_generated = shadow_summary.get("shadow_predictions_count", 0) > 0
@@ -169,7 +240,7 @@ def _workflow_status_compact():
     if not data_imported:
         next_step = "refresh_data"
     elif not feature_ready:
-        next_step = "build_feature_store"
+        next_step = "build_feature_store" if finished_with_scores > 0 else "import_historical_results"
     elif not candidate_trained:
         next_step = "train_candidate_model"
     elif not shadow_generated:
@@ -204,6 +275,7 @@ def _workflow_status_compact():
             "snapshots_count": feature.get("snapshots_count", 0),
             "training_rows_available": feature.get("with_target_count", 0),
             "target_coverage": feature.get("target_coverage", 0),
+            "finished_with_scores": finished_with_scores,
         },
         "candidate_model": {
             "trained": candidate_trained,
@@ -708,7 +780,14 @@ def debug_finished_matches():
         "finished_matches": len(finished),
         "finished_with_scores": len(finished_with_scores),
         "sample": sample,
+        "warning": "Aucun match FINISHED trouvé." if not finished else None,
+        "hint": "Vérifiez /debug/matches-structure et count_by_status pour voir les statuts réellement importés.",
     }
+
+
+@app.get("/debug/matches-structure")
+def debug_matches_structure():
+    return _matches_structure_report()
 
 @app.get("/backtesting")
 def backtesting_report():
@@ -967,6 +1046,7 @@ def run_build_feature_store_job(
         matches_available = len(matches)
         predictions_available = len(predictions)
         finished_matches_available = sum(1 for match in matches if get_match_result(match) is not None)
+        structure = _matches_structure_report(matches)
 
         limit = max(1, min(int(limit or 500), 2000))
 
@@ -1017,13 +1097,13 @@ def run_build_feature_store_job(
         training_rows_available = sum(1 for item in feature_items if item.get("target") is not None)
         reason_if_zero_snapshots = None
 
-        if not feature_items:
+        if structure.get("finished_with_scores", 0) == 0:
+            reason_if_zero_snapshots = "Aucun match terminé avec score disponible. Importez l’historique ou vérifiez les statuts football-data.org."
+        elif not feature_items:
             if matches_available == 0:
                 reason_if_zero_snapshots = "Aucun match disponible pour construire le Feature Store."
             elif predictions_available == 0:
                 reason_if_zero_snapshots = "Aucune prédiction disponible pour construire le Feature Store."
-            elif finished_matches_available == 0:
-                reason_if_zero_snapshots = "Aucun match terminé avec score disponible pour construire des lignes entraînables."
             elif skipped_count >= matches_available:
                 reason_if_zero_snapshots = "Tous les matchs disposent déjà d'un snapshot Feature Store pour cette version modèle."
             else:
@@ -1038,11 +1118,13 @@ def run_build_feature_store_job(
         duration_ms = round((time.perf_counter() - started) * 1000)
 
         result = {
-            "status": "warning" if not feature_items else "ok",
+            "status": "warning" if reason_if_zero_snapshots else "ok",
             "storage": storage,
             "matches_available": matches_available,
             "predictions_available": predictions_available,
             "finished_matches_available": finished_matches_available,
+            "finished_with_scores": structure.get("finished_with_scores", 0),
+            "count_by_status": structure.get("count_by_status", {}),
             "feature_snapshots_built": len(feature_items),
             "feature_snapshots_saved": saved_count,
             "feature_snapshots_skipped": skipped_count,

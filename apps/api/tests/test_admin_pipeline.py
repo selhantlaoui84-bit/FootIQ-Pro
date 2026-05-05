@@ -28,7 +28,12 @@ class AdminPipelineTests(unittest.TestCase):
             "teams_imported": 106,
             "predictions_imported": 1935,
             "last_refresh_at": "2026-05-05T10:00:00Z",
-        }), patch.object(main.repository, "get_matches", return_value=[{"id": "m1"}]), patch.object(
+        }), patch.object(main.repository, "get_matches", return_value=[{
+            "id": "m1",
+            "status": "FINISHED",
+            "score_full_time_home": 2,
+            "score_full_time_away": 1,
+        }]), patch.object(
             main, "_feature_summary", return_value={"snapshots_count": 0, "with_target_count": 0, "target_coverage": 0}
         ), patch.object(main, "_ml_status_compact", return_value={"status": "not_trained", "latest_candidate": {}}), patch.object(
             main, "_shadow_summary_compact", return_value={"shadow_predictions_count": 0, "disagreement_count": 0}
@@ -37,6 +42,25 @@ class AdminPipelineTests(unittest.TestCase):
 
         self.assertTrue(workflow["refresh"]["data_imported"])
         self.assertEqual(workflow["next_step"], "build_feature_store")
+        self.assertNotEqual(workflow["next_step"], "refresh_data")
+
+    def test_workflow_imported_data_without_finished_scores_requests_history(self):
+        with patch.object(main, "_refresh_status", return_value={
+            "source": "football-data.org",
+            "storage": "postgresql",
+            "matches_imported": 1935,
+            "teams_imported": 106,
+            "predictions_imported": 1935,
+            "last_refresh_at": "2026-05-05T10:00:00Z",
+        }), patch.object(main.repository, "get_matches", return_value=[{"id": "m1", "status": "TIMED"}]), patch.object(
+            main, "_feature_summary", return_value={"snapshots_count": 0, "with_target_count": 0, "target_coverage": 0}
+        ), patch.object(main, "_ml_status_compact", return_value={"status": "not_trained", "latest_candidate": {}}), patch.object(
+            main, "_shadow_summary_compact", return_value={"shadow_predictions_count": 0, "disagreement_count": 0}
+        ), patch.object(main, "calculate_shadow_backtest_report", return_value={"evaluated_matches": 0}):
+            workflow = main._workflow_status_compact()
+
+        self.assertTrue(workflow["refresh"]["data_imported"])
+        self.assertEqual(workflow["next_step"], "import_historical_results")
         self.assertNotEqual(workflow["next_step"], "refresh_data")
 
     def test_feature_store_zero_snapshots_returns_warning_and_postgresql_storage(self):

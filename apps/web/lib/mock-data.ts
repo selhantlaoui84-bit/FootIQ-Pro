@@ -217,6 +217,8 @@ export type RefreshResponse = {
   next_check_endpoint?: string;
   error?: string;
   detail?: string;
+  stable_refresh_status?: RefreshResponse;
+  current_job?: RefreshJobStatus;
 };
 
 export type AdminDiagnosticsResponse = {
@@ -361,6 +363,11 @@ export type BuildFeatureStoreResponse = {
   message?: string;
   next_check_endpoint?: string;
   storage?: string;
+  matches_available?: number;
+  predictions_available?: number;
+  finished_matches_available?: number;
+  finished_with_scores?: number;
+  count_by_status?: Record<string, number>;
   feature_snapshots_built?: number;
   feature_snapshots_saved?: number;
   feature_snapshots_skipped?: number;
@@ -373,6 +380,7 @@ export type BuildFeatureStoreResponse = {
   created_at?: string;
   note?: string;
   detail?: string;
+  reason_if_zero_snapshots?: string | null;
 };
 
 export type MlStatus = {
