@@ -343,11 +343,20 @@ def get_feature_store_job_status(job_id=None):
     return get_feature_store_job(job_id)
 
 
-def reset_stale_jobs():
+def reset_stale_jobs(force=False, stale_seconds=JOB_STALE_SECONDS):
     reset_count = 0
     for job in list(_refresh_jobs.values()) + list(_feature_store_jobs.values()):
         before = job.get("status")
-        _normalize_job(job)
+        if force and before == "running":
+            age_ms = _duration_ms(job.get("started_at"))
+            if age_ms is not None and age_ms > stale_seconds * 1000:
+                job["status"] = "failed_timeout"
+                job["finished_at"] = _now_iso()
+                job["updated_at"] = job["finished_at"]
+                job["duration_ms"] = _duration_ms(job.get("started_at"), job.get("finished_at"))
+                job["error"] = f"Job réinitialisé après {stale_seconds // 60} minutes."
+        else:
+            _normalize_job(job)
         if before == "running" and job.get("status") == "failed_timeout":
             reset_count += 1
     if get_latest_refresh_job().get("status") != "running":
