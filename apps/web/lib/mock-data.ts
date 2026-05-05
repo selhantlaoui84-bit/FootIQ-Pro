@@ -219,6 +219,22 @@ export type RefreshResponse = {
   detail?: string;
 };
 
+export type AdminDiagnosticsResponse = {
+  hasApiUrl: boolean;
+  apiUrlHost: string;
+  hasAdminApiKey: boolean;
+  backendHealth: {
+    status: 'ok' | 'error' | string;
+    data?: unknown;
+    error?: string;
+  };
+  refreshStatus: {
+    status: 'ok' | 'error' | string;
+    data?: RefreshResponse | unknown;
+    error?: string;
+  };
+};
+
 
 
 export type RefreshJobStatus = {
@@ -1815,4 +1831,3 @@ export const mockHybridEngineSummary: HybridEngineSummary = {
   recommendation: 'insufficient_shadow_data',
   reason: 'Aucune donn?e shadow suffisante pour alimenter le moteur hybride.',
 };
-

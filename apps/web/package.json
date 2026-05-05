@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "test:admin": "node tests/admin-regression.test.mjs",
     "check:french-ui": "node scripts/check-french-ui.mjs"
   },
   "dependencies": {

@@ -31,6 +31,7 @@
   mockModelGovernance,
   mockAdminAlertsReport,
   type AdminAlertsReport,
+  type AdminDiagnosticsResponse,
   type ModelGovernanceReport,
   type Match,
   type AdminWorkflowStatus,
@@ -367,6 +368,39 @@ export async function getRefreshStatus(): Promise<RefreshResponse | null> {
   if (IS_BUILD) return null;
 
   return safeFetchJson<RefreshResponse>('/admin/refresh-status', undefined, 3000);
+}
+
+export async function getAdminDiagnostics(): Promise<AdminDiagnosticsResponse | null> {
+  if (IS_BUILD) return null;
+
+  try {
+    const response = await fetch('/api/admin/diagnostics', {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+    const contentType = response.headers.get('content-type') ?? '';
+    const body = contentType.includes('application/json') ? await response.json() : null;
+
+    if (!response.ok) {
+      return {
+        hasApiUrl: false,
+        apiUrlHost: '',
+        hasAdminApiKey: false,
+        backendHealth: { status: 'error', error: body?.detail ?? `Diagnostics failed with status ${response.status}` },
+        refreshStatus: { status: 'error', error: body?.detail ?? `Diagnostics failed with status ${response.status}` },
+      };
+    }
+
+    return body as AdminDiagnosticsResponse;
+  } catch (error) {
+    return {
+      hasApiUrl: false,
+      apiUrlHost: '',
+      hasAdminApiKey: false,
+      backendHealth: { status: 'error', error: error instanceof Error ? error.message : 'Diagnostics request failed' },
+      refreshStatus: { status: 'error', error: error instanceof Error ? error.message : 'Diagnostics request failed' },
+    };
+  }
 }
 
 

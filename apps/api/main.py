@@ -362,16 +362,32 @@ def _feature_csv(rows: list[dict]) -> str:
 def _refresh_status():
     latest_log = repository.get_latest_refresh_log()
     if latest_log:
+        source = latest_log.get("source", "mock")
+        storage = latest_log.get("storage", "postgresql")
         return {
-            "source": latest_log.get("source", "mock"),
-            "storage": latest_log.get("storage", "postgresql"),
+            "source": source,
+            "storage": storage,
             "matches_imported": len(repository.get_matches()),
             "teams_imported": len(repository.get_teams()),
             "predictions_imported": len(repository.get_predictions()),
             "last_refresh_at": latest_log.get("last_refresh_at"),
+            "warning": None if storage == "postgresql" else "PostgreSQL indisponible ou écriture échouée. Fallback mémoire utilisé.",
         }
 
-    return runtime_store.get_refresh_status()
+    status = runtime_store.get_refresh_status()
+    return {
+        "source": status.get("source", "mock"),
+        "storage": status.get("storage", "memory"),
+        "matches_imported": status.get("matches_imported", 0),
+        "teams_imported": status.get("teams_imported", 0),
+        "predictions_imported": status.get("predictions_imported", 0),
+        "last_refresh_at": status.get("last_refresh_at"),
+        "warning": status.get("warning") or (
+            "PostgreSQL indisponible ou écriture échouée. Fallback mémoire utilisé."
+            if status.get("storage") in {None, "memory", "mémoire"}
+            else None
+        ),
+    }
 
 
 def _dashboard_summary():
@@ -448,7 +464,7 @@ def _dashboard_summary():
 
 
 def _require_admin_key(x_admin_key: str | None):
-    env = os.getenv("ENV", "development").lower()
+    env = os.getenv("ENV", os.getenv("ENVIRONMENT", "development")).lower()
     admin_key = os.getenv("ADMIN_API_KEY")
 
     if not admin_key and env != "production":

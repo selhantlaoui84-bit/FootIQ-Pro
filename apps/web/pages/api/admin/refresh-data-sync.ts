@@ -27,7 +27,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ status: 'error', detail: 'Method not allowed' });
   }
 
-  const adminKey = process.env.ADMIN_API_KEY || process.env.NEXT_PUBLIC_ADMIN_API_KEY;
+  const adminKey = process.env.ADMIN_API_KEY;
 
   if (!adminKey) {
     return res.status(500).json({ status: 'error', detail: 'ADMIN_API_KEY is not configured on the web server' });
