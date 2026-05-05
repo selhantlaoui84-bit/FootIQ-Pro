@@ -15,7 +15,7 @@ from data.mock_data import MATCHES, PERFORMANCE, TEAMS, get_match as get_mock_ma
 from data.mock_data import get_prediction as get_mock_prediction
 from data.mock_data import get_team as get_mock_team
 from services.admin_alerts import build_admin_alerts_report
-from services.feature_store import build_feature_snapshots, summarize_feature_store
+from services.feature_store import build_feature_snapshots, build_feature_snapshots_detailed, summarize_feature_store
 from services.data_quality import build_dataset_quality_report
 from services.football_data_client import (
     get_configured_competitions_data,
@@ -851,6 +851,66 @@ def debug_predictions_structure():
         ),
     }
 
+
+def _feature_store_diagnostics(matches: list[dict] | None = None, predictions: list[dict] | None = None) -> dict[str, Any]:
+    matches = matches if matches is not None else _available_matches()
+    predictions = predictions if predictions is not None else repository.get_predictions()
+    generated_predictions = _generated_predictions(matches)
+    predictions_for_build = predictions or generated_predictions
+    storage_detected = "postgresql" if repository.get_matches() else "memory"
+
+    finished = [match for match in matches if str(match.get("status") or "").upper() == "FINISHED"]
+    finished_with_scores = [match for match in finished if get_match_result(match) is not None]
+    feature_snapshots = _available_feature_snapshots()
+
+    prediction_match_ids = {str(item.get("match_id")) for item in predictions_for_build if item.get("match_id") is not None}
+    prediction_ids = {str(item.get("id")) for item in predictions_for_build if item.get("id") is not None}
+    prediction_slugs = {str(item.get("slug")) for item in predictions_for_build if item.get("slug") is not None}
+    join_on_match_id = 0
+    join_on_id = 0
+    join_on_slug = 0
+    for match in finished_with_scores:
+        if match.get("match_id") is not None and str(match.get("match_id")) in prediction_match_ids:
+            join_on_match_id += 1
+        if match.get("id") is not None and str(match.get("id")) in prediction_ids:
+            join_on_id += 1
+        if match.get("slug") is not None and str(match.get("slug")) in prediction_slugs:
+            join_on_slug += 1
+
+    elo_ratings = calculate_team_elos(matches)
+    detailed = build_feature_snapshots_detailed(
+        matches,
+        predictions_for_build,
+        target_matches=matches,
+        prediction_factory=lambda match: _prediction_for_match(match, matches, elo_ratings),
+    )
+    snapshots = detailed.get("snapshots", [])
+    first_snapshot = snapshots[0] if snapshots else None
+
+    return {
+        "matches_total": len(matches),
+        "finished_matches": len(finished),
+        "finished_with_scores": len(finished_with_scores),
+        "predictions_total": len(predictions),
+        "generated_predictions_count": len(generated_predictions),
+        "feature_snapshots_total": len(feature_snapshots),
+        "join_on_match_id_count": join_on_match_id,
+        "join_on_id_count": join_on_id,
+        "join_on_slug_count": join_on_slug,
+        "trainable_candidates_count": len(snapshots),
+        "first_trainable_candidate_sample": detailed.get("first_trainable_candidate_sample"),
+        "rejection_reasons_count": detailed.get("rejection_reasons_count", {}),
+        "sample_rejected_matches": detailed.get("sample_rejected_matches", []),
+        "target_sample": first_snapshot.get("target") if first_snapshot else None,
+        "prediction_sample": predictions_for_build[0] if predictions_for_build else None,
+        "storage_detected": storage_detected,
+    }
+
+
+@app.get("/debug/feature-store-diagnostics")
+def debug_feature_store_diagnostics():
+    return _feature_store_diagnostics()
+
 @app.get("/backtesting")
 def backtesting_report():
     return calculate_backtest_report(_available_matches(), _available_predictions())
@@ -1174,20 +1234,29 @@ def run_build_feature_store_job(
             if len(target_matches) >= limit:
                 break
 
-        try:
-            feature_items = build_feature_snapshots(matches, predictions, target_matches=target_matches)
-        except TypeError:
-            all_items = build_feature_snapshots(matches, predictions)
-            target_ids = {
-                item.get("match_id") or item.get("id") or item.get("slug")
-                for item in target_matches
-            }
-            feature_items = [
-                item for item in all_items
-                if item.get("match_id") in target_ids
-            ][:limit]
+        elo_ratings = calculate_team_elos(matches)
+        detailed = build_feature_snapshots_detailed(
+            matches,
+            predictions,
+            target_matches=target_matches,
+            prediction_factory=lambda match: _prediction_for_match(match, matches, elo_ratings),
+        )
+        feature_items = detailed.get("snapshots", [])
+        rejection_reasons_count = dict(detailed.get("rejection_reasons_count", {}))
+        sample_rejected_matches = detailed.get("sample_rejected_matches", [])
 
-        saved_count = repository.save_feature_snapshots(feature_items)
+        save_report = repository.save_feature_snapshots(feature_items)
+        if isinstance(save_report, dict):
+            saved_count = int(save_report.get("saved_count", 0) or 0)
+            save_failed_count = int(save_report.get("failed_count", 0) or 0)
+            save_errors = list(save_report.get("errors", []) or [])[:5]
+        else:
+            saved_count = int(save_report or 0)
+            save_failed_count = max(0, len(feature_items) - saved_count)
+            save_errors = []
+
+        if save_failed_count:
+            rejection_reasons_count["save_failed"] = rejection_reasons_count.get("save_failed", 0) + save_failed_count
 
         source_refresh = _refresh_status()
         storage = "postgresql" if source_refresh.get("storage") == "postgresql" or repository.get_matches() else "memory"
@@ -1200,6 +1269,10 @@ def run_build_feature_store_job(
 
         if structure.get("finished_with_scores", 0) == 0:
             reason_if_zero_snapshots = "Aucun match terminé avec score disponible. Importez l’historique ou vérifiez les statuts football-data.org."
+        elif len(feature_items) == 0:
+            reason_if_zero_snapshots = "Matchs terminés avec score disponibles mais aucun snapshot créé. Vérifiez la jointure match/prédiction ou la génération à la volée."
+        elif saved_count == 0 and storage == "postgresql":
+            reason_if_zero_snapshots = "Snapshots créés mais non sauvegardés en PostgreSQL. Vérifiez repository.save_feature_snapshots."
         elif not feature_items:
             if matches_available == 0:
                 reason_if_zero_snapshots = "Aucun match disponible pour construire le Feature Store."
@@ -1231,8 +1304,12 @@ def run_build_feature_store_job(
             "snapshots_created": len(feature_items),
             "feature_snapshots_saved": saved_count,
             "snapshots_saved": saved_count,
+            "feature_snapshots_failed": save_failed_count,
+            "feature_save_errors_sample": save_errors,
             "feature_snapshots_skipped": skipped_count,
             "reason_if_zero_snapshots": reason_if_zero_snapshots,
+            "rejection_reasons_count": rejection_reasons_count,
+            "sample_rejected_matches": sample_rejected_matches,
             "training_rows_available": training_rows_available,
             "target_coverage": target_coverage,
             "feature_set_version": "pre-match-advanced-v1",

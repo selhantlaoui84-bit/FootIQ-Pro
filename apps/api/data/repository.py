@@ -619,20 +619,52 @@ def save_feature_snapshot(match_id: str, model_version: str, features: dict, tar
     return snapshot_id if ok else None
 
 
-def save_feature_snapshots(items: list[dict]) -> int:
-    if not items or not db_available():
-        return 0
+def save_feature_snapshots(items: list[dict]) -> dict:
+    report = {"saved_count": 0, "failed_count": 0, "errors": []}
+    if not items:
+        return report
 
-    saved = 0
+    engine = get_engine()
+    if engine is None:
+        report["failed_count"] = len(items)
+        report["errors"].append("DATABASE_URL missing or PostgreSQL engine unavailable")
+        return report
+
+    statement = text(
+        """
+        INSERT INTO feature_snapshots (id, match_id, model_version, features_json, target_json, created_at)
+        VALUES (:id, :match_id, :model_version, :features_json, :target_json, :created_at)
+        """
+    )
+
     for item in items:
-        if save_feature_snapshot(
-            item.get("match_id"),
-            item.get("model_version", MODEL_VERSION),
-            item.get("features") or {},
-            item.get("target"),
-        ):
-            saved += 1
-    return saved
+        try:
+            match_id = item.get("match_id")
+            features = item.get("features") or {}
+            if not match_id:
+                raise ValueError("Feature snapshot missing match_id")
+            if not features:
+                raise ValueError("Feature snapshot missing features")
+            with engine.begin() as connection:
+                connection.execute(
+                    statement,
+                    {
+                        "id": str(uuid.uuid4()),
+                        "match_id": match_id,
+                        "model_version": item.get("model_version", MODEL_VERSION),
+                        "features_json": _json(features),
+                        "target_json": _json(item.get("target")) if item.get("target") is not None else None,
+                        "created_at": _now(),
+                    },
+                )
+            report["saved_count"] += 1
+        except Exception as exc:
+            report["failed_count"] += 1
+            if len(report["errors"]) < 5:
+                report["errors"].append(str(exc))
+            logger.exception("Feature snapshot insert failed")
+
+    return report
 
 
 def get_feature_snapshots(model_version: str | None = None, limit: int = 5000) -> list[dict]:
