@@ -88,6 +88,12 @@ export default function AdminPage() {
 
   const backendConnected = health?.status === 'ok' || health?.status === 'healthy';
   const configError = useMemo(() => diagnosticError(diagnostics), [diagnostics]);
+  const dataImported =
+    workflowStatus?.refresh.data_imported ??
+    ((workflowStatus?.refresh.storage === 'postgresql' && (workflowStatus?.refresh.matches_imported ?? 0) > 0) ||
+      (refreshInfo?.storage === 'postgresql' && (refreshInfo?.matches_imported ?? 0) > 0));
+  const featureStoreReady = workflowStatus?.feature_store.ready ?? false;
+  const candidateModelTrained = workflowStatus?.candidate_model.trained ?? false;
 
   async function reloadAdminState() {
     const [healthResult, refreshStatus, workflow, quality, governance, alerts, dashboard] = await Promise.all([
@@ -126,6 +132,11 @@ export default function AdminPage() {
     } finally {
       setIsTestingConfig(false);
     }
+  }
+
+  async function handleReloadState() {
+    setError(null);
+    await Promise.all([reloadAdminState(), handleDiagnostics()]);
   }
 
   useEffect(() => {
@@ -292,6 +303,11 @@ export default function AdminPage() {
   }
 
   async function handleTrainCandidate() {
+    if (!featureStoreReady) {
+      setError("Construisez d'abord le Feature Store avant d'entraîner le modèle.");
+      return;
+    }
+
     setIsTraining(true);
     setError(null);
 
@@ -300,9 +316,9 @@ export default function AdminPage() {
       setTrainingReport(result);
 
       if (result.status === 'error') {
-        setError(result.detail ?? 'Candidate training failed.');
+        setError(result.detail ?? "Construisez d'abord le Feature Store avant d'entraîner le modèle.");
       } else if (result.status === 'blocked') {
-        setError(result.reason ?? result.dataset_quality?.recommendation_reason ?? 'Entraînement bloqué pour éviter une fuite de données.');
+        setError(result.reason ?? result.dataset_quality?.recommendation_reason ?? "Construisez d'abord le Feature Store avant d'entraîner le modèle.");
       }
 
       await reloadAdminState();
@@ -314,6 +330,11 @@ export default function AdminPage() {
   }
 
   async function handleGenerateShadowPredictions() {
+    if (!candidateModelTrained) {
+      setError("Entraînez d'abord le modèle candidat avant de générer les prédictions shadow.");
+      return;
+    }
+
     setIsGeneratingShadow(true);
     setError(null);
 
@@ -362,9 +383,14 @@ export default function AdminPage() {
               <p className="eyebrow">État système</p>
               <h2>Configuration et connexion</h2>
             </div>
-            <button className="button secondary" type="button" onClick={handleDiagnostics} disabled={isTestingConfig}>
-              {isTestingConfig ? 'Test en cours...' : 'Tester la configuration'}
-            </button>
+            <div className="quickActions">
+              <button className="button secondary" type="button" onClick={handleReloadState}>
+                Recharger l'état
+              </button>
+              <button className="button secondary" type="button" onClick={handleDiagnostics} disabled={isTestingConfig}>
+                {isTestingConfig ? 'Test en cours...' : 'Tester la configuration'}
+              </button>
+            </div>
           </div>
 
           <div className="compactDataGrid four">
@@ -431,10 +457,19 @@ export default function AdminPage() {
         <section className="card workflowCard">
           <p className="eyebrow">Pipeline modèle</p>
           <h2>Data, Feature Store, candidat ML et shadow</h2>
+          <div className="dataList">
+            <span>Étape 1 <strong>Données importées</strong></span>
+            <span>Étape 2 <strong>Feature Store</strong></span>
+            <span>Étape 3 <strong>Modèle candidat</strong></span>
+            <span>Étape 4 <strong>Prédictions shadow</strong></span>
+            <span>Étape 5 <strong>Backtesting</strong></span>
+          </div>
           <div className="compactDataGrid four">
-            <div className="metric"><span>Données actualisées</span><strong>{workflowStatus?.refresh.last_refresh_at ? 'oui' : 'non'}</strong></div>
-            <div className="metric"><span>Feature Store prêt</span><strong>{workflowStatus?.feature_store.ready ? 'oui' : 'non'}</strong></div>
-            <div className="metric"><span>Modèle candidat entraîné</span><strong>{workflowStatus?.candidate_model.trained ? 'oui' : 'non'}</strong></div>
+            <div className="metric"><span>Données actualisées</span><strong>{dataImported ? 'oui' : 'non'}</strong></div>
+            <div className="metric"><span>Source</span><strong>{workflowStatus?.refresh.source ?? refreshInfo?.source ?? 'mock'}</strong></div>
+            <div className="metric"><span>Stockage</span><strong>{formatStorage(workflowStatus?.refresh.storage ?? refreshInfo?.storage)}</strong></div>
+            <div className="metric"><span>Feature Store prêt</span><strong>{featureStoreReady ? 'oui' : 'non'}</strong></div>
+            <div className="metric"><span>Modèle candidat entraîné</span><strong>{candidateModelTrained ? 'oui' : 'non'}</strong></div>
             <div className="metric"><span>Prédictions shadow générées</span><strong>{workflowStatus?.shadow_predictions.generated ? 'oui' : 'non'}</strong></div>
             <div className="metric"><span>Backtesting shadow</span><strong>{workflowStatus?.shadow_backtesting.ready ? 'disponible' : 'indisponible'}</strong></div>
             <div className="metric"><span>Score qualité</span><strong>{featureQuality?.average_quality_score ?? 0}/100</strong></div>
@@ -475,7 +510,10 @@ export default function AdminPage() {
                   <input min={1} max={10000} type="number" value={trainingLimit} onChange={(event) => setTrainingLimit(Number(event.target.value))} />
                 </label>
               </div>
-              <button className="button primary" type="button" onClick={handleTrainCandidate} disabled={isTraining || !isAdmin}>
+              {!featureStoreReady && (
+                <div className="banner warning">Construisez d'abord le Feature Store avant d'entraîner le modèle.</div>
+              )}
+              <button className="button primary" type="button" onClick={handleTrainCandidate} disabled={isTraining || !isAdmin || !featureStoreReady}>
                 {isTraining ? 'Entraînement...' : 'Entraîner le modèle'}
               </button>
               {trainingReport && (
@@ -509,7 +547,10 @@ export default function AdminPage() {
                   <input type="checkbox" checked={shadowForce} onChange={(event) => setShadowForce(event.target.checked)} />
                 </label>
               </div>
-              <button className="button primary" type="button" onClick={handleGenerateShadowPredictions} disabled={isGeneratingShadow || !isAdmin}>
+              {!candidateModelTrained && (
+                <div className="banner warning">Entraînez d'abord le modèle candidat avant de générer les prédictions shadow.</div>
+              )}
+              <button className="button primary" type="button" onClick={handleGenerateShadowPredictions} disabled={isGeneratingShadow || !isAdmin || !candidateModelTrained}>
                 {isGeneratingShadow ? 'Génération...' : 'Générer les prédictions shadow'}
               </button>
               {shadowResult && (
