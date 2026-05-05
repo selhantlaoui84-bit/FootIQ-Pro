@@ -15,6 +15,7 @@ import {
   getRefreshJobStatus,
   getRefreshStatus,
   refreshData,
+  resetStaleJobs,
   trainCandidateModel,
 } from '~/lib/api';
 import { useAuth } from '~/lib/auth';
@@ -57,6 +58,11 @@ function diagnosticError(diagnostics: AdminDiagnosticsResponse | null) {
       : null;
 }
 
+function isProbablyStale(job?: RefreshJobStatus | null) {
+  if (!job || job.status !== 'running' || !job.started_at) return false;
+  return Date.now() - new Date(job.started_at).getTime() > 15 * 60 * 1000;
+}
+
 export default function AdminPage() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [workflowStatus, setWorkflowStatus] = useState<AdminWorkflowStatus | null>(null);
@@ -94,6 +100,8 @@ export default function AdminPage() {
       (refreshInfo?.storage === 'postgresql' && (refreshInfo?.matches_imported ?? 0) > 0));
   const featureStoreReady = workflowStatus?.feature_store.ready ?? false;
   const candidateModelTrained = workflowStatus?.candidate_model.trained ?? false;
+  const refreshJobStale = isProbablyStale(refreshJob) || isProbablyStale(workflowStatus?.latest_refresh_job);
+  const featureStoreJobStale = isProbablyStale(featureStoreJob) || isProbablyStale(workflowStatus?.latest_feature_store_job);
 
   async function reloadAdminState() {
     const [healthResult, refreshStatus, workflow, quality, governance, alerts, dashboard] = await Promise.all([
@@ -137,6 +145,16 @@ export default function AdminPage() {
   async function handleReloadState() {
     setError(null);
     await Promise.all([reloadAdminState(), handleDiagnostics()]);
+  }
+
+  async function handleResetStaleJobs() {
+    setError(null);
+    const result = await resetStaleJobs();
+    if (result.status === 'error') {
+      setError(result.detail ?? 'Réinitialisation des jobs bloqués impossible.');
+      return;
+    }
+    await handleReloadState();
   }
 
   useEffect(() => {
@@ -245,13 +263,13 @@ export default function AdminPage() {
         return;
       }
 
-      setRefreshInfo(response);
-
       if (response.status === 'accepted' && response.job_id) {
         setRefreshJobId(response.job_id);
         await Promise.all([reloadAdminState(), handleDiagnostics()]);
         return;
       }
+
+      setRefreshInfo(response);
 
       if (response.status === 'error') {
         setError(response.detail ?? response.error ?? 'Actualisation impossible.');
@@ -426,6 +444,22 @@ export default function AdminPage() {
               <span>Alertes</span>
               <strong>{adminAlerts?.alerts_count ?? 0}</strong>
             </div>
+            <div className="metric">
+              <span>Auto-refresh</span>
+              <strong>{diagnostics?.hasCronSecret ? 'actif' : 'inactif'}</strong>
+            </div>
+            <div className="metric">
+              <span>Cron Vercel</span>
+              <strong>{diagnostics?.cronConfigured ? 'configuré' : 'non configuré'}</strong>
+            </div>
+            <div className="metric">
+              <span>Hourly refresh</span>
+              <strong>{workflowStatus?.cron?.hourly_refresh_last_run?.ran_at ?? 'jamais'}</strong>
+            </div>
+            <div className="metric">
+              <span>Fins de match</span>
+              <strong>{workflowStatus?.cron?.match_finished_check_last_run?.ran_at ?? 'jamais'}</strong>
+            </div>
           </div>
         </section>
 
@@ -449,6 +483,14 @@ export default function AdminPage() {
             <div className="banner info">
               Job refresh: {refreshJob.status}
               {refreshJob.duration_ms ? ` · Durée ${refreshJob.duration_ms} ms` : ''}
+            </div>
+          )}
+          {refreshJobStale && (
+            <div className="banner warning">
+              Job probablement bloqué.
+              <button className="button secondary" type="button" onClick={handleResetStaleJobs}>
+                Réinitialiser les jobs bloqués
+              </button>
             </div>
           )}
           {refreshInfo?.warning && <div className="banner warning">{refreshInfo.warning}</div>}
@@ -485,6 +527,14 @@ export default function AdminPage() {
                 {isBuildingFeatures ? 'Construction...' : 'Construire le Feature Store'}
               </button>
               {featureStoreJob && <div className="banner info">Statut Feature Store: {featureStoreJob.status}</div>}
+              {featureStoreJobStale && (
+                <div className="banner warning">
+                  Job probablement bloqué.
+                  <button className="button secondary" type="button" onClick={handleResetStaleJobs}>
+                    Réinitialiser les jobs bloqués
+                  </button>
+                </div>
+              )}
               {featureBuildInfo && (
                 <div className="dataList">
                   <span>Stockage <strong>{formatStorage(featureBuildInfo.storage)}</strong></span>
