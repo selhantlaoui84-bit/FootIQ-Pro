@@ -23,6 +23,16 @@ def _prediction(match_id="m1"):
     }
 
 
+def _feature_snapshot(match_id="m1", value=1):
+    return {
+        "match_id": match_id,
+        "model_version": main.MODEL_VERSION,
+        "feature_set_version": "pre-match-advanced-v1",
+        "features": {"elo_delta": value, "home_probability": 55},
+        "target": {"result": "home", "home_goals": 2, "away_goals": 1, "over_2_5": True, "btts": True},
+    }
+
+
 class PredictionPersistenceTests(unittest.TestCase):
     def setUp(self):
         self.engine = create_engine("sqlite:///:memory:", future=True)
@@ -135,6 +145,33 @@ class PredictionPersistenceTests(unittest.TestCase):
         self.assertEqual(report["predictions_table_count"], 0)
         self.assertEqual(report["generated_predictions_count"], 1)
         self.assertTrue(report["warning"])
+
+    def test_save_feature_snapshots_inserts_valid_snapshot(self):
+        report = repository.save_feature_snapshots([_feature_snapshot("m1")])
+
+        self.assertEqual(report["saved_count"], 1)
+        self.assertEqual(report["inserted_count"], 1)
+        self.assertEqual(report["updated_count"], 0)
+        self.assertEqual(repository.count_feature_snapshots(), 1)
+
+    def test_save_feature_snapshots_upserts_without_duplicate(self):
+        first = repository.save_feature_snapshots([_feature_snapshot("m1", value=1)])
+        second = repository.save_feature_snapshots([_feature_snapshot("m1", value=7)])
+        rows = repository.get_feature_snapshots()
+
+        self.assertEqual(first["inserted_count"], 1)
+        self.assertEqual(second["saved_count"], 1)
+        self.assertEqual(second["updated_count"], 1)
+        self.assertEqual(repository.count_feature_snapshots(), 1)
+        self.assertEqual(rows[0]["features"]["elo_delta"], 7)
+
+    def test_save_feature_snapshots_returns_sql_error(self):
+        with patch.object(repository, "get_engine", return_value=None):
+            report = repository.save_feature_snapshots([_feature_snapshot("m1")])
+
+        self.assertEqual(report["saved_count"], 0)
+        self.assertEqual(report["failed_count"], 1)
+        self.assertTrue(report["errors"])
 
 
 if __name__ == "__main__":

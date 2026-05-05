@@ -2,7 +2,7 @@
 import os
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, Float, Integer, MetaData, Table, Text, TIMESTAMP, create_engine, text
+from sqlalchemy import Boolean, Column, Float, Index, Integer, MetaData, Table, Text, TIMESTAMP, create_engine, text
 from sqlalchemy.engine import Engine
 
 logger = logging.getLogger(__name__)
@@ -78,8 +78,10 @@ feature_snapshots_table = Table(
     Column("model_version", Text),
     Column("features_json", Text),
     Column("target_json", Text, nullable=True),
+    Column("payload_json", Text, nullable=True),
     Column("created_at", TIMESTAMP(timezone=True)),
 )
+Index("ux_feature_snapshots_match_model", feature_snapshots_table.c.match_id, feature_snapshots_table.c.model_version, unique=True)
 
 ml_shadow_predictions_table = Table(
     "ml_shadow_predictions",
@@ -156,22 +158,32 @@ def db_available() -> bool:
 
 
 
-def _ensure_match_score_columns(engine: Engine) -> None:
-    if engine.dialect.name != "postgresql":
-        return
-
-    statements = [
-        "ALTER TABLE matches ADD COLUMN IF NOT EXISTS score_full_time_home INTEGER",
-        "ALTER TABLE matches ADD COLUMN IF NOT EXISTS score_full_time_away INTEGER",
-        "ALTER TABLE matches ADD COLUMN IF NOT EXISTS score_half_time_home INTEGER",
-        "ALTER TABLE matches ADD COLUMN IF NOT EXISTS score_half_time_away INTEGER",
-        "ALTER TABLE matches ADD COLUMN IF NOT EXISTS winner TEXT",
-        "ALTER TABLE matches ADD COLUMN IF NOT EXISTS raw_json TEXT",
-        "ALTER TABLE refresh_logs ADD COLUMN IF NOT EXISTS predictions_generated INTEGER DEFAULT 0",
-        "ALTER TABLE refresh_logs ADD COLUMN IF NOT EXISTS predictions_saved INTEGER DEFAULT 0",
-        "ALTER TABLE refresh_logs ADD COLUMN IF NOT EXISTS predictions_failed INTEGER DEFAULT 0",
-        "ALTER TABLE refresh_logs ADD COLUMN IF NOT EXISTS prediction_save_errors_json TEXT",
-    ]
+def _ensure_runtime_columns_and_indexes(engine: Engine) -> None:
+    if engine.dialect.name == "postgresql":
+        statements = [
+            "ALTER TABLE matches ADD COLUMN IF NOT EXISTS score_full_time_home INTEGER",
+            "ALTER TABLE matches ADD COLUMN IF NOT EXISTS score_full_time_away INTEGER",
+            "ALTER TABLE matches ADD COLUMN IF NOT EXISTS score_half_time_home INTEGER",
+            "ALTER TABLE matches ADD COLUMN IF NOT EXISTS score_half_time_away INTEGER",
+            "ALTER TABLE matches ADD COLUMN IF NOT EXISTS winner TEXT",
+            "ALTER TABLE matches ADD COLUMN IF NOT EXISTS raw_json TEXT",
+            "ALTER TABLE refresh_logs ADD COLUMN IF NOT EXISTS predictions_generated INTEGER DEFAULT 0",
+            "ALTER TABLE refresh_logs ADD COLUMN IF NOT EXISTS predictions_saved INTEGER DEFAULT 0",
+            "ALTER TABLE refresh_logs ADD COLUMN IF NOT EXISTS predictions_failed INTEGER DEFAULT 0",
+            "ALTER TABLE refresh_logs ADD COLUMN IF NOT EXISTS prediction_save_errors_json TEXT",
+            "ALTER TABLE feature_snapshots ADD COLUMN IF NOT EXISTS payload_json TEXT",
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_feature_snapshots_match_model ON feature_snapshots(match_id, model_version)",
+        ]
+    elif engine.dialect.name == "sqlite":
+        statements = [
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_feature_snapshots_match_model ON feature_snapshots(match_id, model_version)",
+        ]
+        with engine.connect() as connection:
+            columns = {row._mapping["name"] for row in connection.execute(text("PRAGMA table_info(feature_snapshots)"))}
+        if "payload_json" not in columns:
+            statements.insert(0, "ALTER TABLE feature_snapshots ADD COLUMN payload_json TEXT")
+    else:
+        statements = []
 
     with engine.begin() as connection:
         for statement in statements:
@@ -187,7 +199,7 @@ def init_db() -> bool:
 
     try:
         metadata.create_all(engine)
-        _ensure_match_score_columns(engine)
+        _ensure_runtime_columns_and_indexes(engine)
         return True
     except Exception as exc:
         logger.warning("PostgreSQL schema init failed: %s", exc)
@@ -241,4 +253,3 @@ def fetch_one_safe(statement, params=None) -> dict | None:
 
 def utcnow() -> datetime:
     return datetime.utcnow()
-

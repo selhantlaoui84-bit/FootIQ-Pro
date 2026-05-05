@@ -10,6 +10,14 @@ from services.advanced_features import ADVANCED_FEATURE_COLUMNS, FEATURE_SET_VER
 
 logger = logging.getLogger(__name__)
 MODEL_VERSION = "elo-poisson-calibrated-v1"
+_last_feature_snapshot_save_report = {
+    "saved_count": 0,
+    "inserted_count": 0,
+    "updated_count": 0,
+    "skipped_existing_count": 0,
+    "failed_count": 0,
+    "errors": [],
+}
 
 
 def _json(data) -> str:
@@ -583,14 +591,16 @@ def get_model_versions() -> list[str]:
 
 def _feature_row_to_snapshot(row: dict) -> dict:
     created_at = row.get("created_at")
-    features = _loads(row.get("features_json")) or {}
+    payload = _loads(row.get("payload_json")) or {}
+    features = _loads(row.get("features_json")) or payload.get("features") or {}
     return {
         "id": row.get("id"),
         "match_id": row.get("match_id"),
         "model_version": row.get("model_version"),
         "feature_set_version": FEATURE_SET_VERSION if any(name in features for name in ADVANCED_FEATURE_COLUMNS) else None,
         "features": features,
-        "target": _loads(row.get("target_json")),
+        "target": _loads(row.get("target_json")) if row.get("target_json") else payload.get("target"),
+        "payload": payload,
         "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else created_at,
     }
 
@@ -620,51 +630,116 @@ def save_feature_snapshot(match_id: str, model_version: str, features: dict, tar
 
 
 def save_feature_snapshots(items: list[dict]) -> dict:
-    report = {"saved_count": 0, "failed_count": 0, "errors": []}
+    global _last_feature_snapshot_save_report
+
+    report = {
+        "saved_count": 0,
+        "inserted_count": 0,
+        "updated_count": 0,
+        "skipped_existing_count": 0,
+        "failed_count": 0,
+        "errors": [],
+    }
     if not items:
+        _last_feature_snapshot_save_report = dict(report)
         return report
 
     engine = get_engine()
     if engine is None:
         report["failed_count"] = len(items)
         report["errors"].append("DATABASE_URL missing or PostgreSQL engine unavailable")
+        _last_feature_snapshot_save_report = dict(report)
         return report
 
     statement = text(
         """
-        INSERT INTO feature_snapshots (id, match_id, model_version, features_json, target_json, created_at)
-        VALUES (:id, :match_id, :model_version, :features_json, :target_json, :created_at)
+        INSERT INTO feature_snapshots (id, match_id, model_version, features_json, target_json, payload_json, created_at)
+        VALUES (:id, :match_id, :model_version, :features_json, :target_json, :payload_json, :created_at)
+        ON CONFLICT(match_id, model_version) DO UPDATE SET
+            features_json = EXCLUDED.features_json,
+            target_json = EXCLUDED.target_json,
+            payload_json = EXCLUDED.payload_json,
+            created_at = EXCLUDED.created_at
         """
     )
 
     for item in items:
         try:
             match_id = item.get("match_id")
+            model_version = item.get("model_version", MODEL_VERSION)
             features = item.get("features") or {}
             if not match_id:
                 raise ValueError("Feature snapshot missing match_id")
             if not features:
                 raise ValueError("Feature snapshot missing features")
+            existed = fetch_one_safe(
+                text("SELECT id FROM feature_snapshots WHERE match_id = :match_id AND model_version = :model_version LIMIT 1"),
+                {"match_id": match_id, "model_version": model_version},
+            ) is not None
             with engine.begin() as connection:
                 connection.execute(
                     statement,
                     {
                         "id": str(uuid.uuid4()),
                         "match_id": match_id,
-                        "model_version": item.get("model_version", MODEL_VERSION),
+                        "model_version": model_version,
                         "features_json": _json(features),
                         "target_json": _json(item.get("target")) if item.get("target") is not None else None,
+                        "payload_json": _json(item),
                         "created_at": _now(),
                     },
                 )
             report["saved_count"] += 1
+            if existed:
+                report["updated_count"] += 1
+            else:
+                report["inserted_count"] += 1
         except Exception as exc:
             report["failed_count"] += 1
             if len(report["errors"]) < 5:
                 report["errors"].append(str(exc))
             logger.exception("Feature snapshot insert failed")
 
+    _last_feature_snapshot_save_report = dict(report)
     return report
+
+
+def get_last_feature_snapshot_save_report() -> dict:
+    return dict(_last_feature_snapshot_save_report)
+
+
+def count_feature_snapshots() -> int:
+    row = fetch_one_safe(text("SELECT COUNT(*) AS count FROM feature_snapshots"))
+    return int(row.get("count", 0)) if row else 0
+
+
+def feature_snapshots_schema_ok() -> bool:
+    engine = get_engine()
+    if engine is None:
+        return False
+    required = {"id", "match_id", "model_version", "features_json", "target_json", "created_at"}
+    try:
+        if engine.dialect.name == "postgresql":
+            rows = fetch_all_safe(
+                text(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = 'feature_snapshots'
+                    """
+                )
+            )
+            columns = {row.get("column_name") for row in rows}
+        elif engine.dialect.name == "sqlite":
+            with engine.connect() as connection:
+                rows = connection.execute(text("PRAGMA table_info(feature_snapshots)")).fetchall()
+            columns = {row._mapping["name"] for row in rows}
+        else:
+            return False
+        return required.issubset(columns) and ("features_json" in columns or "payload_json" in columns)
+    except Exception as exc:
+        logger.warning("Feature snapshot schema inspection failed: %s", exc)
+        return False
 
 
 def get_feature_snapshots(model_version: str | None = None, limit: int = 5000) -> list[dict]:
@@ -676,7 +751,7 @@ def get_feature_snapshots(model_version: str | None = None, limit: int = 5000) -
         rows = fetch_all_safe(
             text(
                 """
-                SELECT id, match_id, model_version, features_json, target_json, created_at
+                SELECT id, match_id, model_version, features_json, target_json, payload_json, created_at
                 FROM feature_snapshots
                 WHERE model_version = :model_version
                 ORDER BY created_at DESC
@@ -689,7 +764,7 @@ def get_feature_snapshots(model_version: str | None = None, limit: int = 5000) -
         rows = fetch_all_safe(
             text(
                 """
-                SELECT id, match_id, model_version, features_json, target_json, created_at
+                SELECT id, match_id, model_version, features_json, target_json, payload_json, created_at
                 FROM feature_snapshots
                 ORDER BY created_at DESC
                 LIMIT :limit
