@@ -69,6 +69,18 @@ def _available_predictions():
     return [_prediction_for_match(match, matches, elo_ratings) for match in matches]
 
 
+def _generated_predictions(matches: list[dict] | None = None) -> list[dict]:
+    matches = matches if matches is not None else _available_matches()
+    elo_ratings = calculate_team_elos(matches)
+    return [_prediction_for_match(match, matches, elo_ratings) for match in matches]
+
+
+def _prediction_storage_source() -> str:
+    if repository.get_predictions():
+        return "postgresql"
+    return "generated_on_the_fly"
+
+
 def _match_id(match: dict) -> str | None:
     value = match.get("match_id") or match.get("id") or match.get("slug")
     return str(value) if value is not None else None
@@ -269,6 +281,9 @@ def _workflow_status_compact():
             "matches_imported": refresh_matches_imported,
             "teams_imported": refresh.get("teams_imported", 0),
             "predictions_imported": refresh.get("predictions_imported", 0),
+            "predictions_generated": refresh.get("predictions_generated", refresh.get("predictions_imported", 0)),
+            "predictions_saved": refresh.get("predictions_saved", refresh.get("predictions_imported", 0)),
+            "predictions_failed": refresh.get("predictions_failed", 0),
         },
         "feature_store": {
             "ready": feature_ready,
@@ -475,12 +490,18 @@ def _refresh_status():
     if latest_log:
         source = latest_log.get("source", "mock")
         storage = "postgresql" if stored_matches else latest_log.get("storage", "postgresql")
+        predictions_saved = latest_log.get("predictions_saved", len(stored_predictions))
+        predictions_generated = latest_log.get("predictions_generated", predictions_saved)
         return {
             "source": source,
             "storage": storage,
             "matches_imported": len(stored_matches),
             "teams_imported": len(stored_teams),
-            "predictions_imported": len(stored_predictions),
+            "predictions_imported": predictions_saved,
+            "predictions_generated": predictions_generated,
+            "predictions_saved": predictions_saved,
+            "predictions_failed": latest_log.get("predictions_failed", 0),
+            "prediction_save_errors": latest_log.get("prediction_save_errors", []),
             "last_refresh_at": latest_log.get("last_refresh_at"),
             "warning": None if storage == "postgresql" else "PostgreSQL indisponible ou écriture échouée. Fallback mémoire utilisé.",
         }
@@ -493,6 +514,9 @@ def _refresh_status():
             "matches_imported": len(stored_matches),
             "teams_imported": len(stored_teams),
             "predictions_imported": len(stored_predictions),
+            "predictions_generated": len(stored_predictions),
+            "predictions_saved": len(stored_predictions),
+            "predictions_failed": 0,
             "last_refresh_at": None,
             "warning": None,
         }
@@ -504,6 +528,9 @@ def _refresh_status():
         "matches_imported": status.get("matches_imported", 0),
         "teams_imported": status.get("teams_imported", 0),
         "predictions_imported": status.get("predictions_imported", 0),
+        "predictions_generated": status.get("predictions_imported", 0),
+        "predictions_saved": 0 if status.get("storage") == "memory" else status.get("predictions_imported", 0),
+        "predictions_failed": 0,
         "last_refresh_at": status.get("last_refresh_at"),
         "warning": status.get("warning") or (
             "PostgreSQL indisponible ou écriture échouée. Fallback mémoire utilisé."
@@ -789,6 +816,41 @@ def debug_finished_matches():
 def debug_matches_structure():
     return _matches_structure_report()
 
+
+@app.get("/debug/predictions-structure")
+def debug_predictions_structure():
+    stored_predictions = repository.get_predictions()
+    matches = _available_matches()
+    generated_predictions = _generated_predictions(matches)
+    missing_required = sum(
+        1
+        for prediction in stored_predictions
+        if not (prediction.get("id") and prediction.get("match_id") and prediction.get("slug") and prediction.get("model_version"))
+    )
+    last_refresh_log = repository.get_latest_refresh_log()
+    table_count = repository.count_predictions()
+    generated_count = len(generated_predictions)
+
+    return {
+        "predictions_table_count": table_count,
+        "sample_prediction_db": repository.sample_prediction_db(),
+        "generated_predictions_count": generated_count,
+        "sample_generated_prediction": generated_predictions[0] if generated_predictions else None,
+        "missing_required_fields_count": missing_required,
+        "last_refresh_log": last_refresh_log,
+        "prediction_save_status_from_last_refresh": {
+            "predictions_generated": (last_refresh_log or {}).get("predictions_generated", 0),
+            "predictions_saved": (last_refresh_log or {}).get("predictions_saved", 0),
+            "predictions_failed": (last_refresh_log or {}).get("predictions_failed", 0),
+            "errors": (last_refresh_log or {}).get("prediction_save_errors", []),
+        } if last_refresh_log else None,
+        "warning": (
+            "Les prédictions sont générées par /predictions mais la table PostgreSQL predictions est vide."
+            if table_count == 0 and generated_count > 0
+            else None
+        ),
+    }
+
 @app.get("/backtesting")
 def backtesting_report():
     return calculate_backtest_report(_available_matches(), _available_predictions())
@@ -925,18 +987,38 @@ def run_refresh_data_job(job_id: str | None = None) -> dict:
                 matches = external_matches or MATCHES
                 teams = external_teams or TEAMS
 
-        elo_ratings = calculate_team_elos(matches)
-        predictions = [_prediction_for_match(match, matches, elo_ratings) for match in matches]
+        predictions = _generated_predictions(matches)
+        predictions_generated = len(predictions)
 
         storage = "memory"
         snapshots_saved = 0
         warning = None
+        predictions_report = {"saved_count": 0, "failed_count": predictions_generated, "errors": []}
+        refresh_log_report = {"saved": False, "error": None}
 
-        saved_core = repository.save_matches(matches) and repository.save_teams(teams) and repository.save_predictions(predictions)
+        saved_matches = repository.save_matches(matches)
+        saved_teams = repository.save_teams(teams)
+        if saved_matches and saved_teams:
+            predictions_report = repository.save_predictions(predictions)
+
+        predictions_saved = int(predictions_report.get("saved_count", 0) or 0)
+        predictions_failed = int(predictions_report.get("failed_count", 0) or 0)
+        predictions_errors = list(predictions_report.get("errors", []) or [])[:5]
+
+        saved_core = saved_matches and saved_teams
 
         if saved_core:
             storage = "postgresql"
-            repository.save_refresh_log(source, storage, len(matches), len(teams))
+            refresh_log_report = repository.save_refresh_log(
+                source,
+                storage,
+                len(matches),
+                len(teams),
+                predictions_generated=predictions_generated,
+                predictions_saved=predictions_saved,
+                predictions_failed=predictions_failed,
+                prediction_save_errors=predictions_errors,
+            )
 
             try:
                 snapshots_saved = repository.save_prediction_snapshots(predictions)
@@ -944,6 +1026,12 @@ def run_refresh_data_job(job_id: str | None = None) -> dict:
                 warning = f"Refresh réussi, mais sauvegarde des snapshots échouée: {exc}"
         else:
             warning = "PostgreSQL indisponible ou écriture échouée. Fallback mémoire utilisé."
+
+        if storage == "postgresql" and predictions_generated > 0 and predictions_saved == 0:
+            warning = "Predictions generated but not saved to PostgreSQL."
+        if storage == "postgresql" and not refresh_log_report.get("saved"):
+            log_error = refresh_log_report.get("error") or "unknown error"
+            warning = f"{warning + ' ' if warning else ''}Refresh log not saved to PostgreSQL: {log_error}"
 
         runtime_store.set_matches(matches)
         runtime_store.set_teams(teams)
@@ -960,7 +1048,11 @@ def run_refresh_data_job(job_id: str | None = None) -> dict:
             "storage": storage,
             "matches_imported": len(matches),
             "teams_imported": len(teams),
-            "predictions_imported": len(predictions),
+            "predictions_imported": predictions_saved,
+            "predictions_generated": predictions_generated,
+            "predictions_saved": predictions_saved,
+            "predictions_failed": predictions_failed,
+            "predictions_save_errors_sample": predictions_errors,
             "snapshots_saved": snapshots_saved,
             "refresh_duration_ms": duration_ms,
             "duration_ms": duration_ms,
@@ -1042,11 +1134,18 @@ def run_build_feature_store_job(
         now = datetime.now(timezone.utc).isoformat()
 
         matches = _available_matches()
-        predictions = _available_predictions()
+        stored_predictions = repository.get_predictions()
+        if stored_predictions:
+            predictions = stored_predictions
+            predictions_source = "postgresql"
+        else:
+            predictions = _generated_predictions(matches)
+            predictions_source = "generated_on_the_fly"
         matches_available = len(matches)
         predictions_available = len(predictions)
         finished_matches_available = sum(1 for match in matches if get_match_result(match) is not None)
         structure = _matches_structure_report(matches)
+        finished_scored_matches = [match for match in matches if get_match_result(match) is not None]
 
         limit = max(1, min(int(limit or 500), 2000))
 
@@ -1060,7 +1159,9 @@ def run_build_feature_store_job(
         target_matches = []
         skipped_count = 0
 
-        for match in matches:
+        build_candidates = finished_scored_matches if finished_scored_matches else matches
+
+        for match in build_candidates:
             match_id = match.get("match_id") or match.get("id") or match.get("slug")
             key = f"{match_id}:{MODEL_VERSION}"
 
@@ -1120,13 +1221,16 @@ def run_build_feature_store_job(
         result = {
             "status": "warning" if reason_if_zero_snapshots else "ok",
             "storage": storage,
+            "predictions_source": predictions_source,
             "matches_available": matches_available,
             "predictions_available": predictions_available,
             "finished_matches_available": finished_matches_available,
             "finished_with_scores": structure.get("finished_with_scores", 0),
             "count_by_status": structure.get("count_by_status", {}),
             "feature_snapshots_built": len(feature_items),
+            "snapshots_created": len(feature_items),
             "feature_snapshots_saved": saved_count,
+            "snapshots_saved": saved_count,
             "feature_snapshots_skipped": skipped_count,
             "reason_if_zero_snapshots": reason_if_zero_snapshots,
             "training_rows_available": training_rows_available,

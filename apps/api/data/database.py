@@ -102,6 +102,10 @@ refresh_logs_table = Table(
     Column("storage", Text),
     Column("matches_imported", Integer),
     Column("teams_imported", Integer),
+    Column("predictions_generated", Integer),
+    Column("predictions_saved", Integer),
+    Column("predictions_failed", Integer),
+    Column("prediction_save_errors_json", Text, nullable=True),
     Column("created_at", TIMESTAMP(timezone=True)),
 )
 
@@ -163,6 +167,10 @@ def _ensure_match_score_columns(engine: Engine) -> None:
         "ALTER TABLE matches ADD COLUMN IF NOT EXISTS score_half_time_away INTEGER",
         "ALTER TABLE matches ADD COLUMN IF NOT EXISTS winner TEXT",
         "ALTER TABLE matches ADD COLUMN IF NOT EXISTS raw_json TEXT",
+        "ALTER TABLE refresh_logs ADD COLUMN IF NOT EXISTS predictions_generated INTEGER DEFAULT 0",
+        "ALTER TABLE refresh_logs ADD COLUMN IF NOT EXISTS predictions_saved INTEGER DEFAULT 0",
+        "ALTER TABLE refresh_logs ADD COLUMN IF NOT EXISTS predictions_failed INTEGER DEFAULT 0",
+        "ALTER TABLE refresh_logs ADD COLUMN IF NOT EXISTS prediction_save_errors_json TEXT",
     ]
 
     with engine.begin() as connection:
@@ -233,6 +241,4 @@ def fetch_one_safe(statement, params=None) -> dict | None:
 
 def utcnow() -> datetime:
     return datetime.utcnow()
-
-
 

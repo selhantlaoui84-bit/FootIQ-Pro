@@ -31,6 +31,10 @@ async function run() {
   assert.match(adminPageSource, /stableRefreshInfo\?\.storage === 'postgresql'/);
   assert.match(adminPageSource, /Job refresh probablement bloqué\. Dernier état stable conservé\./);
   assert.match(adminPageSource, /reason_if_zero_snapshots/);
+  assert.match(adminPageSource, /Prédictions générées/);
+  assert.match(adminPageSource, /Prédictions sauvegardées/);
+  assert.match(adminPageSource, /Les prédictions sont générées mais non sauvegardées en base\./);
+  assert.match(adminPageSource, /predictions_source/);
 
   const backendSource = await readFile(backendMain, 'utf8');
   assert.match(backendSource, /data_imported = refresh_matches_imported > 0 or repository_matches_count > 0/);

@@ -5,7 +5,7 @@ from datetime import datetime
 
 from sqlalchemy import text
 
-from data.database import db_available, execute_safe, fetch_all_safe, fetch_one_safe
+from data.database import db_available, execute_safe, fetch_all_safe, fetch_one_safe, get_engine
 from services.advanced_features import ADVANCED_FEATURE_COLUMNS, FEATURE_SET_VERSION
 
 logger = logging.getLogger(__name__)
@@ -84,6 +84,20 @@ def normalize_match_for_storage(match: dict) -> dict:
         normalized.get("score_full_time_home"),
         normalized.get("score_full_time_away"),
     )
+    return normalized
+
+
+def normalize_prediction_for_storage(prediction: dict, fallback_id: str | None = None) -> dict:
+    normalized = dict(prediction or {})
+    prediction_id = normalized.get("id") or normalized.get("match_id") or normalized.get("slug") or fallback_id
+    if not prediction_id:
+        raise ValueError("Prediction missing id, match_id and slug")
+
+    prediction_id = str(prediction_id)
+    normalized["id"] = str(normalized.get("id") or prediction_id)
+    normalized["match_id"] = str(normalized.get("match_id") or prediction_id)
+    normalized["slug"] = str(normalized.get("slug") or normalized["match_id"])
+    normalized["model_version"] = normalized.get("model_version") or MODEL_VERSION
     return normalized
 
 
@@ -230,9 +244,16 @@ def get_match(match_id: str) -> dict | None:
     return _match_payload_from_row(row)
 
 
-def save_predictions(predictions: list[dict]) -> bool:
-    if not predictions or not db_available():
-        return False
+def save_predictions(predictions: list[dict]) -> dict:
+    report = {"saved_count": 0, "failed_count": 0, "errors": []}
+    if not predictions:
+        return report
+
+    engine = get_engine()
+    if engine is None:
+        report["failed_count"] = len(predictions)
+        report["errors"].append("DATABASE_URL missing or PostgreSQL engine unavailable")
+        return report
 
     statement = text(
         """
@@ -246,71 +267,158 @@ def save_predictions(predictions: list[dict]) -> bool:
             created_at = EXCLUDED.created_at
         """
     )
-    ok = True
 
-    for prediction in predictions:
-        prediction_id = prediction.get("id") or prediction.get("match_id") or prediction.get("slug")
-        ok = execute_safe(
-            statement,
-            {
-                "id": prediction_id,
-                "match_id": prediction.get("match_id") or prediction_id,
-                "slug": prediction.get("slug") or prediction_id,
-                "payload_json": _json(prediction),
-                "model_version": MODEL_VERSION,
-                "created_at": _now(),
-            },
-        ) and ok
+    for index, prediction in enumerate(predictions):
+        try:
+            normalized = normalize_prediction_for_storage(prediction, fallback_id=f"prediction-{index}")
+            with engine.begin() as connection:
+                connection.execute(
+                    statement,
+                    {
+                        "id": normalized["id"],
+                        "match_id": normalized["match_id"],
+                        "slug": normalized["slug"],
+                        "payload_json": _json(normalized),
+                        "model_version": normalized["model_version"],
+                        "created_at": _now(),
+                    },
+                )
+            report["saved_count"] += 1
+        except Exception as exc:
+            report["failed_count"] += 1
+            if len(report["errors"]) < 5:
+                report["errors"].append(str(exc))
+            logger.exception("Prediction insert failed")
 
-    return ok
+    return report
+
+
+def count_predictions() -> int:
+    row = fetch_one_safe(text("SELECT COUNT(*) AS count FROM predictions"))
+    return int(row.get("count", 0)) if row else 0
+
+
+def sample_prediction_db() -> dict | None:
+    row = fetch_one_safe(
+        text(
+            """
+            SELECT id, match_id, slug, model_version, payload_json, created_at
+            FROM predictions
+            ORDER BY created_at DESC
+            LIMIT 1
+            """
+        )
+    )
+    if not row:
+        return None
+    payload = _loads(row.get("payload_json")) or {}
+    return {
+        "id": row.get("id"),
+        "match_id": row.get("match_id"),
+        "slug": row.get("slug"),
+        "model_version": row.get("model_version"),
+        "created_at": row.get("created_at").isoformat() if hasattr(row.get("created_at"), "isoformat") else row.get("created_at"),
+        "payload": payload,
+    }
+
+
+def _prediction_payload_from_row(row: dict | None):
+    if not row:
+        return None
+    prediction = _loads(row.get("payload_json")) or {}
+    prediction["id"] = prediction.get("id") or row.get("id")
+    prediction["match_id"] = prediction.get("match_id") or row.get("match_id") or prediction["id"]
+    prediction["slug"] = prediction.get("slug") or row.get("slug") or prediction["match_id"]
+    prediction["model_version"] = prediction.get("model_version") or row.get("model_version") or MODEL_VERSION
+    return prediction if prediction.get("match_id") else None
 
 
 def get_predictions() -> list[dict]:
-    rows = fetch_all_safe(text("SELECT payload_json FROM predictions ORDER BY created_at DESC"))
-    return [prediction for prediction in (_loads(row.get("payload_json")) for row in rows) if prediction]
+    rows = fetch_all_safe(
+        text(
+            """
+            SELECT id, match_id, slug, model_version, payload_json
+            FROM predictions
+            ORDER BY created_at DESC
+            """
+        )
+    )
+    return [prediction for prediction in (_prediction_payload_from_row(row) for row in rows) if prediction]
 
 
 def get_prediction(match_id: str) -> dict | None:
     row = fetch_one_safe(
         text(
             """
-            SELECT payload_json FROM predictions
+            SELECT id, match_id, slug, model_version, payload_json FROM predictions
             WHERE id = :match_id OR match_id = :match_id OR slug = :match_id
             LIMIT 1
             """
         ),
         {"match_id": match_id},
     )
-    return _loads(row.get("payload_json")) if row else None
+    return _prediction_payload_from_row(row)
 
 
-def save_refresh_log(source: str, storage: str, matches_imported: int, teams_imported: int) -> bool:
-    if not db_available():
-        return False
+def save_refresh_log(
+    source: str,
+    storage: str,
+    matches_imported: int,
+    teams_imported: int,
+    predictions_generated: int = 0,
+    predictions_saved: int = 0,
+    predictions_failed: int = 0,
+    prediction_save_errors: list[str] | None = None,
+) -> dict:
+    report = {"saved": False, "error": None}
+    engine = get_engine()
+    if engine is None:
+        report["error"] = "DATABASE_URL missing or PostgreSQL engine unavailable"
+        return report
 
-    return execute_safe(
-        text(
-            """
-            INSERT INTO refresh_logs (id, source, storage, matches_imported, teams_imported, created_at)
-            VALUES (:id, :source, :storage, :matches_imported, :teams_imported, :created_at)
-            """
-        ),
-        {
-            "id": str(uuid.uuid4()),
-            "source": source,
-            "storage": storage,
-            "matches_imported": matches_imported,
-            "teams_imported": teams_imported,
-            "created_at": _now(),
-        },
+    statement = text(
+        """
+        INSERT INTO refresh_logs (
+            id, source, storage, matches_imported, teams_imported,
+            predictions_generated, predictions_saved, predictions_failed, prediction_save_errors_json, created_at
+        )
+        VALUES (
+            :id, :source, :storage, :matches_imported, :teams_imported,
+            :predictions_generated, :predictions_saved, :predictions_failed, :prediction_save_errors_json, :created_at
+        )
+        """
     )
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                statement,
+                {
+                    "id": str(uuid.uuid4()),
+                    "source": source,
+                    "storage": storage,
+                    "matches_imported": matches_imported,
+                    "teams_imported": teams_imported,
+                    "predictions_generated": predictions_generated,
+                    "predictions_saved": predictions_saved,
+                    "predictions_failed": predictions_failed,
+                    "prediction_save_errors_json": _json((prediction_save_errors or [])[:5]),
+                    "created_at": _now(),
+                },
+            )
+        report["saved"] = True
+    except Exception as exc:
+        report["error"] = str(exc)
+        logger.exception("Refresh log insert failed")
+    return report
 
 
 def get_latest_refresh_log() -> dict | None:
     row = fetch_one_safe(
         text(
             """
-            SELECT source, storage, matches_imported, teams_imported, created_at
+            SELECT source, storage, matches_imported, teams_imported,
+                   predictions_generated, predictions_saved, predictions_failed,
+                   prediction_save_errors_json, created_at
             FROM refresh_logs
             ORDER BY created_at DESC
             LIMIT 1
@@ -327,6 +435,10 @@ def get_latest_refresh_log() -> dict | None:
         "storage": row.get("storage"),
         "matches_imported": row.get("matches_imported"),
         "teams_imported": row.get("teams_imported"),
+        "predictions_generated": row.get("predictions_generated") or 0,
+        "predictions_saved": row.get("predictions_saved") or 0,
+        "predictions_failed": row.get("predictions_failed") or 0,
+        "prediction_save_errors": _loads(row.get("prediction_save_errors_json")) or [],
         "last_refresh_at": created_at.isoformat() if hasattr(created_at, "isoformat") else created_at,
     }
 

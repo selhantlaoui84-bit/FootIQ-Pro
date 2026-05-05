@@ -203,6 +203,10 @@ export type RefreshResponse = {
   matches_imported?: number;
   teams_imported?: number;
   predictions_imported?: number;
+  predictions_generated?: number;
+  predictions_saved?: number;
+  predictions_failed?: number;
+  predictions_save_errors_sample?: string[];
   snapshots_saved?: number;
   refresh_duration_ms?: number;
   next_recommended_actions?: string[];
@@ -363,13 +367,16 @@ export type BuildFeatureStoreResponse = {
   message?: string;
   next_check_endpoint?: string;
   storage?: string;
+  predictions_source?: 'postgresql' | 'generated_on_the_fly' | string;
   matches_available?: number;
   predictions_available?: number;
   finished_matches_available?: number;
   finished_with_scores?: number;
   count_by_status?: Record<string, number>;
   feature_snapshots_built?: number;
+  snapshots_created?: number;
   feature_snapshots_saved?: number;
+  snapshots_saved?: number;
   feature_snapshots_skipped?: number;
   training_rows_available?: number;
   target_coverage?: number;
@@ -765,6 +772,9 @@ export type AdminWorkflowStatus = {
     matches_imported: number;
     teams_imported?: number;
     predictions_imported: number;
+    predictions_generated?: number;
+    predictions_saved?: number;
+    predictions_failed?: number;
   };
   feature_store: { ready: boolean; snapshots_count: number; training_rows_available: number; target_coverage: number };
   feature_engineering?: { feature_set_version?: string | null; advanced_feature_coverage: number };
