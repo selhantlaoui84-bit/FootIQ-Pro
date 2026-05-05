@@ -554,6 +554,7 @@ export default function AdminPage() {
               {featureBuildInfo && (
                 <div className="dataList">
                   <span>Stockage <strong>{formatStorage(featureBuildInfo.storage)}</strong></span>
+                  <span>Source prédictions <strong>{featureBuildInfo.predictions_source ?? 'inconnue'}</strong></span>
                   <span>Matchs disponibles <strong>{featureBuildInfo.matches_available ?? 0}</strong></span>
                   <span>Prédictions disponibles <strong>{featureBuildInfo.predictions_available ?? 0}</strong></span>
                   <span>Matchs terminés exploitables <strong>{featureBuildInfo.finished_matches_available ?? 0}</strong></span>
@@ -668,7 +669,8 @@ export default function AdminPage() {
             <span>Stockage <strong>{formatStorage(resolvedRefreshStorage)}</strong></span>
             <span>Matchs importés <strong>{stableRefreshInfo?.matches_imported ?? 0}</strong></span>
             <span>Équipes importées <strong>{stableRefreshInfo?.teams_imported ?? 0}</strong></span>
-            <span>Prédictions importées <strong>{stableRefreshInfo?.predictions_imported ?? 0}</strong></span>
+            <span>Prédictions générées <strong>{stableRefreshInfo?.predictions_generated ?? stableRefreshInfo?.predictions_imported ?? 0}</strong></span>
+            <span>Prédictions sauvegardées <strong>{stableRefreshInfo?.predictions_saved ?? stableRefreshInfo?.predictions_imported ?? 0}</strong></span>
             <span>Snapshots sauvegardés <strong>{stableRefreshInfo?.snapshots_saved ?? 0}</strong></span>
             <span>Snapshots features <strong>{stableRefreshInfo?.feature_snapshots_saved ?? 0}</strong></span>
             <span>Lignes entraînables <strong>{stableRefreshInfo?.training_rows_available ?? 0}</strong></span>
@@ -683,6 +685,10 @@ export default function AdminPage() {
           {(stableRefreshInfo?.competition_warnings?.length ?? 0) > 0 && (
             <div className="banner warning">{stableRefreshInfo?.competition_warnings?.join(' ')}</div>
           )}
+          {(stableRefreshInfo?.predictions_saved ?? stableRefreshInfo?.predictions_imported ?? 0) === 0 &&
+            (stableRefreshInfo?.predictions_generated ?? 0) > 0 && (
+              <div className="banner warning">Les prédictions sont générées mais non sauvegardées en base.</div>
+            )}
           <div className="banner info">
             Le backtesting et les snapshots se mettent à jour depuis les matchs terminés avec score disponible.
           </div>
