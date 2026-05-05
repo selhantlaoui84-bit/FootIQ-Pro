@@ -746,7 +746,15 @@ export const mockAdminAlertsReport: AdminAlertsReport = {
 };
 
 export type AdminWorkflowStatus = {
-  refresh: { last_refresh_at: string | null; storage: string; matches_imported: number; predictions_imported: number };
+  refresh: {
+    data_imported?: boolean;
+    last_refresh_at: string | null;
+    source?: string;
+    storage: string;
+    matches_imported: number;
+    teams_imported?: number;
+    predictions_imported: number;
+  };
   feature_store: { ready: boolean; snapshots_count: number; training_rows_available: number; target_coverage: number };
   feature_engineering?: { feature_set_version?: string | null; advanced_feature_coverage: number };
   candidate_model: { trained: boolean; status: string; model_version: string | null; accuracy: number | null };

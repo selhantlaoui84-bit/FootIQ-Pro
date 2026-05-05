@@ -153,6 +153,30 @@ def _workflow_status_compact():
     feature = _feature_summary()
     ml_status = _ml_status_compact()
     shadow_summary = _shadow_summary_compact()
+    shadow_backtesting = calculate_shadow_backtest_report(
+        _available_matches(),
+        repository.get_ml_shadow_predictions(limit=2000),
+    )
+    refresh_storage = refresh.get("storage", "memory")
+    refresh_matches_imported = refresh.get("matches_imported", 0)
+    data_imported = refresh_storage == "postgresql" and refresh_matches_imported > 0
+    feature_ready = feature.get("snapshots_count", 0) > 0
+    candidate_trained = ml_status.get("status") in {"ok", "trained", "success"}
+    shadow_generated = shadow_summary.get("shadow_predictions_count", 0) > 0
+    shadow_backtesting_ready = shadow_backtesting.get("evaluated_matches", 0) > 0
+
+    if not data_imported:
+        next_step = "refresh_data"
+    elif not feature_ready:
+        next_step = "build_feature_store"
+    elif not candidate_trained:
+        next_step = "train_candidate_model"
+    elif not shadow_generated:
+        next_step = "generate_shadow_predictions"
+    elif not shadow_backtesting_ready:
+        next_step = "review_shadow_backtesting"
+    else:
+        next_step = "ready_for_hybrid_review"
 
     try:
         latest_refresh_job = runtime_store.get_refresh_job_status()
@@ -166,31 +190,40 @@ def _workflow_status_compact():
 
     return {
         "refresh": {
+            "data_imported": data_imported,
             "last_refresh_at": refresh.get("last_refresh_at"),
-            "storage": refresh.get("storage", "memory"),
-            "matches_imported": refresh.get("matches_imported", 0),
+            "source": refresh.get("source", "mock"),
+            "storage": refresh_storage,
+            "matches_imported": refresh_matches_imported,
+            "teams_imported": refresh.get("teams_imported", 0),
             "predictions_imported": refresh.get("predictions_imported", 0),
         },
         "feature_store": {
-            "ready": feature.get("snapshots_count", 0) > 0,
+            "ready": feature_ready,
             "snapshots_count": feature.get("snapshots_count", 0),
             "training_rows_available": feature.get("with_target_count", 0),
             "target_coverage": feature.get("target_coverage", 0),
         },
         "candidate_model": {
-            "trained": ml_status.get("status") in {"ok", "trained", "success"},
+            "trained": candidate_trained,
             "status": ml_status.get("status", "not_trained"),
             "model_version": (ml_status.get("latest_candidate") or {}).get("model_version"),
             "accuracy": (ml_status.get("latest_candidate") or {}).get("accuracy"),
         },
         "shadow_predictions": {
-            "generated": shadow_summary.get("shadow_predictions_count", 0) > 0,
+            "generated": shadow_generated,
             "count": shadow_summary.get("shadow_predictions_count", 0),
             "disagreement_count": shadow_summary.get("disagreement_count", 0),
         },
+        "shadow_backtesting": {
+            "ready": shadow_backtesting_ready,
+            "evaluated_matches": shadow_backtesting.get("evaluated_matches", 0),
+            "shadow_accuracy": shadow_backtesting.get("shadow_accuracy", 0),
+            "activation_recommendation": shadow_backtesting.get("activation_recommendation", "do_not_activate"),
+        },
         "latest_refresh_job": latest_refresh_job,
         "latest_feature_store_job": latest_feature_store_job,
-        "next_step": "review_admin_alerts",
+        "next_step": next_step,
     }
 
 
