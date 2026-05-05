@@ -19,7 +19,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const response = await fetch(`${API_URL}/admin/reset-stale-jobs`, {
+    const force = req.query.force === 'true' ? '?force=true' : '';
+    const response = await fetch(`${API_URL}/admin/reset-stale-jobs${force}`, {
       method: 'POST',
       headers: {
         Accept: 'application/json',

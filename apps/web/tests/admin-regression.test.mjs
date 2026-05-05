@@ -26,11 +26,14 @@ async function run() {
   const adminPageSource = await readFile(adminPage, 'utf8');
   assert.match(adminPageSource, /setError\(response\.detail \?\? response\.error \?\? 'Actualisation impossible\.'\)/);
   assert.match(adminPageSource, /\{error && <section className="banner error">\{error\}<\/section>\}/);
-  assert.match(adminPageSource, /refreshInfo\?\.storage === 'postgresql' && \(refreshInfo\?\.matches_imported \?\? 0\) > 0/);
+  assert.match(adminPageSource, /stableRefreshInfo\?\.storage === 'postgresql' && \(stableRefreshInfo\?\.matches_imported \?\? 0\) > 0/);
   assert.match(adminPageSource, /Données actualisées<\/span><strong>\{dataImported \? 'oui' : 'non'\}/);
+  assert.match(adminPageSource, /stableRefreshInfo\?\.storage === 'postgresql'/);
+  assert.match(adminPageSource, /Job refresh probablement bloqué\. Dernier état stable conservé\./);
+  assert.match(adminPageSource, /reason_if_zero_snapshots/);
 
   const backendSource = await readFile(backendMain, 'utf8');
-  assert.match(backendSource, /data_imported = refresh_storage == "postgresql" and refresh_matches_imported > 0/);
+  assert.match(backendSource, /data_imported = refresh_matches_imported > 0 or repository_matches_count > 0/);
   assert.match(backendSource, /next_step = "build_feature_store"/);
   assert.match(backendSource, /"data_imported": data_imported/);
   assert.match(backendSource, /Backend refresh misconfigured: missing/);

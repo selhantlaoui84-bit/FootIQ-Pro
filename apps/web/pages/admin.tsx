@@ -60,7 +60,7 @@ function diagnosticError(diagnostics: AdminDiagnosticsResponse | null) {
 
 function isProbablyStale(job?: RefreshJobStatus | null) {
   if (!job || job.status !== 'running' || !job.started_at) return false;
-  return Date.now() - new Date(job.started_at).getTime() > 15 * 60 * 1000;
+  return Date.now() - new Date(job.started_at).getTime() > 5 * 60 * 1000;
 }
 
 export default function AdminPage() {
@@ -94,13 +94,24 @@ export default function AdminPage() {
 
   const backendConnected = health?.status === 'ok' || health?.status === 'healthy';
   const configError = useMemo(() => diagnosticError(diagnostics), [diagnostics]);
+  const stableRefreshInfo = refreshInfo?.stable_refresh_status
+    ? { status: refreshInfo.status, ...refreshInfo.stable_refresh_status }
+    : refreshInfo;
+  const currentRefreshJob = refreshJob ?? refreshInfo?.current_job ?? workflowStatus?.latest_refresh_job;
+  const resolvedRefreshStorage =
+    stableRefreshInfo?.storage === 'postgresql'
+      ? 'postgresql'
+      : workflowStatus?.refresh.storage === 'postgresql'
+        ? 'postgresql'
+        : stableRefreshInfo?.storage ?? workflowStatus?.refresh.storage;
+  const resolvedRefreshSource = workflowStatus?.refresh.source ?? stableRefreshInfo?.source ?? 'mock';
   const dataImported =
     workflowStatus?.refresh.data_imported ??
     ((workflowStatus?.refresh.storage === 'postgresql' && (workflowStatus?.refresh.matches_imported ?? 0) > 0) ||
-      (refreshInfo?.storage === 'postgresql' && (refreshInfo?.matches_imported ?? 0) > 0));
+      (stableRefreshInfo?.storage === 'postgresql' && (stableRefreshInfo?.matches_imported ?? 0) > 0));
   const featureStoreReady = workflowStatus?.feature_store.ready ?? false;
   const candidateModelTrained = workflowStatus?.candidate_model.trained ?? false;
-  const refreshJobStale = isProbablyStale(refreshJob) || isProbablyStale(workflowStatus?.latest_refresh_job);
+  const refreshJobStale = isProbablyStale(currentRefreshJob);
   const featureStoreJobStale = isProbablyStale(featureStoreJob) || isProbablyStale(workflowStatus?.latest_feature_store_job);
 
   async function reloadAdminState() {
@@ -115,7 +126,12 @@ export default function AdminPage() {
     ]);
 
     setHealth(healthResult);
-    if (refreshStatus) setRefreshInfo(refreshStatus);
+    if (refreshStatus) {
+      setRefreshInfo(refreshStatus);
+      if (refreshStatus.current_job?.status === 'running') {
+        setRefreshJob(refreshStatus.current_job);
+      }
+    }
     if (workflow) setWorkflowStatus(workflow);
     if (quality) setFeatureQuality(quality);
     if (governance) setModelGovernance(governance);
@@ -149,7 +165,7 @@ export default function AdminPage() {
 
   async function handleResetStaleJobs() {
     setError(null);
-    const result = await resetStaleJobs();
+    const result = await resetStaleJobs({ force: true });
     if (result.status === 'error') {
       setError(result.detail ?? 'Réinitialisation des jobs bloqués impossible.');
       return;
@@ -430,15 +446,15 @@ export default function AdminPage() {
             </div>
             <div className="metric">
               <span>Stockage actuel</span>
-              <strong><span className={valueBadge(refreshInfo?.storage)}>{formatStorage(refreshInfo?.storage)}</span></strong>
+              <strong><span className={valueBadge(resolvedRefreshStorage)}>{formatStorage(resolvedRefreshStorage)}</span></strong>
             </div>
             <div className="metric">
               <span>Source actuelle</span>
-              <strong><span className={valueBadge(refreshInfo?.source)}>{refreshInfo?.source ?? 'mock'}</span></strong>
+              <strong><span className={valueBadge(resolvedRefreshSource)}>{resolvedRefreshSource}</span></strong>
             </div>
             <div className="metric">
               <span>Matchs importés</span>
-              <strong>{refreshInfo?.matches_imported ?? dashboardSummary?.total_matches ?? 0}</strong>
+              <strong>{stableRefreshInfo?.matches_imported ?? dashboardSummary?.total_matches ?? 0}</strong>
             </div>
             <div className="metric">
               <span>Alertes</span>
@@ -469,7 +485,7 @@ export default function AdminPage() {
               <p className="eyebrow">Actualisation données</p>
               <h2>Refresh football-data.org</h2>
             </div>
-            <span className={valueBadge(refreshInfo?.source)}>{refreshInfo?.source ?? 'mock'}</span>
+            <span className={valueBadge(resolvedRefreshSource)}>{resolvedRefreshSource}</span>
           </div>
           <p>
             Cette action actualise uniquement les données et les prédictions officielles.
@@ -479,15 +495,15 @@ export default function AdminPage() {
           <button className="button primary" type="button" onClick={handleRefresh} disabled={isRefreshing || !isAdmin}>
             {isRefreshing ? 'Actualisation en cours...' : 'Actualiser les données'}
           </button>
-          {refreshJob && (
+          {currentRefreshJob?.status === 'running' && (
             <div className="banner info">
-              Job refresh: {refreshJob.status}
-              {refreshJob.duration_ms ? ` · Durée ${refreshJob.duration_ms} ms` : ''}
+              Job refresh: {currentRefreshJob.status}
+              {currentRefreshJob.duration_ms ? ` · Durée ${currentRefreshJob.duration_ms} ms` : ''}
             </div>
           )}
           {refreshJobStale && (
             <div className="banner warning">
-              Job probablement bloqué.
+              Job refresh probablement bloqué. Dernier état stable conservé.
               <button className="button secondary" type="button" onClick={handleResetStaleJobs}>
                 Réinitialiser les jobs bloqués
               </button>
@@ -508,8 +524,8 @@ export default function AdminPage() {
           </div>
           <div className="compactDataGrid four">
             <div className="metric"><span>Données actualisées</span><strong>{dataImported ? 'oui' : 'non'}</strong></div>
-            <div className="metric"><span>Source</span><strong>{workflowStatus?.refresh.source ?? refreshInfo?.source ?? 'mock'}</strong></div>
-            <div className="metric"><span>Stockage</span><strong>{formatStorage(workflowStatus?.refresh.storage ?? refreshInfo?.storage)}</strong></div>
+            <div className="metric"><span>Source</span><strong>{resolvedRefreshSource}</strong></div>
+            <div className="metric"><span>Stockage</span><strong>{formatStorage(resolvedRefreshStorage)}</strong></div>
             <div className="metric"><span>Feature Store prêt</span><strong>{featureStoreReady ? 'oui' : 'non'}</strong></div>
             <div className="metric"><span>Modèle candidat entraîné</span><strong>{candidateModelTrained ? 'oui' : 'non'}</strong></div>
             <div className="metric"><span>Prédictions shadow générées</span><strong>{workflowStatus?.shadow_predictions.generated ? 'oui' : 'non'}</strong></div>
@@ -538,9 +554,18 @@ export default function AdminPage() {
               {featureBuildInfo && (
                 <div className="dataList">
                   <span>Stockage <strong>{formatStorage(featureBuildInfo.storage)}</strong></span>
+                  <span>Matchs disponibles <strong>{featureBuildInfo.matches_available ?? 0}</strong></span>
+                  <span>Prédictions disponibles <strong>{featureBuildInfo.predictions_available ?? 0}</strong></span>
+                  <span>Matchs terminés exploitables <strong>{featureBuildInfo.finished_matches_available ?? 0}</strong></span>
+                  <span>Matchs terminés avec score <strong>{featureBuildInfo.finished_with_scores ?? 0}</strong></span>
                   <span>Snapshots créés <strong>{featureBuildInfo.feature_snapshots_built ?? 0}</strong></span>
                   <span>Snapshots sauvegardés <strong>{featureBuildInfo.feature_snapshots_saved ?? 0}</strong></span>
                   <span>Lignes entraînables <strong>{featureBuildInfo.training_rows_available ?? 0}</strong></span>
+                </div>
+              )}
+              {featureBuildInfo && (featureBuildInfo.feature_snapshots_built ?? 0) === 0 && (
+                <div className="banner warning">
+                  {featureBuildInfo.reason_if_zero_snapshots ?? "Aucun snapshot Feature Store n'a été construit."}
                 </div>
               )}
             </article>
@@ -632,26 +657,31 @@ export default function AdminPage() {
         <section className="card">
           <div className="cardTop">
             <div>
-              <p className="eyebrow">Dernier refresh</p>
+              <p className="eyebrow">Dernier état stable</p>
               <h2>Résultat import</h2>
             </div>
-            <span className={valueBadge(refreshInfo?.storage)}>{formatStorage(refreshInfo?.storage)}</span>
+            <span className={valueBadge(resolvedRefreshStorage)}>{formatStorage(resolvedRefreshStorage)}</span>
           </div>
           <div className="dataList">
-            <span>Statut <strong>{refreshInfo?.status ?? 'inconnu'}</strong></span>
-            <span>Source <strong>{refreshInfo?.source ?? 'mock'}</strong></span>
-            <span>Stockage <strong>{formatStorage(refreshInfo?.storage)}</strong></span>
-            <span>Matchs importés <strong>{refreshInfo?.matches_imported ?? 0}</strong></span>
-            <span>Équipes importées <strong>{refreshInfo?.teams_imported ?? 0}</strong></span>
-            <span>Prédictions importées <strong>{refreshInfo?.predictions_imported ?? 0}</strong></span>
-            <span>Snapshots sauvegardés <strong>{refreshInfo?.snapshots_saved ?? 0}</strong></span>
-            <span>Snapshots features <strong>{refreshInfo?.feature_snapshots_saved ?? 0}</strong></span>
-            <span>Lignes entraînables <strong>{refreshInfo?.training_rows_available ?? 0}</strong></span>
-            <span>Dernière actualisation <strong>{refreshInfo?.last_refresh_at ?? 'N/A'}</strong></span>
-            <span>Compétitions configurées <strong>{refreshInfo?.configured_competitions?.join(', ') || 'FL1, CL'}</strong></span>
+            <span>Statut <strong>{stableRefreshInfo?.status ?? 'inconnu'}</strong></span>
+            <span>Source <strong>{resolvedRefreshSource}</strong></span>
+            <span>Stockage <strong>{formatStorage(resolvedRefreshStorage)}</strong></span>
+            <span>Matchs importés <strong>{stableRefreshInfo?.matches_imported ?? 0}</strong></span>
+            <span>Équipes importées <strong>{stableRefreshInfo?.teams_imported ?? 0}</strong></span>
+            <span>Prédictions importées <strong>{stableRefreshInfo?.predictions_imported ?? 0}</strong></span>
+            <span>Snapshots sauvegardés <strong>{stableRefreshInfo?.snapshots_saved ?? 0}</strong></span>
+            <span>Snapshots features <strong>{stableRefreshInfo?.feature_snapshots_saved ?? 0}</strong></span>
+            <span>Lignes entraînables <strong>{stableRefreshInfo?.training_rows_available ?? 0}</strong></span>
+            <span>Dernière actualisation <strong>{stableRefreshInfo?.last_refresh_at ?? 'N/A'}</strong></span>
+            <span>Compétitions configurées <strong>{stableRefreshInfo?.configured_competitions?.join(', ') || 'FL1, CL'}</strong></span>
           </div>
-          {(refreshInfo?.competition_warnings?.length ?? 0) > 0 && (
-            <div className="banner warning">{refreshInfo?.competition_warnings?.join(' ')}</div>
+          {currentRefreshJob?.status === 'running' && (
+            <div className="banner info">
+              Job en cours: {currentRefreshJob.job_id ?? 'N/A'} · {currentRefreshJob.status}
+            </div>
+          )}
+          {(stableRefreshInfo?.competition_warnings?.length ?? 0) > 0 && (
+            <div className="banner warning">{stableRefreshInfo?.competition_warnings?.join(' ')}</div>
           )}
           <div className="banner info">
             Le backtesting et les snapshots se mettent à jour depuis les matchs terminés avec score disponible.

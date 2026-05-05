@@ -403,9 +403,10 @@ export async function getAdminDiagnostics(): Promise<AdminDiagnosticsResponse | 
   }
 }
 
-export async function resetStaleJobs(): Promise<{ status: string; reset_count?: number; detail?: string }> {
+export async function resetStaleJobs(options?: { force?: boolean }): Promise<{ status: string; reset_count?: number; detail?: string }> {
   try {
-    const response = await fetch('/api/admin/reset-stale-jobs', {
+    const query = options?.force ? '?force=true' : '';
+    const response = await fetch(`/api/admin/reset-stale-jobs${query}`, {
       method: 'POST',
       headers: { Accept: 'application/json' },
     });

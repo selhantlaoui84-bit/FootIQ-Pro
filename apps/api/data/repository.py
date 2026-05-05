@@ -33,6 +33,9 @@ def _match_payload_from_row(row: dict | None):
         return None
 
     match = _loads(row.get("raw_json")) or {}
+    if row.get("status") is not None:
+        match["status"] = str(row.get("status") or "").upper()
+
     for key in (
         "score_full_time_home",
         "score_full_time_away",
@@ -48,6 +51,40 @@ def _match_payload_from_row(row: dict | None):
 
 def _now() -> datetime:
     return datetime.utcnow()
+
+
+def _winner_from_score(winner, home_score, away_score):
+    if winner:
+        return winner
+    if home_score is None or away_score is None:
+        return None
+    if home_score > away_score:
+        return "HOME_TEAM"
+    if away_score > home_score:
+        return "AWAY_TEAM"
+    return "DRAW"
+
+
+def normalize_match_for_storage(match: dict) -> dict:
+    normalized = dict(match or {})
+    raw_status = normalized.get("raw_status", normalized.get("status", "SCHEDULED"))
+    normalized["raw_status"] = raw_status
+    normalized["status"] = str(raw_status or "SCHEDULED").upper()
+
+    score = normalized.get("score") if isinstance(normalized.get("score"), dict) else {}
+    full_time = score.get("fullTime") if isinstance(score.get("fullTime"), dict) else {}
+    half_time = score.get("halfTime") if isinstance(score.get("halfTime"), dict) else {}
+
+    normalized["score_full_time_home"] = normalized.get("score_full_time_home", full_time.get("home"))
+    normalized["score_full_time_away"] = normalized.get("score_full_time_away", full_time.get("away"))
+    normalized["score_half_time_home"] = normalized.get("score_half_time_home", half_time.get("home"))
+    normalized["score_half_time_away"] = normalized.get("score_half_time_away", half_time.get("away"))
+    normalized["winner"] = _winner_from_score(
+        normalized.get("winner") or score.get("winner"),
+        normalized.get("score_full_time_home"),
+        normalized.get("score_full_time_away"),
+    )
+    return normalized
 
 
 def save_teams(teams: list[dict]) -> bool:
@@ -136,6 +173,7 @@ def save_matches(matches: list[dict]) -> bool:
     ok = True
 
     for match in matches:
+        match = normalize_match_for_storage(match)
         match_id = match.get("match_id") or match.get("id") or match.get("slug")
         ok = execute_safe(
             statement,
@@ -166,7 +204,7 @@ def get_matches() -> list[dict]:
     rows = fetch_all_safe(
         text(
             """
-            SELECT raw_json, score_full_time_home, score_full_time_away, score_half_time_home,
+            SELECT raw_json, status, score_full_time_home, score_full_time_away, score_half_time_home,
                    score_half_time_away, winner
             FROM matches
             ORDER BY kickoff
@@ -180,7 +218,7 @@ def get_match(match_id: str) -> dict | None:
     row = fetch_one_safe(
         text(
             """
-            SELECT raw_json, score_full_time_home, score_full_time_away, score_half_time_home,
+            SELECT raw_json, status, score_full_time_home, score_full_time_away, score_half_time_home,
                    score_half_time_away, winner
             FROM matches
             WHERE id = :match_id OR match_id = :match_id OR slug = :match_id

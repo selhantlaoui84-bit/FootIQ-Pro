@@ -2,6 +2,8 @@
 import os
 import re
 import unicodedata
+from datetime import date, timedelta
+from urllib.parse import urlencode
 
 import httpx
 
@@ -57,6 +59,18 @@ def _score_value(score_part, key):
     return score_part.get(key)
 
 
+def _winner_from_score(winner, home_score, away_score):
+    if winner:
+        return winner
+    if home_score is None or away_score is None:
+        return None
+    if home_score > away_score:
+        return "HOME_TEAM"
+    if away_score > home_score:
+        return "AWAY_TEAM"
+    return "DRAW"
+
+
 def normalize_match(raw_match, competition_label):
     home_team_name = raw_match.get("homeTeam", {}).get("name") or raw_match.get("homeTeam", {}).get("shortName") or "Home"
     away_team_name = raw_match.get("awayTeam", {}).get("name") or raw_match.get("awayTeam", {}).get("shortName") or "Away"
@@ -64,6 +78,11 @@ def normalize_match(raw_match, competition_label):
     score = raw_match.get("score") if isinstance(raw_match.get("score"), dict) else {}
     full_time = score.get("fullTime") if isinstance(score, dict) else {}
     half_time = score.get("halfTime") if isinstance(score, dict) else {}
+    raw_status = raw_match.get("status", "SCHEDULED")
+    status = str(raw_status or "SCHEDULED").upper()
+    full_time_home = _score_value(full_time, "home")
+    full_time_away = _score_value(full_time, "away")
+    winner = _winner_from_score(score.get("winner") if isinstance(score, dict) else None, full_time_home, full_time_away)
 
     return {
         "id": slug,
@@ -73,14 +92,15 @@ def normalize_match(raw_match, competition_label):
         "away_team": away_team_name,
         "competition": competition_label,
         "kickoff": raw_match.get("utcDate"),
-        "status": raw_match.get("status", "SCHEDULED"),
+        "status": status,
+        "raw_status": raw_status,
         "source": "football-data.org",
         "score": score,
-        "score_full_time_home": _score_value(full_time, "home"),
-        "score_full_time_away": _score_value(full_time, "away"),
+        "score_full_time_home": full_time_home,
+        "score_full_time_away": full_time_away,
         "score_half_time_home": _score_value(half_time, "home"),
         "score_half_time_away": _score_value(half_time, "away"),
-        "winner": score.get("winner") if isinstance(score, dict) else None,
+        "winner": winner,
         "raw_json": raw_match,
     }
 
@@ -99,7 +119,12 @@ def normalize_team(raw_team, competition_label):
 
 
 def _get_matches(competition_code: str, competition_label: str):
-    data = get_json(f"/competitions/{competition_code}/matches")
+    today = date.today()
+    params = urlencode({
+        "dateFrom": (today - timedelta(days=365)).isoformat(),
+        "dateTo": (today + timedelta(days=30)).isoformat(),
+    })
+    data = get_json(f"/competitions/{competition_code}/matches?{params}")
     if not data:
         return []
 
@@ -175,4 +200,3 @@ def get_ligue1_teams():
 
 def get_champions_league_teams():
     return _get_teams("CL", "Champions League")
-
