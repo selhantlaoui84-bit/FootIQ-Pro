@@ -10,6 +10,7 @@ import {
   getBackendHealth,
   getDashboardSummary,
   getFeatureQualityReport,
+  getFeatureSummary,
   getFeatureStoreJobStatus,
   getModelGovernance,
   getRefreshJobStatus,
@@ -26,6 +27,7 @@ import type {
   BuildFeatureStoreResponse,
   DashboardSummary,
   DatasetQualityReport,
+  FeatureSummary,
   GenerateShadowPredictionsResponse,
   HealthResponse,
   MatchView,
@@ -73,6 +75,7 @@ export default function AdminPage() {
   const [isTestingConfig, setIsTestingConfig] = useState(false);
   const [diagnostics, setDiagnostics] = useState<AdminDiagnosticsResponse | null>(null);
   const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
+  const [featureSummary, setFeatureSummary] = useState<FeatureSummary | null>(null);
   const [isBuildingFeatures, setIsBuildingFeatures] = useState(false);
   const [featureBuildInfo, setFeatureBuildInfo] = useState<BuildFeatureStoreResponse | null>(null);
   const [featureStoreJob, setFeatureStoreJob] = useState<RefreshJobStatus | null>(null);
@@ -98,27 +101,45 @@ export default function AdminPage() {
     ? { status: refreshInfo.status, ...refreshInfo.stable_refresh_status }
     : refreshInfo;
   const currentRefreshJob = refreshJob ?? refreshInfo?.current_job ?? workflowStatus?.latest_refresh_job;
+  const effectiveFeatureSnapshots =
+    featureSummary?.snapshots_count ??
+    workflowStatus?.feature_store.snapshots_count ??
+    dashboardSummary?.feature_snapshots_count ??
+    0;
+  const effectiveTrainingRows =
+    featureSummary?.with_target_count ??
+    workflowStatus?.feature_store.training_rows_available ??
+    dashboardSummary?.training_rows_available ??
+    0;
+  const effectiveFeatureStoreReady =
+    effectiveFeatureSnapshots > 0 || effectiveTrainingRows > 0 || workflowStatus?.feature_store.ready === true;
   const resolvedRefreshStorage =
-    stableRefreshInfo?.storage === 'postgresql'
+    featureSummary?.storage === 'postgresql'
       ? 'postgresql'
-      : workflowStatus?.refresh.storage === 'postgresql'
+      : stableRefreshInfo?.storage === 'postgresql'
         ? 'postgresql'
-        : stableRefreshInfo?.storage ?? workflowStatus?.refresh.storage;
+        : workflowStatus?.refresh.storage === 'postgresql'
+          ? 'postgresql'
+          : stableRefreshInfo?.storage ?? workflowStatus?.refresh.storage;
+  const displayedNextStep =
+    effectiveFeatureStoreReady && (!workflowStatus?.next_step || workflowStatus.next_step === 'refresh_data')
+      ? 'train_candidate_model'
+      : workflowStatus?.next_step ?? 'refresh_data';
   const resolvedRefreshSource = workflowStatus?.refresh.source ?? stableRefreshInfo?.source ?? 'mock';
   const dataImported =
     workflowStatus?.refresh.data_imported ??
     ((workflowStatus?.refresh.storage === 'postgresql' && (workflowStatus?.refresh.matches_imported ?? 0) > 0) ||
       (stableRefreshInfo?.storage === 'postgresql' && (stableRefreshInfo?.matches_imported ?? 0) > 0));
-  const featureStoreReady = workflowStatus?.feature_store.ready ?? false;
   const candidateModelTrained = workflowStatus?.candidate_model.trained ?? false;
   const refreshJobStale = isProbablyStale(currentRefreshJob);
   const featureStoreJobStale = isProbablyStale(featureStoreJob) || isProbablyStale(workflowStatus?.latest_feature_store_job);
 
   async function reloadAdminState() {
-    const [healthResult, refreshStatus, workflow, quality, governance, alerts, dashboard] = await Promise.all([
+    const [healthResult, refreshStatus, workflow, featureStore, quality, governance, alerts, dashboard] = await Promise.all([
       getBackendHealth().catch(() => null),
       getRefreshStatus().catch(() => null),
       getAdminWorkflowStatus().catch(() => null),
+      getFeatureSummary().catch(() => null),
       getFeatureQualityReport().catch(() => null),
       getModelGovernance().catch(() => null),
       getAdminAlerts().catch(() => null),
@@ -133,6 +154,7 @@ export default function AdminPage() {
       }
     }
     if (workflow) setWorkflowStatus(workflow);
+    if (featureStore) setFeatureSummary(featureStore);
     if (quality) setFeatureQuality(quality);
     if (governance) setModelGovernance(governance);
     if (alerts) setAdminAlerts(alerts);
@@ -337,7 +359,7 @@ export default function AdminPage() {
   }
 
   async function handleTrainCandidate() {
-    if (!featureStoreReady) {
+    if (!effectiveFeatureStoreReady) {
       setError("Construisez d'abord le Feature Store avant d'entraîner le modèle.");
       return;
     }
@@ -526,13 +548,13 @@ export default function AdminPage() {
             <div className="metric"><span>Données actualisées</span><strong>{dataImported ? 'oui' : 'non'}</strong></div>
             <div className="metric"><span>Source</span><strong>{resolvedRefreshSource}</strong></div>
             <div className="metric"><span>Stockage</span><strong>{formatStorage(resolvedRefreshStorage)}</strong></div>
-            <div className="metric"><span>Feature Store prêt</span><strong>{featureStoreReady ? 'oui' : 'non'}</strong></div>
+            <div className="metric"><span>Feature Store prêt</span><strong>{effectiveFeatureStoreReady ? 'oui' : 'non'}</strong></div>
             <div className="metric"><span>Modèle candidat entraîné</span><strong>{candidateModelTrained ? 'oui' : 'non'}</strong></div>
             <div className="metric"><span>Prédictions shadow générées</span><strong>{workflowStatus?.shadow_predictions.generated ? 'oui' : 'non'}</strong></div>
             <div className="metric"><span>Backtesting shadow</span><strong>{workflowStatus?.shadow_backtesting.ready ? 'disponible' : 'indisponible'}</strong></div>
             <div className="metric"><span>Score qualité</span><strong>{featureQuality?.average_quality_score ?? 0}/100</strong></div>
             <div className="metric"><span>Gouvernance</span><strong>{modelGovernance?.promotion_readiness.level ?? 'unknown'}</strong></div>
-            <div className="metric"><span>Prochaine étape</span><strong>{workflowStatus?.next_step ?? 'refresh_data'}</strong></div>
+            <div className="metric"><span>Prochaine étape</span><strong>{displayedNextStep}</strong></div>
           </div>
 
           <div className="sectionSplit">
@@ -551,6 +573,12 @@ export default function AdminPage() {
                   </button>
                 </div>
               )}
+              <div className="dataList">
+                <span>Snapshots disponibles <strong>{effectiveFeatureSnapshots}</strong></span>
+                <span>Lignes entraÃ®nables <strong>{effectiveTrainingRows}</strong></span>
+                <span>Couverture target <strong>{featureSummary?.target_coverage ?? workflowStatus?.feature_store.target_coverage ?? dashboardSummary?.target_coverage ?? 0}%</strong></span>
+                <span>Stockage Feature Store <strong>{formatStorage(featureSummary?.storage ?? resolvedRefreshStorage)}</strong></span>
+              </div>
               {featureBuildInfo && (
                 <div className="dataList">
                   <span>Stockage <strong>{formatStorage(featureBuildInfo.storage)}</strong></span>
@@ -586,10 +614,10 @@ export default function AdminPage() {
                   <input min={1} max={10000} type="number" value={trainingLimit} onChange={(event) => setTrainingLimit(Number(event.target.value))} />
                 </label>
               </div>
-              {!featureStoreReady && (
+              {!effectiveFeatureStoreReady && (
                 <div className="banner warning">Construisez d'abord le Feature Store avant d'entraîner le modèle.</div>
               )}
-              <button className="button primary" type="button" onClick={handleTrainCandidate} disabled={isTraining || !isAdmin || !featureStoreReady}>
+              <button className="button primary" type="button" onClick={handleTrainCandidate} disabled={isTraining || !isAdmin || !effectiveFeatureStoreReady}>
                 {isTraining ? 'Entraînement...' : 'Entraîner le modèle'}
               </button>
               {trainingReport && (
