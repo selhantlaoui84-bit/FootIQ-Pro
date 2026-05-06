@@ -72,7 +72,6 @@ async function run() {
 
   const readProxyFiles = [
     '../pages/api/admin/refresh-status.ts',
-    '../pages/api/admin/workflow-status.ts',
     '../pages/api/admin/alerts.ts',
     '../pages/api/admin/feature-summary.ts',
     '../pages/api/admin/feature-quality-report.ts',
@@ -88,6 +87,14 @@ async function run() {
     assert.doesNotMatch(proxySource, /footiq-pro-production\.up\.railway\.app/);
     assert.doesNotMatch(proxySource, /NEXT_PUBLIC_ADMIN_API_KEY/);
   }
+
+  const workflowProxySource = await readFile(new URL('../pages/api/admin/workflow-status.ts', import.meta.url), 'utf8');
+  assert.match(workflowProxySource, /\/admin\/workflow-status/);
+  assert.match(workflowProxySource, /method: 'GET'/);
+  assert.match(workflowProxySource, /requireAdminKey: true/);
+  assert.match(workflowProxySource, /timeoutMs: 45000/);
+  assert.doesNotMatch(workflowProxySource, /footiq-pro-production\.up\.railway\.app/);
+  assert.doesNotMatch(workflowProxySource, /NEXT_PUBLIC_ADMIN_API_KEY/);
 
   const adminPageSource = await readFile(adminPage, 'utf8');
   assert.doesNotMatch(adminPageSource, brokenEncoding);
@@ -139,7 +146,7 @@ async function run() {
   assert.match(apiClientSource, /const url = path\.startsWith\('http'\) \? path : `\$\{API_URL\}\$\{path\}`/);
   assert.match(apiClientSource, /const response = await fetch\(path, \{/);
   assert.match(apiClientSource, /fetchProxyJson<RefreshResponse>\('\/api\/admin\/refresh-status', undefined, 15000\)/);
-  assert.match(apiClientSource, /fetchProxyJson<AdminWorkflowStatus>\('\/api\/admin\/workflow-status', undefined, 15000\)/);
+  assert.match(apiClientSource, /fetchProxyJson<AdminWorkflowStatus>\('\/api\/admin\/workflow-status', undefined, 45000\)/);
   assert.match(apiClientSource, /fetchProxyJson<AdminAlertsReport>\('\/api\/admin\/alerts', undefined, 15000\)/);
   assert.match(apiClientSource, /fetchProxyJson<FeatureSummary>\('\/api\/admin\/feature-summary', undefined, 15000\)/);
   assert.match(apiClientSource, /fetchProxyJson<DatasetQualityReport>\(`\/api\/admin\/feature-quality-report\?limit=\$\{safeLimit\}`, undefined, 15000\)/);

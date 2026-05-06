@@ -506,7 +506,7 @@ export async function getExplainabilitySummary(limit = 200, view: MatchView = 'u
 export async function getAdminWorkflowStatus(): Promise<AdminWorkflowStatus> {
   if (IS_BUILD) return mockAdminWorkflowStatus;
 
-  return fetchProxyJson<AdminWorkflowStatus>('/api/admin/workflow-status', undefined, 15000);
+  return fetchProxyJson<AdminWorkflowStatus>('/api/admin/workflow-status', undefined, 45000);
 }
 
 
