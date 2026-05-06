@@ -1,21 +1,17 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { proxyAdminRequest } from '~/lib/server/admin-proxy';
+import { proxyBackendRequest } from '~/lib/server/admin-proxy';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== 'GET') {
-    return res.status(405).json({ detail: 'Method not allowed' });
-  }
-
   const jobId = typeof req.query.job_id === 'string' ? req.query.job_id : '';
   const backendPath = jobId
     ? `/admin/refresh-job-status?job_id=${encodeURIComponent(jobId)}`
     : '/admin/refresh-job-status';
 
-  return proxyAdminRequest(req, res, {
+  return proxyBackendRequest(req, res, {
     backendPath,
     method: 'GET',
-    timeoutMs: 10000,
     requireAdminKey: true,
+    timeoutMs: 10000,
+    timeoutDetail: 'Backend refresh job status timed out',
   });
 }
-

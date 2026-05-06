@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "test:admin": "node tests/admin-regression.test.mjs",
-    "check:french-ui": "node scripts/check-french-ui.mjs"
+    "check:french-ui": "node scripts/check-french-ui.mjs",
+    "test:smoke": "node tests/smoke-live.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.105.1",

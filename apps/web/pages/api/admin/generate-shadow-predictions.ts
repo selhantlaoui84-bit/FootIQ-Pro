@@ -1,27 +1,19 @@
-import type { NextApiRequest, NextApiResponse } from 'next';
-import { proxyAdminRequest } from '~/lib/server/admin-proxy';
+﻿import type { NextApiRequest, NextApiResponse } from 'next';
+import { proxyBackendRequest } from '~/lib/server/admin-proxy';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ status: 'error', detail: 'Method not allowed' });
-  }
+  const rawLimit = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
+  const rawForce = Array.isArray(req.query.force) ? req.query.force[0] : req.query.force;
+  const rawView = Array.isArray(req.query.view) ? req.query.view[0] : req.query.view;
+  const limit = rawLimit ?? '500';
+  const force = rawForce ?? 'false';
+  const view = rawView ?? 'upcoming';
 
-  const limit = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
-  const force = Array.isArray(req.query.force) ? req.query.force[0] : req.query.force;
-  const view = Array.isArray(req.query.view) ? req.query.view[0] : req.query.view;
-
-  const params = new URLSearchParams();
-  if (limit) params.set('limit', limit);
-  if (force) params.set('force', force);
-  if (view) params.set('view', view);
-
-  const query = params.toString();
-
-  return proxyAdminRequest(req, res, {
-    backendPath: `/admin/generate-shadow-predictions${query ? `?${query}` : ''}`,
+  return proxyBackendRequest(req, res, {
+    backendPath: `/admin/generate-shadow-predictions?limit=${encodeURIComponent(limit)}&force=${encodeURIComponent(force)}&view=${encodeURIComponent(view)}`,
     method: 'POST',
-    timeoutMs: 60000,
     requireAdminKey: true,
+    timeoutMs: 60000,
+    timeoutDetail: 'Backend shadow prediction generation timed out',
   });
 }
-

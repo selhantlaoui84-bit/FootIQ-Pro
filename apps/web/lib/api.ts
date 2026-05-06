@@ -3,7 +3,6 @@ import {
   getMockMatch,
   getMockTeam,
   mockBacktestingReport,
-  mockBuildFeatureStoreResponse,
   mockFeatureDataset,
   mockFeatureQualityReport,
   mockFeatureSummary,
@@ -22,7 +21,6 @@ import {
   mockHybridEngineSummary,
   mockExplainabilitySummary,
   mockAdminWorkflowStatus,
-  mockRefreshJobStatus,
   buildDashboardSummary,
   matches,
   performanceMetrics,
@@ -71,7 +69,7 @@ const API_URL =
 const IS_BUILD = process.env.NEXT_PHASE === 'phase-production-build';
 
 
-async function safeFetchJson<T>(path: string, init?: RequestInit, timeoutMs = 8000): Promise<T | null> {
+async function fetchBackendJson<T>(path: string, init?: RequestInit, timeoutMs = 8000): Promise<T | null> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -95,18 +93,61 @@ async function safeFetchJson<T>(path: string, init?: RequestInit, timeoutMs = 80
   }
 }
 
+async function fetchProxyJson<T>(path: string, init?: RequestInit, timeoutMs = 15000): Promise<T> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const headers = new Headers(init?.headers);
+    headers.set('Accept', 'application/json');
+
+    const response = await fetch(path, {
+      ...init,
+      method: init?.method ?? 'GET',
+      headers,
+      signal: controller.signal,
+    });
+    const text = await response.text();
+    let body: any = null;
+
+    if (text) {
+      try {
+        body = JSON.parse(text);
+      } catch {
+        body = { detail: text };
+      }
+    }
+
+    if (!response.ok) {
+      throw new Error(body?.detail ?? body?.error ?? `Proxy request failed with status ${response.status}`);
+    }
+
+    if (!body) {
+      throw new Error(`Proxy ${path} returned an empty response.`);
+    }
+
+    return body as T;
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Proxy ${path} timed out after ${timeoutMs} ms.`);
+    }
+
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function getAdminAlerts(): Promise<AdminAlertsReport> {
   if (IS_BUILD) return mockAdminAlertsReport;
 
-  const data = await safeFetchJson<AdminAlertsReport>('/api/admin/alerts', undefined, 5000);
-
-  return data ?? mockAdminAlertsReport;
+  return fetchProxyJson<AdminAlertsReport>('/api/admin/alerts', undefined, 15000);
 }
 
 export async function getBackendHealth(): Promise<HealthResponse | null> {
   if (IS_BUILD) return null;
 
-  return safeFetchJson<HealthResponse>('/health', undefined, 3000);
+  return fetchBackendJson<HealthResponse>('/health', undefined, 3000);
 }
 
 export async function getHealth() {
@@ -125,7 +166,7 @@ export async function getPredictions(options?: { includeHybridEngine?: boolean; 
   if (options?.view) params.set('view', options.view);
 
   const query = params.toString();
-  const data = await safeFetchJson<Prediction[]>(`/predictions${query ? `?${query}` : ''}`, undefined, 3000);
+  const data = await fetchBackendJson<Prediction[]>(`/predictions${query ? `?${query}` : ''}`, undefined, 3000);
 
   return Array.isArray(data) && data.length > 0 ? data : predictions;
 }
@@ -133,7 +174,7 @@ export async function getPredictions(options?: { includeHybridEngine?: boolean; 
 export async function getPrediction(matchId: string): Promise<Prediction> {
   if (IS_BUILD) return getMockPrediction(matchId);
 
-  const data = await safeFetchJson<Prediction>(`/predictions/${encodeURIComponent(matchId)}`, undefined, 3000);
+  const data = await fetchBackendJson<Prediction>(`/predictions/${encodeURIComponent(matchId)}`, undefined, 3000);
 
   return data ?? getMockPrediction(matchId);
 }
@@ -150,7 +191,7 @@ export async function getMatches(options?: { view?: MatchView; q?: string; statu
   if (typeof options?.includeFinished === 'boolean') params.set('include_finished', String(options.includeFinished));
 
   const query = params.toString();
-  const data = await safeFetchJson<Match[]>(`/matches${query ? `?${query}` : ''}`, undefined, 3000);
+  const data = await fetchBackendJson<Match[]>(`/matches${query ? `?${query}` : ''}`, undefined, 3000);
 
   return Array.isArray(data) && data.length > 0 ? data : matches;
 }
@@ -158,7 +199,7 @@ export async function getMatches(options?: { view?: MatchView; q?: string; statu
 export async function getMatch(matchId: string): Promise<Match> {
   if (IS_BUILD) return getMockMatch(matchId);
 
-  const data = await safeFetchJson<Match>(`/matches/${encodeURIComponent(matchId)}`, undefined, 3000);
+  const data = await fetchBackendJson<Match>(`/matches/${encodeURIComponent(matchId)}`, undefined, 3000);
 
   return data ?? getMockMatch(matchId);
 }
@@ -168,7 +209,7 @@ export async function getTeams(): Promise<Team[]> {
     return teams;
   }
 
-  const data = await safeFetchJson<Team[]>('/teams', undefined, 3000);
+  const data = await fetchBackendJson<Team[]>('/teams', undefined, 3000);
 
   return Array.isArray(data) && data.length > 0 ? data : teams;
 }
@@ -176,7 +217,7 @@ export async function getTeams(): Promise<Team[]> {
 export async function getTeam(teamId: string): Promise<Team> {
   if (IS_BUILD) return getMockTeam(teamId);
 
-  const data = await safeFetchJson<Team>(`/teams/${encodeURIComponent(teamId)}`, undefined, 3000);
+  const data = await fetchBackendJson<Team>(`/teams/${encodeURIComponent(teamId)}`, undefined, 3000);
 
   return data ?? getMockTeam(teamId);
 }
@@ -185,7 +226,7 @@ export async function getTeam(teamId: string): Promise<Team> {
 export async function getModels(): Promise<ModelsMetadata> {
   if (IS_BUILD) return mockModelsMetadata;
 
-  const data = await safeFetchJson<ModelsMetadata>('/models', undefined, 3000);
+  const data = await fetchBackendJson<ModelsMetadata>('/models', undefined, 3000);
 
   return data ?? mockModelsMetadata;
 }
@@ -193,7 +234,7 @@ export async function getModels(): Promise<ModelsMetadata> {
 export async function getModelComparison(): Promise<ModelComparison> {
   if (IS_BUILD) return mockModelComparison;
 
-  const data = await safeFetchJson<ModelComparison>('/models/comparison', undefined, 3000);
+  const data = await fetchBackendJson<ModelComparison>('/models/comparison', undefined, 3000);
 
   return data ?? mockModelComparison;
 }
@@ -201,7 +242,7 @@ export async function getModelComparison(): Promise<ModelComparison> {
 export async function getPredictionSnapshots(): Promise<PredictionSnapshot[]> {
   if (IS_BUILD) return mockPredictionSnapshots;
 
-  const data = await safeFetchJson<PredictionSnapshot[]>('/predictions/snapshots', undefined, 3000);
+  const data = await fetchBackendJson<PredictionSnapshot[]>('/predictions/snapshots', undefined, 3000);
 
   return Array.isArray(data) ? data : mockPredictionSnapshots;
 }
@@ -209,22 +250,29 @@ export async function getPredictionSnapshots(): Promise<PredictionSnapshot[]> {
 export async function getBacktesting(): Promise<BacktestingReport> {
   if (IS_BUILD) return mockBacktestingReport;
 
-  const data = await safeFetchJson<BacktestingReport>('/backtesting', undefined, 3000);
+  const data = await fetchBackendJson<BacktestingReport>('/backtesting', undefined, 3000);
   return data ?? mockBacktestingReport;
 }
 
 export async function getFeatureSummary(): Promise<FeatureSummary> {
   if (IS_BUILD) return mockFeatureSummary;
 
-  const data = await safeFetchJson<FeatureSummary>('/features/summary', undefined, 3000);
-  return data ?? mockFeatureSummary;
+  try {
+    return await fetchProxyJson<FeatureSummary>('/api/admin/feature-summary', undefined, 15000);
+  } catch (error) {
+    throw new Error(
+      error instanceof Error
+        ? `Impossible de charger /features/summary depuis le backend. ${error.message}`
+        : 'Impossible de charger /features/summary depuis le backend.',
+    );
+  }
 }
 
 export async function getFeatureDataset(limit = 100): Promise<FeatureDatasetRow[]> {
   if (IS_BUILD) return mockFeatureDataset;
 
   const safeLimit = Math.min(Math.max(Math.round(limit), 1), 500);
-  const data = await safeFetchJson<FeatureDatasetRow[]>(`/features/dataset?limit=${safeLimit}`, undefined, 3000);
+  const data = await fetchBackendJson<FeatureDatasetRow[]>(`/features/dataset?limit=${safeLimit}`, undefined, 3000);
 
   return Array.isArray(data) ? data : mockFeatureDataset;
 }
@@ -233,36 +281,34 @@ export async function getFeatureQualityReport(limit = 1000): Promise<DatasetQual
   if (IS_BUILD) return mockFeatureQualityReport;
 
   const safeLimit = Math.min(Math.max(Math.round(limit), 1), 5000);
-  const data = await safeFetchJson<DatasetQualityReport>(`/features/quality-report?limit=${safeLimit}`, undefined, 3000);
-
-  return data ?? mockFeatureQualityReport;
+  return fetchProxyJson<DatasetQualityReport>(`/api/admin/feature-quality-report?limit=${safeLimit}`, undefined, 15000);
 }
 
 export async function getMlStatus(): Promise<MlStatus> {
   if (IS_BUILD) return mockMlStatus;
 
-  const data = await safeFetchJson<MlStatus>('/ml/status', undefined, 3000);
+  const data = await fetchBackendJson<MlStatus>('/ml/status', undefined, 3000);
   return data ?? mockMlStatus;
 }
 
 export async function getMlFeatureImportance(): Promise<FeatureImportanceRow[]> {
   if (IS_BUILD) return mockMlFeatureImportance;
 
-  const data = await safeFetchJson<FeatureImportanceRow[]>('/ml/feature-importance', undefined, 3000);
+  const data = await fetchBackendJson<FeatureImportanceRow[]>('/ml/feature-importance', undefined, 3000);
   return data ?? mockMlFeatureImportance;
 }
 
 export async function getMlComparison(): Promise<MlComparison> {
   if (IS_BUILD) return mockMlComparison;
 
-  const data = await safeFetchJson<MlComparison>('/ml/comparison', undefined, 3000);
+  const data = await fetchBackendJson<MlComparison>('/ml/comparison', undefined, 3000);
   return data ?? mockMlComparison;
 }
 
 export async function getMlShadowSummary(): Promise<MlShadowSummary> {
   if (IS_BUILD) return mockMlShadowSummary;
 
-  const data = await safeFetchJson<MlShadowSummary>('/ml/shadow-summary', undefined, 3000);
+  const data = await fetchBackendJson<MlShadowSummary>('/ml/shadow-summary', undefined, 3000);
   return data ?? mockMlShadowSummary;
 }
 
@@ -270,7 +316,7 @@ export async function getMlShadowPredictions(limit = 100, view: MatchView = 'all
   if (IS_BUILD) return mockMlShadowPredictions;
 
   const safeLimit = Math.min(Math.max(Math.round(limit), 1), 500);
-  const data = await safeFetchJson<MlShadowRow[]>(
+  const data = await fetchBackendJson<MlShadowRow[]>(
     `/ml/shadow-predictions?limit=${safeLimit}&view=${encodeURIComponent(view)}`,
     undefined,
     3000,
@@ -349,7 +395,7 @@ export async function getPerformance(): Promise<PerformanceMetrics> {
     return performanceMetrics;
   }
 
-  const data = await safeFetchJson<PerformanceMetrics>('/performance', undefined, 3000);
+  const data = await fetchBackendJson<PerformanceMetrics>('/performance', undefined, 3000);
 
   return data ?? performanceMetrics;
 }
@@ -359,15 +405,13 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
     return buildDashboardSummary();
   }
 
-  const data = await safeFetchJson<DashboardSummary>('/dashboard/summary', undefined, 3000);
-
-  return data ?? buildDashboardSummary();
+  return fetchProxyJson<DashboardSummary>('/api/admin/dashboard-summary', undefined, 15000);
 }
 
 export async function getRefreshStatus(): Promise<RefreshResponse | null> {
   if (IS_BUILD) return null;
 
-  return safeFetchJson<RefreshResponse>('/api/admin/refresh-status', undefined, 5000);
+  return fetchProxyJson<RefreshResponse>('/api/admin/refresh-status', undefined, 15000);
 }
 
 export async function getAdminDiagnostics(): Promise<AdminDiagnosticsResponse | null> {
@@ -429,7 +473,7 @@ export async function getHybridEngineSummary(options?: { limit?: number; view?: 
 
   const limit = Math.min(Math.max(Math.round(options?.limit ?? 200), 1), 1000);
   const view = options?.view ?? 'upcoming';
-  const data = await safeFetchJson<HybridEngineSummary>(
+  const data = await fetchBackendJson<HybridEngineSummary>(
     `/hybrid/engine-summary?limit=${limit}&view=${encodeURIComponent(view)}`,
     undefined,
     3000,
@@ -441,7 +485,7 @@ export async function getHybridEngineSummary(options?: { limit?: number; view?: 
 export async function getHybridSummary(): Promise<HybridSummary> {
   if (IS_BUILD) return mockHybridSummary;
 
-  const data = await safeFetchJson<HybridSummary>('/hybrid/summary', undefined, 3000);
+  const data = await fetchBackendJson<HybridSummary>('/hybrid/summary', undefined, 3000);
 
   return data ?? mockHybridSummary;
 }
@@ -450,7 +494,7 @@ export async function getExplainabilitySummary(limit = 200, view: MatchView = 'u
   if (IS_BUILD) return mockExplainabilitySummary;
 
   const safeLimit = Math.min(Math.max(Math.round(limit), 1), 1000);
-  const data = await safeFetchJson<ExplainabilitySummary>(
+  const data = await fetchBackendJson<ExplainabilitySummary>(
     `/explainability/summary?limit=${safeLimit}&view=${encodeURIComponent(view)}`,
     undefined,
     3000
@@ -462,50 +506,18 @@ export async function getExplainabilitySummary(limit = 200, view: MatchView = 'u
 export async function getAdminWorkflowStatus(): Promise<AdminWorkflowStatus> {
   if (IS_BUILD) return mockAdminWorkflowStatus;
 
-  const data = await safeFetchJson<AdminWorkflowStatus>('/api/admin/workflow-status', undefined, 5000);
-
-  return data ?? mockAdminWorkflowStatus;
+  return fetchProxyJson<AdminWorkflowStatus>('/api/admin/workflow-status', undefined, 15000);
 }
 
 
 export async function getRefreshJobStatus(jobId?: string): Promise<RefreshJobStatus> {
   const query = jobId ? `?job_id=${encodeURIComponent(jobId)}` : '';
-  try {
-    const response = await fetch(`/api/admin/refresh-job-status${query}`, {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-    });
-    const contentType = response.headers.get('content-type') ?? '';
-    const body = contentType.includes('application/json') ? await response.json() : null;
-
-    if (!response.ok) {
-      return { ...mockRefreshJobStatus, status: 'error', error: body?.detail ?? `Job status failed with status ${response.status}` };
-    }
-
-    return (body as RefreshJobStatus) ?? mockRefreshJobStatus;
-  } catch (error) {
-    return { ...mockRefreshJobStatus, status: 'error', error: error instanceof Error ? error.message : 'Refresh job status failed' };
-  }
+  return fetchProxyJson<RefreshJobStatus>(`/api/admin/refresh-job-status${query}`, undefined, 10000);
 }
 
 export async function getFeatureStoreJobStatus(jobId?: string): Promise<RefreshJobStatus> {
   const query = jobId ? `?job_id=${encodeURIComponent(jobId)}` : '';
-  try {
-    const response = await fetch(`/api/admin/feature-store-job-status${query}`, {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-    });
-    const contentType = response.headers.get('content-type') ?? '';
-    const body = contentType.includes('application/json') ? await response.json() : null;
-
-    if (!response.ok) {
-      return { ...mockRefreshJobStatus, status: 'error', error: body?.detail ?? `Feature Store job status failed with status ${response.status}` };
-    }
-
-    return (body as RefreshJobStatus) ?? mockRefreshJobStatus;
-  } catch (error) {
-    return { ...mockRefreshJobStatus, status: 'error', error: error instanceof Error ? error.message : 'Feature Store job status failed' };
-  }
+  return fetchProxyJson<RefreshJobStatus>(`/api/admin/feature-store-job-status${query}`, undefined, 10000);
 }
 
 export async function refreshData(): Promise<RefreshResponse | null> {
@@ -548,16 +560,14 @@ export async function buildFeatureStore(options?: { limit?: number; force?: bool
 
     if (!response.ok) {
       return {
-        ...mockBuildFeatureStoreResponse,
         status: 'error',
         detail: body?.detail ?? `Feature Store failed with status ${response.status}`,
       };
     }
 
-    return (body as BuildFeatureStoreResponse) ?? mockBuildFeatureStoreResponse;
+    return body as BuildFeatureStoreResponse;
   } catch (error) {
     return {
-      ...mockBuildFeatureStoreResponse,
       status: 'error',
       detail: error instanceof Error ? error.message : 'Feature Store request failed',
     };
@@ -567,7 +577,7 @@ export async function buildFeatureStore(options?: { limit?: number; force?: bool
 export async function getMlShadowBacktesting(limit = 500) {
   if (IS_BUILD) return mockMlShadowBacktesting;
 
-  const data = await safeFetchJson<typeof mockMlShadowBacktesting>(
+  const data = await fetchBackendJson<typeof mockMlShadowBacktesting>(
     `/ml/shadow-backtesting?limit=${encodeURIComponent(String(limit))}`,
     undefined,
     3000,
@@ -579,7 +589,5 @@ export async function getMlShadowBacktesting(limit = 500) {
 export async function getModelGovernance(): Promise<ModelGovernanceReport> {
   if (IS_BUILD) return mockModelGovernance;
 
-  const data = await safeFetchJson<ModelGovernanceReport>('/models/governance', undefined, 3000);
-
-  return data ?? mockModelGovernance;
+  return fetchProxyJson<ModelGovernanceReport>('/api/admin/model-governance', undefined, 15000);
 }
