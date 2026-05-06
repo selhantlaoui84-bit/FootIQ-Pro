@@ -98,7 +98,7 @@ export default function AdminPage() {
   const backendConnected = health?.status === 'ok' || health?.status === 'healthy';
   const configError = useMemo(() => diagnosticError(diagnostics), [diagnostics]);
   const stableRefreshInfo = refreshInfo?.stable_refresh_status
-    ? { status: refreshInfo.status, ...refreshInfo.stable_refresh_status }
+    ? { ...refreshInfo.stable_refresh_status, status: refreshInfo.stable_refresh_status.status ?? refreshInfo.status }
     : refreshInfo;
   const currentRefreshJob = refreshJob ?? refreshInfo?.current_job ?? workflowStatus?.latest_refresh_job;
   const effectiveFeatureSnapshots =
@@ -725,3 +725,4 @@ export default function AdminPage() {
     </ProtectedRoute>
   );
 }
+
