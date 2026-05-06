@@ -1,101 +1,74 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 
-type ProxyRequestOptions = {
+type ProxyOptions = {
   backendPath: string;
-  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
-  timeoutMs?: number;
+  method?: 'GET' | 'POST';
   requireAdminKey?: boolean;
-  timeoutMessage?: string;
+  timeoutMs?: number;
+  timeoutDetail?: string;
 };
 
-async function proxyRequest(
-  req: NextApiRequest,
-  res: NextApiResponse,
-  options: ProxyRequestOptions,
-) {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '');
+type BackendBody = Record<string, unknown> | unknown[] | string | null;
 
-  if (!apiUrl) {
-    return res.status(500).json({
-      status: 'error',
-      detail: 'NEXT_PUBLIC_API_URL missing on Vercel environment',
-    });
-  }
-
-  const adminKey = process.env.ADMIN_API_KEY;
-
-  if (options.requireAdminKey && !adminKey) {
-    return res.status(500).json({
-      status: 'error',
-      detail: 'ADMIN_API_KEY missing on Vercel server environment',
-    });
-  }
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 15000);
+function parseBackendBody(text: string, fallback: string): BackendBody {
+  if (!text) return { detail: fallback };
 
   try {
-    const headers: Record<string, string> = {
-      Accept: 'application/json',
-    };
-
-    if (options.requireAdminKey && adminKey) {
-      headers['X-Admin-Key'] = adminKey;
-    }
-
-    const response = await fetch(`${apiUrl}${options.backendPath}`, {
-      method: options.method ?? req.method ?? 'GET',
-      signal: controller.signal,
-      headers,
-    });
-
-    const text = await response.text();
-
-    let body: unknown;
-    try {
-      body = JSON.parse(text);
-    } catch {
-      body = {
-        status: response.ok ? 'ok' : 'error',
-        detail: text || response.statusText,
-      };
-    }
-
-    return res.status(response.status).json(body);
-  } catch (error) {
-    const isTimeout = error instanceof Error && error.name === 'AbortError';
-
-    return res.status(isTimeout ? 504 : 500).json({
-      status: 'error',
-      detail: isTimeout
-        ? options.timeoutMessage ?? 'Backend request timed out'
-        : error instanceof Error
-          ? error.message
-          : 'Admin proxy request failed',
-    });
-  } finally {
-    clearTimeout(timeout);
+    return JSON.parse(text) as BackendBody;
+  } catch {
+    return { detail: text };
   }
-}
-
-export async function proxyAdminRequest(
-  req: NextApiRequest,
-  res: NextApiResponse,
-  options: ProxyRequestOptions,
-) {
-  return proxyRequest(req, res, {
-    ...options,
-    requireAdminKey: options.requireAdminKey ?? true,
-  });
 }
 
 export async function proxyBackendRequest(
   req: NextApiRequest,
   res: NextApiResponse,
-  options: ProxyRequestOptions,
+  options: ProxyOptions,
 ) {
-  return proxyRequest(req, res, {
-    ...options,
-    requireAdminKey: options.requireAdminKey ?? true,
-  });
+  const method = options.method ?? 'GET';
+
+  if (req.method !== method) {
+    return res.status(405).json({ detail: 'Method not allowed' });
+  }
+
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '');
+  const adminKey = process.env.ADMIN_API_KEY;
+
+  if (!apiUrl) {
+    return res.status(500).json({ detail: 'NEXT_PUBLIC_API_URL missing on Vercel environment' });
+  }
+
+  if (options.requireAdminKey && !adminKey) {
+    return res.status(500).json({ detail: 'ADMIN_API_KEY missing on Vercel server environment' });
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 15000);
+  const headers: Record<string, string> = { Accept: 'application/json' };
+
+  if (options.requireAdminKey && adminKey) {
+    headers['X-Admin-Key'] = adminKey;
+  }
+
+  try {
+    const response = await fetch(`${apiUrl}${options.backendPath}`, {
+      method,
+      headers,
+      signal: controller.signal,
+    });
+    const text = await response.text();
+    const body = parseBackendBody(text, response.statusText || 'Backend response is empty');
+
+    return res.status(response.status).json(body);
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      return res.status(504).json({ detail: options.timeoutDetail ?? 'Backend request timed out' });
+    }
+
+    return res.status(500).json({
+      detail: error instanceof Error ? error.message : 'Backend proxy failed',
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 }

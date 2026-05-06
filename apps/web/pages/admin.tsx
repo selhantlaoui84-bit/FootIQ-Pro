@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import {
@@ -38,31 +38,94 @@ import type {
 } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
 
+type AdminLoadErrors = {
+  refreshStatusError: string | null;
+  workflowStatusError: string | null;
+  featureSummaryError: string | null;
+  alertsError: string | null;
+  dashboardSummaryError: string | null;
+  qualityReportError: string | null;
+  governanceError: string | null;
+};
+
+type AdminLoadResult<T> = {
+  data: T | null;
+  error: string | null;
+};
+
+const emptyAdminLoadErrors: AdminLoadErrors = {
+  refreshStatusError: null,
+  workflowStatusError: null,
+  featureSummaryError: null,
+  alertsError: null,
+  dashboardSummaryError: null,
+  qualityReportError: null,
+  governanceError: null,
+};
+
+const adminLoadErrorLabels: Record<keyof AdminLoadErrors, string> = {
+  refreshStatusError: 'Refresh status',
+  workflowStatusError: 'Workflow status',
+  featureSummaryError: 'Feature summary',
+  alertsError: 'Alertes admin',
+  dashboardSummaryError: 'Résumé dashboard',
+  qualityReportError: 'Rapport qualité',
+  governanceError: 'Gouvernance modèle',
+};
+
 function valueBadge(value?: string | null) {
   const normalized = (value ?? '').toLowerCase();
 
   if (normalized === 'mock') return 'statusBadge warning';
-  if (normalized === 'memory' || normalized === 'mÃ©moire') return 'statusBadge critical';
+  if (normalized === 'memory' || normalized === 'mémoire') return 'statusBadge critical';
   if (normalized === 'postgresql' || normalized === 'football-data.org') return 'statusBadge healthy';
 
   return 'statusBadge info';
 }
 
 function formatStorage(value?: string | null) {
-  return value === 'memory' ? 'mÃ©moire' : value || 'inconnu';
+  if (value === 'memory') return 'mémoire';
+  return value || 'inconnu';
 }
 
 function diagnosticError(diagnostics: AdminDiagnosticsResponse | null) {
-  return diagnostics?.backendHealth.status === 'error'
-    ? diagnostics.backendHealth.error
-    : diagnostics?.refreshStatus.status === 'error'
-      ? diagnostics.refreshStatus.error
-      : null;
+  if (diagnostics?.backendHealth.status === 'error') return diagnostics.backendHealth.error;
+  if (diagnostics?.refreshStatus.status === 'error') return diagnostics.refreshStatus.error;
+  return null;
 }
 
 function isProbablyStale(job?: RefreshJobStatus | null) {
   if (!job || job.status !== 'running' || !job.started_at) return false;
   return Date.now() - new Date(job.started_at).getTime() > 5 * 60 * 1000;
+}
+
+function runningJob(jobId: string): RefreshJobStatus {
+  return {
+    job_id: jobId,
+    status: 'running',
+    started_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    finished_at: null,
+    duration_ms: null,
+    result: null,
+    error: null,
+  };
+}
+
+async function captureAdminLoad<T>(promise: Promise<T>, fallback: string): Promise<AdminLoadResult<T>> {
+  try {
+    return { data: await promise, error: null };
+  } catch (loadError) {
+    return {
+      data: null,
+      error: loadError instanceof Error ? loadError.message : fallback,
+    };
+  }
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return 'N/A';
+  return value;
 }
 
 export default function AdminPage() {
@@ -76,6 +139,8 @@ export default function AdminPage() {
   const [diagnostics, setDiagnostics] = useState<AdminDiagnosticsResponse | null>(null);
   const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
   const [featureSummary, setFeatureSummary] = useState<FeatureSummary | null>(null);
+  const [featureSummaryError, setFeatureSummaryError] = useState<string | null>(null);
+  const [adminLoadErrors, setAdminLoadErrors] = useState<AdminLoadErrors>(emptyAdminLoadErrors);
   const [isBuildingFeatures, setIsBuildingFeatures] = useState(false);
   const [featureBuildInfo, setFeatureBuildInfo] = useState<BuildFeatureStoreResponse | null>(null);
   const [featureStoreJob, setFeatureStoreJob] = useState<RefreshJobStatus | null>(null);
@@ -101,64 +166,118 @@ export default function AdminPage() {
     ? { ...refreshInfo.stable_refresh_status, status: refreshInfo.stable_refresh_status.status ?? refreshInfo.status }
     : refreshInfo;
   const currentRefreshJob = refreshJob ?? refreshInfo?.current_job ?? workflowStatus?.latest_refresh_job;
+  const currentFeatureStoreJob = featureStoreJob ?? workflowStatus?.latest_feature_store_job;
+  const featureSummaryUnavailable = Boolean(featureSummaryError && !featureSummary);
+
   const effectiveFeatureSnapshots =
     featureSummary?.snapshots_count ??
-    workflowStatus?.feature_store.snapshots_count ??
+    workflowStatus?.feature_store?.snapshots_count ??
     dashboardSummary?.feature_snapshots_count ??
     0;
   const effectiveTrainingRows =
     featureSummary?.with_target_count ??
-    workflowStatus?.feature_store.training_rows_available ??
+    workflowStatus?.feature_store?.training_rows_available ??
     dashboardSummary?.training_rows_available ??
     0;
   const effectiveFeatureStoreReady =
-    effectiveFeatureSnapshots > 0 || effectiveTrainingRows > 0 || workflowStatus?.feature_store.ready === true;
+    effectiveFeatureSnapshots > 0 ||
+    effectiveTrainingRows > 0 ||
+    workflowStatus?.feature_store?.ready === true;
+  const displayedFeatureReady = featureSummaryUnavailable
+    ? 'indisponible'
+    : effectiveFeatureStoreReady
+      ? 'oui'
+      : 'non';
+
   const resolvedRefreshStorage =
-    featureSummary?.storage === 'postgresql'
+    featureSummary?.storage === 'postgresql' ||
+    stableRefreshInfo?.storage === 'postgresql' ||
+    refreshInfo?.storage === 'postgresql' ||
+    workflowStatus?.refresh?.storage === 'postgresql'
       ? 'postgresql'
-      : stableRefreshInfo?.storage === 'postgresql'
-        ? 'postgresql'
-        : workflowStatus?.refresh.storage === 'postgresql'
-          ? 'postgresql'
-          : stableRefreshInfo?.storage ?? workflowStatus?.refresh.storage;
-  const displayedNextStep =
-    effectiveFeatureStoreReady && (!workflowStatus?.next_step || workflowStatus.next_step === 'refresh_data')
-      ? 'train_candidate_model'
-      : workflowStatus?.next_step ?? 'refresh_data';
-  const resolvedRefreshSource = workflowStatus?.refresh.source ?? stableRefreshInfo?.source ?? 'mock';
+      : stableRefreshInfo?.storage ?? refreshInfo?.storage ?? workflowStatus?.refresh?.storage ?? 'inconnu';
+  const effectiveFeatureStorage =
+    featureSummary?.storage ??
+    (workflowStatus?.feature_store as { storage?: string } | undefined)?.storage ??
+    resolvedRefreshStorage;
+  const effectivePipelineStorage =
+    effectiveFeatureStorage === 'postgresql' ||
+    resolvedRefreshStorage === 'postgresql'
+      ? 'postgresql'
+      : resolvedRefreshStorage;
+  const displayedPipelineStorage = featureSummaryUnavailable ? 'inconnu' : effectivePipelineStorage;
+  const displayedFeatureStorage = featureSummaryUnavailable ? 'indisponible' : formatStorage(effectiveFeatureStorage);
+  const displayedFeatureSnapshots = featureSummaryUnavailable ? 'indisponible' : effectiveFeatureSnapshots;
+  const displayedTrainingRows = featureSummaryUnavailable ? 'indisponible' : effectiveTrainingRows;
+  const displayedTargetCoverage = featureSummaryUnavailable ? 'indisponible' : `${featureSummary?.target_coverage ?? 0}%`;
+  const displayedNextStep = effectiveFeatureStoreReady
+    ? (workflowStatus?.candidate_model?.trained ? 'generate_shadow_predictions' : 'train_candidate_model')
+    : (workflowStatus?.next_step ?? 'refresh_data');
+  const effectiveNextStep = displayedNextStep;
+
+  const resolvedRefreshSource = workflowStatus?.refresh?.source ?? stableRefreshInfo?.source ?? 'mock';
+  const refreshMatchesImported = stableRefreshInfo?.matches_imported ?? workflowStatus?.refresh?.matches_imported ?? 0;
   const dataImported =
-    workflowStatus?.refresh.data_imported ??
-    ((workflowStatus?.refresh.storage === 'postgresql' && (workflowStatus?.refresh.matches_imported ?? 0) > 0) ||
-      (stableRefreshInfo?.storage === 'postgresql' && (stableRefreshInfo?.matches_imported ?? 0) > 0));
-  const candidateModelTrained = workflowStatus?.candidate_model.trained ?? false;
+    workflowStatus?.refresh?.data_imported ??
+    ((resolvedRefreshStorage === 'postgresql' || workflowStatus?.refresh?.storage === 'postgresql') && refreshMatchesImported > 0);
+  const candidateModelTrained = workflowStatus?.candidate_model?.trained ?? false;
   const refreshJobStale = isProbablyStale(currentRefreshJob);
-  const featureStoreJobStale = isProbablyStale(featureStoreJob) || isProbablyStale(workflowStatus?.latest_feature_store_job);
+  const featureStoreJobStale = isProbablyStale(currentFeatureStoreJob);
+  const adminLoadErrorEntries = Object.entries(adminLoadErrors).filter(
+    (entry): entry is [keyof AdminLoadErrors, string] => Boolean(entry[1]),
+  );
 
   async function reloadAdminState() {
-    const [healthResult, refreshStatus, workflow, featureStore, quality, governance, alerts, dashboard] = await Promise.all([
+    const [
+      healthResult,
+      refreshStatusResult,
+      workflowResult,
+      featureSummaryResult,
+      qualityResult,
+      governanceResult,
+      alertsResult,
+      dashboardResult,
+    ] = await Promise.all([
       getBackendHealth().catch(() => null),
-      getRefreshStatus().catch(() => null),
-      getAdminWorkflowStatus().catch(() => null),
-      getFeatureSummary().catch(() => null),
-      getFeatureQualityReport().catch(() => null),
-      getModelGovernance().catch(() => null),
-      getAdminAlerts().catch(() => null),
-      getDashboardSummary().catch(() => null),
+      captureAdminLoad(getRefreshStatus(), 'Impossible de charger /admin/refresh-status'),
+      captureAdminLoad(getAdminWorkflowStatus(), 'Impossible de charger /admin/workflow-status'),
+      captureAdminLoad(getFeatureSummary(), 'Impossible de charger /features/summary'),
+      captureAdminLoad(getFeatureQualityReport(), 'Impossible de charger /features/quality-report'),
+      captureAdminLoad(getModelGovernance(), 'Impossible de charger /models/governance'),
+      captureAdminLoad(getAdminAlerts(), 'Impossible de charger /admin/alerts'),
+      captureAdminLoad(getDashboardSummary(), 'Impossible de charger /dashboard/summary'),
     ]);
 
     setHealth(healthResult);
-    if (refreshStatus) {
-      setRefreshInfo(refreshStatus);
-      if (refreshStatus.current_job?.status === 'running') {
-        setRefreshJob(refreshStatus.current_job);
+    setAdminLoadErrors({
+      refreshStatusError: refreshStatusResult.error,
+      workflowStatusError: workflowResult.error,
+      featureSummaryError: featureSummaryResult.error,
+      qualityReportError: qualityResult.error,
+      governanceError: governanceResult.error,
+      alertsError: alertsResult.error,
+      dashboardSummaryError: dashboardResult.error,
+    });
+
+    if (refreshStatusResult.data) {
+      setRefreshInfo(refreshStatusResult.data);
+      if (refreshStatusResult.data.current_job?.status === 'running' && !refreshJobId) {
+        setRefreshJob(refreshStatusResult.data.current_job);
       }
     }
-    if (workflow) setWorkflowStatus(workflow);
-    if (featureStore) setFeatureSummary(featureStore);
-    if (quality) setFeatureQuality(quality);
-    if (governance) setModelGovernance(governance);
-    if (alerts) setAdminAlerts(alerts);
-    if (dashboard) setDashboardSummary(dashboard);
+
+    if (workflowResult.data) setWorkflowStatus(workflowResult.data);
+    if (featureSummaryResult.data) {
+      setFeatureSummary(featureSummaryResult.data);
+      setFeatureSummaryError(null);
+      setAdminLoadErrors((previous) => ({ ...previous, featureSummaryError: null }));
+    } else if (featureSummaryResult.error) {
+      setFeatureSummaryError(featureSummaryResult.error);
+    }
+    if (qualityResult.data) setFeatureQuality(qualityResult.data);
+    if (governanceResult.data) setModelGovernance(governanceResult.data);
+    if (alertsResult.data) setAdminAlerts(alertsResult.data);
+    if (dashboardResult.data) setDashboardSummary(dashboardResult.data);
   }
 
   async function handleDiagnostics() {
@@ -188,10 +307,16 @@ export default function AdminPage() {
   async function handleResetStaleJobs() {
     setError(null);
     const result = await resetStaleJobs({ force: true });
+
     if (result.status === 'error') {
-      setError(result.detail ?? 'RÃ©initialisation des jobs bloquÃ©s impossible.');
+      setError(result.detail ?? 'Réinitialisation des jobs bloqués impossible.');
       return;
     }
+
+    setRefreshJob(null);
+    setRefreshJobId(null);
+    setFeatureStoreJob(null);
+    setFeatureStoreJobId(null);
     await handleReloadState();
   }
 
@@ -205,10 +330,18 @@ export default function AdminPage() {
 
     let cancelled = false;
 
-    async function poll() {
+    async function pollRefreshJob() {
       try {
         const job = await getRefreshJobStatus(refreshJobId ?? undefined);
         if (cancelled) return;
+
+        if (isProbablyStale(job)) {
+          setError('Ancien job refresh probablement bloqué. Dernier état stable conservé.');
+          setRefreshJob(job);
+          setIsRefreshing(false);
+          setRefreshJobId(null);
+          return;
+        }
 
         setRefreshJob(job);
 
@@ -235,8 +368,8 @@ export default function AdminPage() {
       }
     }
 
-    void poll();
-    const interval = window.setInterval(poll, 2000);
+    void pollRefreshJob();
+    const interval = window.setInterval(pollRefreshJob, 2000);
 
     return () => {
       cancelled = true;
@@ -249,12 +382,19 @@ export default function AdminPage() {
 
     let cancelled = false;
 
-    async function poll() {
+    async function pollFeatureStoreJob() {
       try {
         const job = await getFeatureStoreJobStatus(featureStoreJobId ?? undefined);
         if (cancelled) return;
 
         setFeatureStoreJob(job);
+
+        if (isProbablyStale(job)) {
+          setError('Job Feature Store probablement bloqué.');
+          setIsBuildingFeatures(false);
+          setFeatureStoreJobId(null);
+          return;
+        }
 
         if (job.status === 'success') {
           if (job.result) setFeatureBuildInfo(job.result as BuildFeatureStoreResponse);
@@ -268,6 +408,7 @@ export default function AdminPage() {
           setError(job.error ?? 'Construction du Feature Store en erreur.');
           setIsBuildingFeatures(false);
           setFeatureStoreJobId(null);
+          await reloadAdminState();
         }
       } catch (pollError) {
         if (cancelled) return;
@@ -277,8 +418,8 @@ export default function AdminPage() {
       }
     }
 
-    void poll();
-    const interval = window.setInterval(poll, 2000);
+    void pollFeatureStoreJob();
+    const interval = window.setInterval(pollFeatureStoreJob, 2000);
 
     return () => {
       cancelled = true;
@@ -303,7 +444,8 @@ export default function AdminPage() {
 
       if (response.status === 'accepted' && response.job_id) {
         setRefreshJobId(response.job_id);
-        // Polling useEffect takes over  no reload here to avoid overwriting running job state
+        setRefreshJob(runningJob(response.job_id));
+        await handleDiagnostics();
         return;
       }
 
@@ -333,22 +475,15 @@ export default function AdminPage() {
       const result = await buildFeatureStore({ limit: 500, force: false });
       setFeatureBuildInfo(result);
 
-      if (result.status === 'error') {
-        setError(result.detail ?? 'Construction du Feature Store impossible.');
-      } else if (result.status === 'accepted' && result.job_id) {
+      if (result.status === 'accepted' && result.job_id) {
         acceptedJob = true;
         setFeatureStoreJobId(result.job_id);
-        setFeatureStoreJob({
-          job_id: result.job_id,
-          status: 'running',
-          started_at: new Date().toISOString(),
-          finished_at: null,
-          duration_ms: null,
-          result: null,
-          error: null,
-        });
-        // Polling useEffect takes over  return early to avoid overwriting running job state
+        setFeatureStoreJob(runningJob(result.job_id));
         return;
+      }
+
+      if (result.status === 'error') {
+        setError(result.detail ?? 'Construction du Feature Store impossible.');
       }
 
       await reloadAdminState();
@@ -373,14 +508,18 @@ export default function AdminPage() {
       setTrainingReport(result);
 
       if (result.status === 'error') {
-        setError(result.detail ?? "Construisez d'abord le Feature Store avant d'entraÃ®ner le modÃ¨le.");
+        setError(result.detail ?? "Construisez d'abord le Feature Store avant d'entraîner le modèle.");
       } else if (result.status === 'blocked') {
-        setError(result.reason ?? result.dataset_quality?.recommendation_reason ?? "Construisez d'abord le Feature Store avant d'entraÃ®ner le modÃ¨le.");
+        setError(
+          result.reason ??
+          result.dataset_quality?.recommendation_reason ??
+          "Construisez d'abord le Feature Store avant d'entraîner le modèle.",
+        );
       }
 
       await reloadAdminState();
     } catch {
-      setError('Candidate training unavailable for the moment.');
+      setError("L'entraînement du modèle candidat est indisponible pour le moment.");
     } finally {
       setIsTraining(false);
     }
@@ -388,7 +527,7 @@ export default function AdminPage() {
 
   async function handleGenerateShadowPredictions() {
     if (!candidateModelTrained) {
-      setError("EntraÃ®nez d'abord le modÃ¨le candidat avant de gÃ©nÃ©rer les prédictions shadow.");
+      setError("Entraînez d'abord le modèle candidat avant de générer les prédictions shadow.");
       return;
     }
 
@@ -400,12 +539,12 @@ export default function AdminPage() {
       setShadowResult(result);
 
       if (result.status === 'error') {
-        setError(result.detail ?? 'GÃ©nÃ©ration des prédictions shadow impossible.');
+        setError(result.detail ?? 'Génération des prédictions shadow impossible.');
       }
 
       await reloadAdminState();
     } catch {
-      setError('GÃ©nÃ©ration des prédictions shadow indisponible pour le moment.');
+      setError('Génération des prédictions shadow indisponible pour le moment.');
     } finally {
       setIsGeneratingShadow(false);
     }
@@ -417,7 +556,7 @@ export default function AdminPage() {
         <section className="pageHeader">
           <p className="eyebrow">Administration</p>
           <h1>Admin FootIQ Pro</h1>
-          <p>ContrÃ´le du backend, du refresh football-data.org et du pipeline modÃ¨le.</p>
+          <p>Contrôle du backend, du refresh football-data.org et du pipeline modèle.</p>
           <div className="roleStrip">
             <span className="userBadge">{user?.email ?? 'Utilisateur inconnu'}</span>
             <span className={`roleBadge ${isAdmin ? 'admin' : ''}`}>{isAdmin ? 'Admin' : 'User'}</span>
@@ -425,7 +564,7 @@ export default function AdminPage() {
           <div className="quickActions">
             <Link className="button secondary" href="/dashboard">Tableau de bord</Link>
             <Link className="button secondary" href="/matches">Matchs</Link>
-            <Link className="button secondary" href="/predictions">PrÃ©dictions</Link>
+            <Link className="button secondary" href="/predictions">Prédictions</Link>
             <Link className="button secondary" href="/performance#model-comparison">Backtesting</Link>
             <Link className="button secondary" href="/performance#feature-store">Feature Store</Link>
           </div>
@@ -433,22 +572,32 @@ export default function AdminPage() {
 
         {error && <section className="banner error">{error}</section>}
         {configError && <section className="banner warning">{configError}</section>}
-        {featureSummaryError && <section className="banner warning">Impossible de charger /features/summary : {featureSummaryError}</section>}
-        {Object.values(adminLoadErrors).some(Boolean) && (
-          <section className="banner warning">
-            Erreurs de chargement API admin : {Object.values(adminLoadErrors).filter(Boolean).join(' | ')}
+        {featureSummaryError && <section className="banner error">{featureSummaryError}</section>}
+        {adminLoadErrorEntries.length > 0 && (
+          <section className="card warningCard">
+            <div className="cardTop">
+              <div>
+                <p className="eyebrow">Erreurs de chargement API admin</p>
+                <h2>Certains états n'ont pas pu être rechargés</h2>
+              </div>
+            </div>
+            <div className="dataList">
+              {adminLoadErrorEntries.map(([key, message]) => (
+                <span key={key}>{adminLoadErrorLabels[key]} <strong>{message}</strong></span>
+              ))}
+            </div>
           </section>
         )}
 
         <section className="card">
           <div className="cardTop">
             <div>
-              <p className="eyebrow">tat systÃ¨me</p>
+              <p className="eyebrow">État système</p>
               <h2>Configuration et connexion</h2>
             </div>
             <div className="quickActions">
               <button className="button secondary" type="button" onClick={handleReloadState}>
-                Recharger l'Ã©tat
+                Recharger l'état
               </button>
               <button className="button secondary" type="button" onClick={handleDiagnostics} disabled={isTestingConfig}>
                 {isTestingConfig ? 'Test en cours...' : 'Tester la configuration'}
@@ -457,84 +606,45 @@ export default function AdminPage() {
           </div>
 
           <div className="compactDataGrid four">
-            <div className="metric">
-              <span>Backend</span>
-              <strong>{backendConnected ? 'connectÃ©' : 'non connectÃ©'}</strong>
-            </div>
-            <div className="metric">
-              <span>API URL</span>
-              <strong>{diagnostics?.hasApiUrl ? 'configurÃ©e' : 'absente'}</strong>
-            </div>
-            <div className="metric">
-              <span>ClÃ© admin</span>
-              <strong>{diagnostics?.hasAdminApiKey ? 'configurÃ©e' : 'absente'}</strong>
-            </div>
-            <div className="metric">
-              <span>Host API</span>
-              <strong>{diagnostics?.apiUrlHost || 'N/A'}</strong>
-            </div>
-            <div className="metric">
-              <span>Stockage actuel</span>
-              <strong><span className={valueBadge(resolvedRefreshStorage)}>{formatStorage(resolvedRefreshStorage)}</span></strong>
-            </div>
-            <div className="metric">
-              <span>Source actuelle</span>
-              <strong><span className={valueBadge(resolvedRefreshSource)}>{resolvedRefreshSource}</span></strong>
-            </div>
-            <div className="metric">
-              <span>Matchs importÃ©s</span>
-              <strong>{stableRefreshInfo?.matches_imported ?? dashboardSummary?.total_matches ?? 0}</strong>
-            </div>
-            <div className="metric">
-              <span>Alertes</span>
-              <strong>{adminAlerts?.alerts_count ?? 0}</strong>
-            </div>
-            <div className="metric">
-              <span>Auto-refresh</span>
-              <strong>{diagnostics?.hasCronSecret ? 'actif' : 'inactif'}</strong>
-            </div>
-            <div className="metric">
-              <span>Cron Vercel</span>
-              <strong>{diagnostics?.cronConfigured ? 'configurÃ©' : 'non configurÃ©'}</strong>
-            </div>
-            <div className="metric">
-              <span>Hourly refresh</span>
-              <strong>{workflowStatus?.cron?.hourly_refresh_last_run?.ran_at ?? 'jamais'}</strong>
-            </div>
-            <div className="metric">
-              <span>Fins de match</span>
-              <strong>{workflowStatus?.cron?.match_finished_check_last_run?.ran_at ?? 'jamais'}</strong>
-            </div>
+            <div className="metric"><span>Backend</span><strong>{backendConnected ? 'connecté' : 'non connecté'}</strong></div>
+            <div className="metric"><span>API URL</span><strong>{diagnostics?.hasApiUrl ? 'configurée' : 'absente'}</strong></div>
+            <div className="metric"><span>Clé admin</span><strong>{diagnostics?.hasAdminApiKey ? 'configurée' : 'absente'}</strong></div>
+            <div className="metric"><span>Host API</span><strong>{diagnostics?.apiUrlHost || 'N/A'}</strong></div>
+            <div className="metric"><span>Stockage actuel</span><strong><span className={valueBadge(displayedPipelineStorage)}>{formatStorage(displayedPipelineStorage)}</span></strong></div>
+            <div className="metric"><span>Source actuelle</span><strong><span className={valueBadge(resolvedRefreshSource)}>{resolvedRefreshSource}</span></strong></div>
+            <div className="metric"><span>Matchs importés</span><strong>{refreshMatchesImported}</strong></div>
+            <div className="metric"><span>Alertes</span><strong>{adminAlerts?.alerts_count ?? 0}</strong></div>
+            <div className="metric"><span>Auto-refresh</span><strong>{diagnostics?.hasCronSecret ? 'actif' : 'inactif'}</strong></div>
+            <div className="metric"><span>Cron Vercel</span><strong>{diagnostics?.cronConfigured ? 'configuré' : 'non configuré'}</strong></div>
+            <div className="metric"><span>Hourly refresh</span><strong>{workflowStatus?.cron?.hourly_refresh_last_run?.ran_at ?? 'jamais'}</strong></div>
+            <div className="metric"><span>Fins de match</span><strong>{workflowStatus?.cron?.match_finished_check_last_run?.ran_at ?? 'jamais'}</strong></div>
           </div>
         </section>
 
         <section className="card accent">
           <div className="cardTop">
             <div>
-              <p className="eyebrow">Actualisation donnÃ©es</p>
+              <p className="eyebrow">Actualisation données</p>
               <h2>Refresh football-data.org</h2>
             </div>
             <span className={valueBadge(resolvedRefreshSource)}>{resolvedRefreshSource}</span>
           </div>
-          <p>
-            Cette action actualise uniquement les donnÃ©es et les prédictions officielles.
-            Le Feature Store, le ML et le shadow se lancent ensuite sÃ©parÃ©ment.
-          </p>
-          {!isAdmin && <div className="banner error">AccÃ¨s admin requis.</div>}
+          <p>Actualise les matchs, équipes, résultats et prédictions depuis la source officielle.</p>
+          {!isAdmin && <div className="banner error">Accès admin requis.</div>}
           <button className="button primary" type="button" onClick={handleRefresh} disabled={isRefreshing || !isAdmin}>
-            {isRefreshing ? 'Actualisation en cours...' : 'Actualiser les donnÃ©es'}
+            {isRefreshing ? 'Actualisation en cours...' : 'Actualiser les données'}
           </button>
           {currentRefreshJob?.status === 'running' && (
             <div className="banner info">
               Job refresh: {currentRefreshJob.status}
-              {currentRefreshJob.duration_ms ? ` Â· DurÃ©e ${currentRefreshJob.duration_ms} ms` : ''}
+              {currentRefreshJob.duration_ms ? `, durée ${currentRefreshJob.duration_ms} ms` : ''}
             </div>
           )}
           {refreshJobStale && (
             <div className="banner warning">
-              Ancien job refresh probablement bloqu. Dernier tat stable conserv.
+              Ancien job refresh probablement bloqué. Dernier état stable conservé.
               <button className="button secondary" type="button" onClick={handleResetStaleJobs}>
-                RÃ©initialiser les jobs bloquÃ©s
+                Réinitialiser les jobs bloqués
               </button>
             </div>
           )}
@@ -542,24 +652,24 @@ export default function AdminPage() {
         </section>
 
         <section className="card workflowCard">
-          <p className="eyebrow">Pipeline modÃ¨le</p>
+          <p className="eyebrow">Pipeline modèle</p>
           <h2>Data, Feature Store, candidat ML et shadow</h2>
           <div className="dataList">
-            <span>tape 1 <strong>DonnÃ©es importÃ©es</strong></span>
-            <span>tape 2 <strong>Feature Store</strong></span>
-            <span>tape 3 <strong>ModÃ¨le candidat</strong></span>
-            <span>tape 4 <strong>Prédictions shadow</strong></span>
-            <span>tape 5 <strong>Backtesting</strong></span>
+            <span>Étape 1 : <strong>Données importées</strong></span>
+            <span>Étape 2 : <strong>Feature Store</strong></span>
+            <span>Étape 3 : <strong>Modèle candidat</strong></span>
+            <span>Étape 4 : <strong>Prédictions shadow</strong></span>
+            <span>Étape 5 : <strong>Backtesting</strong></span>
           </div>
           <div className="compactDataGrid four">
             <div className="metric"><span>Données actualisées</span><strong>{dataImported ? 'oui' : 'non'}</strong></div>
             <div className="metric"><span>Source</span><strong>{resolvedRefreshSource}</strong></div>
-            <div className="metric"><span>Stockage</span><strong>{formatStorage(resolvedRefreshStorage)}</strong></div>
-            <div className="metric"><span>Feature Store prêt</span><strong>{effectiveFeatureStoreReady ? 'oui' : 'non'}</strong></div>
+            <div className="metric"><span>Stockage</span><strong>{formatStorage(displayedPipelineStorage)}</strong></div>
+            <div className="metric"><span>Feature Store prêt</span><strong>{displayedFeatureReady}</strong></div>
             <div className="metric"><span>Modèle candidat entraîné</span><strong>{candidateModelTrained ? 'oui' : 'non'}</strong></div>
             <div className="metric"><span>Prédictions shadow générées</span><strong>{workflowStatus?.shadow_predictions.generated ? 'oui' : 'non'}</strong></div>
             <div className="metric"><span>Backtesting shadow</span><strong>{workflowStatus?.shadow_backtesting.ready ? 'disponible' : 'indisponible'}</strong></div>
-            <div className="metric"><span>Score qualitÃ©</span><strong>{featureQuality?.average_quality_score ?? 0}/100</strong></div>
+            <div className="metric"><span>Score qualité</span><strong>{featureQuality?.average_quality_score ?? 0}/100</strong></div>
             <div className="metric"><span>Gouvernance</span><strong>{modelGovernance?.promotion_readiness.level ?? 'unknown'}</strong></div>
             <div className="metric"><span>Prochaine étape</span><strong>{displayedNextStep}</strong></div>
           </div>
@@ -567,50 +677,50 @@ export default function AdminPage() {
           <div className="sectionSplit">
             <article>
               <h3>Feature Store</h3>
-              <p>GÃ¨le les variables modÃ¨le prÃ©-match pour prÃ©parer l'entraÃ®nement supervisÃ©.</p>
+              <p>Gèle les variables modèle pré-match pour préparer l'entraînement supervisé.</p>
               <button className="button secondary" type="button" onClick={handleBuildFeatureStore} disabled={isBuildingFeatures || !isAdmin}>
                 {isBuildingFeatures ? 'Construction...' : 'Construire le Feature Store'}
               </button>
-              {featureStoreJob && <div className="banner info">Statut Feature Store: {featureStoreJob.status}</div>}
+              {currentFeatureStoreJob && <div className="banner info">Statut Feature Store : {currentFeatureStoreJob.status}</div>}
               {featureStoreJobStale && (
                 <div className="banner warning">
-                  Job probablement bloquÃ©.
+                  Job Feature Store probablement bloqué.
                   <button className="button secondary" type="button" onClick={handleResetStaleJobs}>
-                    RÃ©initialiser les jobs bloquÃ©s
+                    Réinitialiser les jobs bloqués
                   </button>
                 </div>
               )}
               <div className="dataList">
-                <span>Snapshots disponibles <strong>{effectiveFeatureSnapshots}</strong></span>
-                <span>Lignes entraÃ®nables <strong>{effectiveTrainingRows}</strong></span>
-                <span>Couverture target <strong>{featureSummary?.target_coverage ?? workflowStatus?.feature_store.target_coverage ?? dashboardSummary?.target_coverage ?? 0}%</strong></span>
-                <span>Stockage Feature Store <strong>{formatStorage(featureSummary?.storage ?? resolvedRefreshStorage)}</strong></span>
+                <span>Snapshots disponibles <strong>{displayedFeatureSnapshots}</strong></span>
+                <span>Lignes entraînables <strong>{displayedTrainingRows}</strong></span>
+                <span>Couverture target <strong>{displayedTargetCoverage}</strong></span>
+                <span>Stockage Feature Store <strong>{displayedFeatureStorage}</strong></span>
               </div>
               {featureBuildInfo && (
                 <div className="dataList">
-                  <span>Stockage <strong>{formatStorage(featureBuildInfo.storage)}</strong></span>
                   <span>Source prédictions <strong>{featureBuildInfo.predictions_source ?? 'inconnue'}</strong></span>
                   <span>Matchs disponibles <strong>{featureBuildInfo.matches_available ?? 0}</strong></span>
                   <span>Prédictions disponibles <strong>{featureBuildInfo.predictions_available ?? 0}</strong></span>
-                  <span>Matchs terminÃ©s exploitables <strong>{featureBuildInfo.finished_matches_available ?? 0}</strong></span>
-                  <span>Matchs terminÃ©s avec score <strong>{featureBuildInfo.finished_with_scores ?? 0}</strong></span>
-                  <span>Snapshots crÃ©Ã©s <strong>{featureBuildInfo.feature_snapshots_built ?? 0}</strong></span>
-                  <span>Snapshots sauvegardÃ©s <strong>{featureBuildInfo.feature_snapshots_saved ?? 0}</strong></span>
-                  <span>Lignes entraÃ®nables <strong>{featureBuildInfo.training_rows_available ?? 0}</strong></span>
+                  <span>Matchs terminés exploitables <strong>{featureBuildInfo.finished_matches_available ?? 0}</strong></span>
+                  <span>Nouveaux snapshots créés <strong>{featureBuildInfo.feature_snapshots_built ?? 0}</strong></span>
+                  <span>Nouveaux snapshots sauvegardés <strong>{featureBuildInfo.feature_snapshots_saved ?? 0}</strong></span>
                 </div>
               )}
-              {featureBuildInfo && (featureBuildInfo.feature_snapshots_built ?? 0) === 0 && (
-                <div className="banner warning">
-                  {featureBuildInfo.reason_if_zero_snapshots ?? "Aucun snapshot Feature Store n'a Ã©tÃ© construit."}
+              {featureBuildInfo && effectiveFeatureSnapshots > 0 && (featureBuildInfo.feature_snapshots_built ?? 0) === 0 && (
+                <div className="banner info">
+                  Aucun nouveau snapshot créé : le Feature Store contient déjà des snapshots disponibles.
                 </div>
+              )}
+              {featureBuildInfo?.reason_if_zero_snapshots && (
+                <div className="banner warning">{featureBuildInfo.reason_if_zero_snapshots}</div>
               )}
             </article>
 
             <article>
-              <h3>ModÃ¨le candidat</h3>
+              <h3>Modèle candidat</h3>
               <div className="formGrid">
                 <label className="formField">
-                  <span>Type de modÃ¨le</span>
+                  <span>Type de modèle</span>
                   <select value={modelType} onChange={(event) => setModelType(event.target.value)}>
                     <option value="random_forest">random_forest</option>
                     <option value="xgboost">xgboost</option>
@@ -630,7 +740,8 @@ export default function AdminPage() {
               {trainingReport && (
                 <div className="dataList">
                   <span>Statut <strong>{trainingReport.status}</strong></span>
-                  <span>PrÃ©cision <strong>{trainingReport.accuracy ?? 0}%</strong></span>
+                  <span>Lignes utilisées <strong>{trainingReport.rows_used ?? trainingReport.rows_loaded ?? 0}</strong></span>
+                  <span>Précision <strong>{trainingReport.accuracy ?? 'N/A'}</strong></span>
                   <span>Log loss <strong>{trainingReport.log_loss ?? 'N/A'}</strong></span>
                 </div>
               )}
@@ -648,27 +759,27 @@ export default function AdminPage() {
                 <label className="formField">
                   <span>Vue</span>
                   <select value={shadowView} onChange={(event) => setShadowView(event.target.value as MatchView)}>
-                    <option value="upcoming"> venir</option>
+                    <option value="upcoming">À venir</option>
                     <option value="history">Historique</option>
                     <option value="all">Tous</option>
                   </select>
                 </label>
                 <label className="formField checkboxField">
-                  <span>Forcer la rÃ©gÃ©nÃ©ration</span>
+                  <span>Forcer la régénération</span>
                   <input type="checkbox" checked={shadowForce} onChange={(event) => setShadowForce(event.target.checked)} />
                 </label>
               </div>
               {!candidateModelTrained && (
-                <div className="banner warning">EntraÃ®nez d'abord le modÃ¨le candidat avant de gÃ©nÃ©rer les prédictions shadow.</div>
+                <div className="banner warning">Entraînez d'abord le modèle candidat avant de générer les prédictions shadow.</div>
               )}
               <button className="button primary" type="button" onClick={handleGenerateShadowPredictions} disabled={isGeneratingShadow || !isAdmin || !candidateModelTrained}>
-                {isGeneratingShadow ? 'GÃ©nÃ©ration...' : 'GÃ©nÃ©rer les prédictions shadow'}
+                {isGeneratingShadow ? 'Génération...' : 'Générer les prédictions shadow'}
               </button>
               {shadowResult && (
                 <div className="dataList">
-                  <span>GÃ©nÃ©rÃ©es <strong>{shadowResult.shadow_predictions_generated ?? 0}</strong></span>
-                  <span>SauvegardÃ©es <strong>{shadowResult.shadow_predictions_saved ?? 0}</strong></span>
-                  <span>DÃ©saccords Ã©levÃ©s <strong>{shadowResult.high_disagreement_count ?? 0}</strong></span>
+                  <span>Prédictions générées <strong>{shadowResult.shadow_predictions_generated ?? 0}</strong></span>
+                  <span>Prédictions sauvegardées <strong>{shadowResult.shadow_predictions_saved ?? 0}</strong></span>
+                  <span>Désaccords élevés <strong>{shadowResult.high_disagreement_count ?? 0}</strong></span>
                 </div>
               )}
             </article>
@@ -676,10 +787,10 @@ export default function AdminPage() {
             <article>
               <h3>Alertes et gouvernance</h3>
               <div className="dataList">
-                <span>SantÃ© opÃ©rationnelle <strong>{adminAlerts?.overall_status ?? 'unknown'}</strong></span>
+                <span>Santé opérationnelle <strong>{adminAlerts?.overall_status ?? 'unknown'}</strong></span>
                 <span>Critiques <strong>{adminAlerts?.critical_count ?? 0}</strong></span>
                 <span>Promotion automatique <strong>{modelGovernance?.policy.automatic_promotion ? 'oui' : 'non'}</strong></span>
-                <span>Production verrouillÃ©e <strong>{modelGovernance?.production_model.locked ? 'oui' : 'non'}</strong></span>
+                <span>Production verrouillée <strong>{modelGovernance?.production_model.locked ? 'oui' : 'non'}</strong></span>
               </div>
               {adminAlerts?.next_best_action && (
                 <Link className="button secondary" href={adminAlerts.next_best_action.href}>
@@ -693,28 +804,28 @@ export default function AdminPage() {
         <section className="card">
           <div className="cardTop">
             <div>
-              <p className="eyebrow">Dernier Ã©tat stable</p>
-              <h2>RÃ©sultat import</h2>
+              <p className="eyebrow">Dernier état stable</p>
+              <h2>Résultat import</h2>
             </div>
-            <span className={valueBadge(resolvedRefreshStorage)}>{formatStorage(resolvedRefreshStorage)}</span>
+            <span className={valueBadge(displayedPipelineStorage)}>{formatStorage(displayedPipelineStorage)}</span>
           </div>
           <div className="dataList">
             <span>Statut <strong>{stableRefreshInfo?.status ?? 'inconnu'}</strong></span>
             <span>Source <strong>{resolvedRefreshSource}</strong></span>
-            <span>Stockage <strong>{formatStorage(resolvedRefreshStorage)}</strong></span>
-            <span>Matchs importÃ©s <strong>{stableRefreshInfo?.matches_imported ?? 0}</strong></span>
-            <span>quipes importÃ©es <strong>{stableRefreshInfo?.teams_imported ?? 0}</strong></span>
+            <span>Stockage <strong>{formatStorage(displayedPipelineStorage)}</strong></span>
+            <span>Matchs importés <strong>{stableRefreshInfo?.matches_imported ?? 0}</strong></span>
+            <span>Équipes importées <strong>{stableRefreshInfo?.teams_imported ?? 0}</strong></span>
             <span>Prédictions générées <strong>{stableRefreshInfo?.predictions_generated ?? stableRefreshInfo?.predictions_imported ?? 0}</strong></span>
             <span>Prédictions sauvegardées <strong>{stableRefreshInfo?.predictions_saved ?? stableRefreshInfo?.predictions_imported ?? 0}</strong></span>
-            <span>Snapshots sauvegardÃ©s <strong>{stableRefreshInfo?.snapshots_saved ?? 0}</strong></span>
-            <span>Snapshots features <strong>{stableRefreshInfo?.feature_snapshots_saved ?? 0}</strong></span>
-            <span>Lignes entraÃ®nables <strong>{stableRefreshInfo?.training_rows_available ?? 0}</strong></span>
-            <span>DerniÃ¨re actualisation <strong>{stableRefreshInfo?.last_refresh_at ?? 'N/A'}</strong></span>
-            <span>CompÃ©titions configurÃ©es <strong>{stableRefreshInfo?.configured_competitions?.join(', ') || 'FL1, CL'}</strong></span>
+            <span>Snapshots sauvegardés <strong>{stableRefreshInfo?.snapshots_saved ?? 0}</strong></span>
+            <span>Snapshots Feature Store <strong>{stableRefreshInfo?.feature_snapshots_saved ?? 0}</strong></span>
+            <span>Lignes entraînables <strong>{stableRefreshInfo?.training_rows_available ?? 0}</strong></span>
+            <span>Dernière actualisation <strong>{formatDate(stableRefreshInfo?.last_refresh_at)}</strong></span>
+            <span>Compétitions configurées <strong>{stableRefreshInfo?.configured_competitions?.join(', ') || 'FL1, CL'}</strong></span>
           </div>
           {currentRefreshJob?.status === 'running' && (
             <div className="banner info">
-              Job en cours: {currentRefreshJob.job_id ?? 'N/A'} Â· {currentRefreshJob.status}
+              Job en cours : {currentRefreshJob.job_id ?? 'N/A'}, {currentRefreshJob.status}
             </div>
           )}
           {(stableRefreshInfo?.competition_warnings?.length ?? 0) > 0 && (
@@ -725,11 +836,10 @@ export default function AdminPage() {
               <div className="banner warning">Les prédictions sont générées mais non sauvegardées en base.</div>
             )}
           <div className="banner info">
-            Le backtesting et les snapshots se mettent Ã  jour depuis les matchs terminÃ©s avec score disponible.
+            Le backtesting et les snapshots se mettent à jour depuis les matchs terminés avec score disponible.
           </div>
         </section>
       </Layout>
     </ProtectedRoute>
   );
 }
-
