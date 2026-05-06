@@ -98,6 +98,7 @@ function buildWorkflowFallback(featureSummary: JsonObject, refreshStatus: JsonOb
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const method = 'GET';
   const timeoutMs: 45000 = 45000;
+  const workflowAttemptTimeoutMs = 8000;
 
   if (req.method !== method) {
     return res.status(405).json({ detail: 'Method not allowed' });
@@ -118,7 +119,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const serverAdminKey = adminKey as string;
 
   try {
-    const workflow = await fetchBackendJson(apiUrl, '/admin/workflow-status', serverAdminKey, timeoutMs);
+    const workflow = await fetchBackendJson(
+      apiUrl,
+      '/admin/workflow-status',
+      serverAdminKey,
+      workflowAttemptTimeoutMs,
+    );
     if (workflow.status < 500) {
       return res.status(workflow.status).json(workflow.body);
     }
