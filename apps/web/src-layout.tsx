@@ -50,6 +50,21 @@ export function Layout({ children }: { children: ReactNode }) {
         </nav>
       </header>
       <main>{children}</main>
+      <footer className="siteFooter">
+        <div className="footerInner">
+          <span className="footerBrand">FootIQ Pro</span>
+          <nav className="footerLinks">
+            <a href="/about">À propos</a>
+            <a href="/mentions-legales">Mentions légales</a>
+            <a href="/confidentialite">Confidentialité</a>
+            <a href="/cgu">CGU</a>
+          </nav>
+          <span className="footerNotice">
+            Outil d'analyse statistique. Aucune prédiction ne garantit un résultat.
+          </span>
+          <span className="footerCopy">© {new Date().getFullYear()} FootIQ Pro</span>
+        </div>
+      </footer>
     </div>
   );
 }

@@ -25,7 +25,6 @@ const pillars = [
     href: '/about',
     body: 'Transformer les données en lecture utile et responsable.',
   },
-  { title: 'Actualisation admin', href: '/admin', body: 'Rafraîchir les données depuis football-data.org.' },
 ];
 
 export const getStaticProps: GetStaticProps<HomeProps> = async () => ({
@@ -64,7 +63,7 @@ export default function HomePage({ summary }: HomeProps) {
           </div>
           <div className="miniStats">
             <span>Confiance {summary.average_confidence}%</span>
-            <span>{summary.source}</span>
+
           </div>
         </Link>
       </section>

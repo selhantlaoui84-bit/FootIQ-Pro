@@ -1,49 +1,29 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ?? 'https://footiq-pro-production.up.railway.app';
-const ADMIN_API_KEY = process.env.ADMIN_API_KEY;
+import { proxyAdminRequest } from '~/lib/server/admin-proxy';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
-    return res.status(405).json({ detail: 'Method not allowed' });
+    return res.status(405).json({ status: 'error', detail: 'Method not allowed' });
   }
 
-  if (!ADMIN_API_KEY) {
-    return res.status(500).json({ detail: 'ADMIN_API_KEY is missing on Vercel server environment.' });
-  }
+  const modelType = Array.isArray(req.query.model_type) ? req.query.model_type[0] : req.query.model_type;
+  const limit = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
+  const bypassQualityGate = Array.isArray(req.query.bypass_quality_gate)
+    ? req.query.bypass_quality_gate[0]
+    : req.query.bypass_quality_gate;
 
-  const modelType = typeof req.query.model_type === 'string' ? req.query.model_type : 'random_forest';
-  const limit = typeof req.query.limit === 'string' ? req.query.limit : '5000';
-  const bypassQualityGate =
-    typeof req.query.bypass_quality_gate === 'string' ? req.query.bypass_quality_gate : 'false';
+  const params = new URLSearchParams();
+  if (modelType) params.set('model_type', modelType);
+  if (limit) params.set('limit', limit);
+  if (bypassQualityGate) params.set('bypass_quality_gate', bypassQualityGate);
 
-  const url =
-    `${API_URL}/admin/train-candidate-model` +
-    `?model_type=${encodeURIComponent(modelType)}` +
-    `&limit=${encodeURIComponent(limit)}` +
-    `&bypass_quality_gate=${encodeURIComponent(bypassQualityGate)}`;
+  const query = params.toString();
 
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'X-Admin-Key': ADMIN_API_KEY,
-      },
-    });
-
-    const text = await response.text();
-
-    let data: unknown;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      data = { detail: text || response.statusText };
-    }
-
-    return res.status(response.status).json(data);
-  } catch (error) {
-    return res.status(500).json({
-      detail: error instanceof Error ? error.message : 'Candidate training proxy failed',
-    });
-  }
+  return proxyAdminRequest(req, res, {
+    backendPath: `/admin/train-candidate-model${query ? `?${query}` : ''}`,
+    method: 'POST',
+    timeoutMs: 60000,
+    requireAdminKey: true,
+  });
 }
+

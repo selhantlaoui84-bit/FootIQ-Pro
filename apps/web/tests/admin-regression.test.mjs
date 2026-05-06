@@ -3,9 +3,14 @@ import assert from 'node:assert/strict';
 
 const refreshProxy = new URL('../pages/api/admin/refresh-data.ts', import.meta.url);
 const diagnosticsProxy = new URL('../pages/api/admin/diagnostics.ts', import.meta.url);
+const adminProxyHelper = new URL('../lib/server/admin-proxy.ts', import.meta.url);
+const refreshJobStatusProxy = new URL('../pages/api/admin/refresh-job-status.ts', import.meta.url);
+const featureStoreJobStatusProxy = new URL('../pages/api/admin/feature-store-job-status.ts', import.meta.url);
+const buildFeatureStoreProxy = new URL('../pages/api/admin/build-feature-store.ts', import.meta.url);
 const hourlyCron = new URL('../pages/api/cron/hourly-refresh.ts', import.meta.url);
 const matchFinishedCron = new URL('../pages/api/cron/match-finished-check.ts', import.meta.url);
 const adminPage = new URL('../pages/admin.tsx', import.meta.url);
+const apiClient = new URL('../lib/api.ts', import.meta.url);
 const backendMain = new URL('../../api/main.py', import.meta.url);
 const runtimeStore = new URL('../../api/data/runtime_store.py', import.meta.url);
 
@@ -23,13 +28,37 @@ async function run() {
   assert.doesNotMatch(diagnosticsSource, /adminApiKey\s*:/);
   assert.doesNotMatch(diagnosticsSource, /adminApiKey\s*,/);
 
+  const adminProxySource = await readFile(adminProxyHelper, 'utf8');
+  assert.match(adminProxySource, /process\.env\.NEXT_PUBLIC_API_URL/);
+  assert.match(adminProxySource, /process\.env\.ADMIN_API_KEY/);
+  assert.match(adminProxySource, /NEXT_PUBLIC_API_URL missing on Vercel environment/);
+  assert.match(adminProxySource, /ADMIN_API_KEY missing on Vercel server environment/);
+  assert.match(adminProxySource, /headers\['X-Admin-Key'\] = adminKey/);
+  assert.doesNotMatch(adminProxySource, /NEXT_PUBLIC_ADMIN_API_KEY/);
+
+  const refreshJobStatusSource = await readFile(refreshJobStatusProxy, 'utf8');
+  assert.match(refreshJobStatusSource, /\/admin\/refresh-job-status/);
+  assert.match(refreshJobStatusSource, /requireAdminKey: true/);
+  assert.match(refreshJobStatusSource, /timeoutMs: 10000/);
+
+  const featureStoreJobStatusSource = await readFile(featureStoreJobStatusProxy, 'utf8');
+  assert.match(featureStoreJobStatusSource, /\/admin\/feature-store-job-status/);
+  assert.match(featureStoreJobStatusSource, /requireAdminKey: true/);
+  assert.match(featureStoreJobStatusSource, /timeoutMs: 10000/);
+
+  const buildFeatureStoreSource = await readFile(buildFeatureStoreProxy, 'utf8');
+  assert.match(buildFeatureStoreSource, /\/admin\/build-feature-store/);
+  assert.match(buildFeatureStoreSource, /requireAdminKey: true/);
+  assert.match(buildFeatureStoreSource, /timeoutMs: 60000/);
+  assert.match(buildFeatureStoreSource, /Backend Feature Store build timed out/);
+
   const adminPageSource = await readFile(adminPage, 'utf8');
   assert.match(adminPageSource, /setError\(response\.detail \?\? response\.error \?\? 'Actualisation impossible\.'\)/);
   assert.match(adminPageSource, /\{error && <section className="banner error">\{error\}<\/section>\}/);
   assert.match(adminPageSource, /stableRefreshInfo\?\.storage === 'postgresql' && \(stableRefreshInfo\?\.matches_imported \?\? 0\) > 0/);
   assert.match(adminPageSource, /Données actualisées<\/span><strong>\{dataImported \? 'oui' : 'non'\}/);
   assert.match(adminPageSource, /stableRefreshInfo\?\.storage === 'postgresql'/);
-  assert.match(adminPageSource, /Job refresh probablement bloqué\. Dernier état stable conservé\./);
+  assert.match(adminPageSource, /Ancien job refresh probablement bloqu/);
   assert.match(adminPageSource, /reason_if_zero_snapshots/);
   assert.match(adminPageSource, /Prédictions générées/);
   assert.match(adminPageSource, /Prédictions sauvegardées/);

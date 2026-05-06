@@ -1,4 +1,4 @@
-﻿import {
+import {
   getMockPrediction,
   getMockMatch,
   getMockTeam,
@@ -98,7 +98,7 @@ async function safeFetchJson<T>(path: string, init?: RequestInit, timeoutMs = 80
 export async function getAdminAlerts(): Promise<AdminAlertsReport> {
   if (IS_BUILD) return mockAdminAlertsReport;
 
-  const data = await safeFetchJson<AdminAlertsReport>('/admin/alerts', undefined, 3000);
+  const data = await safeFetchJson<AdminAlertsReport>('/api/admin/alerts', undefined, 5000);
 
   return data ?? mockAdminAlertsReport;
 }
@@ -367,7 +367,7 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
 export async function getRefreshStatus(): Promise<RefreshResponse | null> {
   if (IS_BUILD) return null;
 
-  return safeFetchJson<RefreshResponse>('/admin/refresh-status', undefined, 3000);
+  return safeFetchJson<RefreshResponse>('/api/admin/refresh-status', undefined, 5000);
 }
 
 export async function getAdminDiagnostics(): Promise<AdminDiagnosticsResponse | null> {
@@ -462,7 +462,7 @@ export async function getExplainabilitySummary(limit = 200, view: MatchView = 'u
 export async function getAdminWorkflowStatus(): Promise<AdminWorkflowStatus> {
   if (IS_BUILD) return mockAdminWorkflowStatus;
 
-  const data = await safeFetchJson<AdminWorkflowStatus>('/admin/workflow-status', undefined, 3000);
+  const data = await safeFetchJson<AdminWorkflowStatus>('/api/admin/workflow-status', undefined, 5000);
 
   return data ?? mockAdminWorkflowStatus;
 }
