@@ -3,9 +3,14 @@ import assert from 'node:assert/strict';
 
 const refreshProxy = new URL('../pages/api/admin/refresh-data.ts', import.meta.url);
 const diagnosticsProxy = new URL('../pages/api/admin/diagnostics.ts', import.meta.url);
+const adminProxyHelper = new URL('../lib/server/admin-proxy.ts', import.meta.url);
+const refreshJobStatusProxy = new URL('../pages/api/admin/refresh-job-status.ts', import.meta.url);
+const featureStoreJobStatusProxy = new URL('../pages/api/admin/feature-store-job-status.ts', import.meta.url);
+const buildFeatureStoreProxy = new URL('../pages/api/admin/build-feature-store.ts', import.meta.url);
 const hourlyCron = new URL('../pages/api/cron/hourly-refresh.ts', import.meta.url);
 const matchFinishedCron = new URL('../pages/api/cron/match-finished-check.ts', import.meta.url);
 const adminPage = new URL('../pages/admin.tsx', import.meta.url);
+const apiClient = new URL('../lib/api.ts', import.meta.url);
 const backendMain = new URL('../../api/main.py', import.meta.url);
 const runtimeStore = new URL('../../api/data/runtime_store.py', import.meta.url);
 
@@ -23,13 +28,37 @@ async function run() {
   assert.doesNotMatch(diagnosticsSource, /adminApiKey\s*:/);
   assert.doesNotMatch(diagnosticsSource, /adminApiKey\s*,/);
 
+  const adminProxySource = await readFile(adminProxyHelper, 'utf8');
+  assert.match(adminProxySource, /process\.env\.NEXT_PUBLIC_API_URL/);
+  assert.match(adminProxySource, /process\.env\.ADMIN_API_KEY/);
+  assert.match(adminProxySource, /NEXT_PUBLIC_API_URL missing on Vercel environment/);
+  assert.match(adminProxySource, /ADMIN_API_KEY missing on Vercel server environment/);
+  assert.match(adminProxySource, /headers\['X-Admin-Key'\] = adminKey/);
+  assert.doesNotMatch(adminProxySource, /NEXT_PUBLIC_ADMIN_API_KEY/);
+
+  const refreshJobStatusSource = await readFile(refreshJobStatusProxy, 'utf8');
+  assert.match(refreshJobStatusSource, /\/admin\/refresh-job-status/);
+  assert.match(refreshJobStatusSource, /requireAdminKey: true/);
+  assert.match(refreshJobStatusSource, /timeoutMs: 10000/);
+
+  const featureStoreJobStatusSource = await readFile(featureStoreJobStatusProxy, 'utf8');
+  assert.match(featureStoreJobStatusSource, /\/admin\/feature-store-job-status/);
+  assert.match(featureStoreJobStatusSource, /requireAdminKey: true/);
+  assert.match(featureStoreJobStatusSource, /timeoutMs: 10000/);
+
+  const buildFeatureStoreSource = await readFile(buildFeatureStoreProxy, 'utf8');
+  assert.match(buildFeatureStoreSource, /\/admin\/build-feature-store/);
+  assert.match(buildFeatureStoreSource, /requireAdminKey: true/);
+  assert.match(buildFeatureStoreSource, /timeoutMs: 60000/);
+  assert.match(buildFeatureStoreSource, /Backend Feature Store build timed out/);
+
   const adminPageSource = await readFile(adminPage, 'utf8');
   assert.match(adminPageSource, /setError\(response\.detail \?\? response\.error \?\? 'Actualisation impossible\.'\)/);
   assert.match(adminPageSource, /\{error && <section className="banner error">\{error\}<\/section>\}/);
   assert.match(adminPageSource, /stableRefreshInfo\?\.storage === 'postgresql' && \(stableRefreshInfo\?\.matches_imported \?\? 0\) > 0/);
   assert.match(adminPageSource, /Données actualisées<\/span><strong>\{dataImported \? 'oui' : 'non'\}/);
   assert.match(adminPageSource, /stableRefreshInfo\?\.storage === 'postgresql'/);
-  assert.match(adminPageSource, /Job refresh probablement bloqué\. Dernier état stable conservé\./);
+  assert.match(adminPageSource, /Ancien job refresh probablement bloqu/);
   assert.match(adminPageSource, /reason_if_zero_snapshots/);
   assert.match(adminPageSource, /Prédictions générées/);
   assert.match(adminPageSource, /Prédictions sauvegardées/);
@@ -39,10 +68,52 @@ async function run() {
   assert.match(adminPageSource, /featureSummary\?\.snapshots_count/);
   assert.match(adminPageSource, /featureSummary\?\.with_target_count/);
   assert.match(adminPageSource, /featureSummary\?\.storage === 'postgresql'/);
-  assert.match(adminPageSource, /effectiveFeatureStoreReady \? 'oui' : 'non'/);
+  assert.match(adminPageSource, /featureSummaryError/);
+  assert.match(adminPageSource, /adminLoadErrors/);
+  assert.match(adminPageSource, /Erreurs de chargement API admin/);
+  assert.match(adminPageSource, /Impossible de charger \/features\/summary/);
+  assert.match(adminPageSource, /displayedFeatureReady/);
   assert.match(adminPageSource, /disabled=\{isTraining \|\| !isAdmin \|\| !effectiveFeatureStoreReady\}/);
-  assert.match(adminPageSource, /displayedNextStep/);
+  assert.match(adminPageSource, /effectiveNextStep/);
   assert.match(adminPageSource, /train_candidate_model/);
+  assert.match(adminPageSource, /workflowStatus\?\.candidate_model\?\.trained \? 'generate_shadow_predictions' : 'train_candidate_model'/);
+  assert.match(adminPageSource, /Ancien job refresh probablement bloqu/);
+  assert.match(adminPageSource, /setRefreshJobId\(null\)/);
+  assert.match(adminPageSource, /if \(isProbablyStale\(job\)\)/);
+  assert.match(adminPageSource, /setRefreshJobId\(response\.job_id\)/);
+  assert.match(adminPageSource, /setRefreshJob\(\{\s*job_id: response\.job_id,/);
+  assert.doesNotMatch(adminPageSource, /setRefreshJobId\(response\.job_id\);\s*await Promise\.all\(\[reloadAdminState\(\), handleDiagnostics\(\)\]\)/);
+  assert.match(adminPageSource, /effectiveFeatureStorage/);
+  assert.match(adminPageSource, /effectivePipelineStorage/);
+  assert.match(adminPageSource, /displayedPipelineStorage/);
+  assert.match(adminPageSource, /displayedFeatureStorage/);
+  assert.match(adminPageSource, /Stockage Feature Store <strong>\{displayedFeatureStorage\}/);
+  assert.match(adminPageSource, /Snapshots disponibles <strong>\{displayedFeatureSnapshots\}/);
+  assert.match(adminPageSource, /Lignes entraînables <strong>\{displayedTrainingRows\}/);
+  assert.match(adminPageSource, /Nouveaux snapshots créés/);
+  assert.match(adminPageSource, /Nouveaux snapshots sauvegardés/);
+  assert.match(adminPageSource, /Aucun nouveau snapshot créé : le Feature Store contient déjà des snapshots disponibles\./);
+  assert.doesNotMatch(adminPageSource, /<span>Snapshots créés <strong>\{featureBuildInfo\.feature_snapshots_built/);
+
+  const apiClientSource = await readFile(apiClient, 'utf8');
+  assert.match(apiClientSource, /async function fetchProxyJson/);
+  assert.match(apiClientSource, /fetchProxyJson<RefreshResponse>\('\/api\/admin\/refresh-status'\)/);
+  assert.match(apiClientSource, /fetchProxyJson<AdminWorkflowStatus>\('\/api\/admin\/workflow-status'\)/);
+  assert.match(apiClientSource, /fetchProxyJson<AdminAlertsReport>\('\/api\/admin\/alerts'\)/);
+  assert.match(apiClientSource, /fetchProxyJson<FeatureSummary>\('\/api\/admin\/feature-summary'\)/);
+  assert.match(apiClientSource, /fetchProxyJson<DatasetQualityReport>\(`\/api\/admin\/feature-quality-report\?limit=\$\{safeLimit\}`\)/);
+  assert.match(apiClientSource, /fetchProxyJson<ModelGovernanceReport>\('\/api\/admin\/model-governance'\)/);
+  assert.match(apiClientSource, /fetchProxyJson<DashboardSummary>\('\/api\/admin\/dashboard-summary'\)/);
+  assert.match(apiClientSource, /Impossible de charger \/features\/summary depuis le backend\./);
+  assert.doesNotMatch(apiClientSource, /safeFetchJson<FeatureSummary>\('\/features\/summary'/);
+  assert.doesNotMatch(apiClientSource, /safeFetchJson<RefreshResponse>\('\/admin\/refresh-status'/);
+  assert.doesNotMatch(apiClientSource, /safeFetchJson<AdminWorkflowStatus>\('\/admin\/workflow-status'/);
+  assert.doesNotMatch(apiClientSource, /safeFetchJson<AdminAlertsReport>\('\/admin\/alerts'/);
+  assert.doesNotMatch(apiClientSource, /return data \?\? mockFeatureSummary/);
+  assert.doesNotMatch(apiClientSource, /return data \?\? mockAdminWorkflowStatus/);
+  assert.doesNotMatch(apiClientSource, /return data \?\? mockAdminAlertsReport/);
+  assert.doesNotMatch(apiClientSource, /return data \?\? mockModelGovernance/);
+  assert.doesNotMatch(apiClientSource, /NEXT_PUBLIC_ADMIN_API_KEY/);
 
   const backendSource = await readFile(backendMain, 'utf8');
   assert.match(backendSource, /data_imported = refresh_matches_imported > 0 or repository_matches_count > 0/);

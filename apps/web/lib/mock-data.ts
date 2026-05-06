@@ -776,7 +776,13 @@ export type AdminWorkflowStatus = {
     predictions_saved?: number;
     predictions_failed?: number;
   };
-  feature_store: { ready: boolean; snapshots_count: number; training_rows_available: number; target_coverage: number };
+  feature_store: {
+  ready: boolean;
+  snapshots_count: number;
+  training_rows_available: number;
+  target_coverage: number;
+  storage?: string;
+};
   feature_engineering?: { feature_set_version?: string | null; advanced_feature_coverage: number };
   candidate_model: { trained: boolean; status: string; model_version: string | null; accuracy: number | null };
   shadow_predictions: { generated: boolean; count: number; disagreement_count: number };
