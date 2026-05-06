@@ -3,11 +3,11 @@
   "crons": [
     {
       "path": "/api/cron/hourly-refresh",
-      "schedule": "0 * * * *"
+      "schedule": "0 3 * * *"
     },
     {
       "path": "/api/cron/match-finished-check",
-      "schedule": "*/15 * * * *"
+      "schedule": "30 3 * * *"
     }
   ]
 }

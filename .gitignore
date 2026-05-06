@@ -57,3 +57,4 @@ node_modules/
 .env.local
 apps/api/ml_models/*.joblib
 apps/api/ml_models/*.json
+.vercel
