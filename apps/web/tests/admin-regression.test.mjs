@@ -35,6 +35,14 @@ async function run() {
   assert.match(adminPageSource, /Prédictions sauvegardées/);
   assert.match(adminPageSource, /Les prédictions sont générées mais non sauvegardées en base\./);
   assert.match(adminPageSource, /predictions_source/);
+  assert.match(adminPageSource, /getFeatureSummary/);
+  assert.match(adminPageSource, /featureSummary\?\.snapshots_count/);
+  assert.match(adminPageSource, /featureSummary\?\.with_target_count/);
+  assert.match(adminPageSource, /featureSummary\?\.storage === 'postgresql'/);
+  assert.match(adminPageSource, /effectiveFeatureStoreReady \? 'oui' : 'non'/);
+  assert.match(adminPageSource, /disabled=\{isTraining \|\| !isAdmin \|\| !effectiveFeatureStoreReady\}/);
+  assert.match(adminPageSource, /displayedNextStep/);
+  assert.match(adminPageSource, /train_candidate_model/);
 
   const backendSource = await readFile(backendMain, 'utf8');
   assert.match(backendSource, /data_imported = refresh_matches_imported > 0 or repository_matches_count > 0/);
