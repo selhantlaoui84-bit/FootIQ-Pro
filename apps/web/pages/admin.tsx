@@ -76,8 +76,6 @@ export default function AdminPage() {
   const [diagnostics, setDiagnostics] = useState<AdminDiagnosticsResponse | null>(null);
   const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
   const [featureSummary, setFeatureSummary] = useState<FeatureSummary | null>(null);
-  const [featureSummaryError, setFeatureSummaryError] = useState<string | null>(null);
-  const [adminLoadErrors, setAdminLoadErrors] = useState<Record<string, string | null>>({});
   const [isBuildingFeatures, setIsBuildingFeatures] = useState(false);
   const [featureBuildInfo, setFeatureBuildInfo] = useState<BuildFeatureStoreResponse | null>(null);
   const [featureStoreJob, setFeatureStoreJob] = useState<RefreshJobStatus | null>(null);
@@ -115,7 +113,6 @@ export default function AdminPage() {
     0;
   const effectiveFeatureStoreReady =
     effectiveFeatureSnapshots > 0 || effectiveTrainingRows > 0 || workflowStatus?.feature_store.ready === true;
-  const displayedFeatureReady = effectiveFeatureStoreReady;
   const resolvedRefreshStorage =
     featureSummary?.storage === 'postgresql'
       ? 'postgresql'
@@ -142,12 +139,7 @@ export default function AdminPage() {
       getBackendHealth().catch(() => null),
       getRefreshStatus().catch(() => null),
       getAdminWorkflowStatus().catch(() => null),
-      getFeatureSummary().catch((error) => {
-        const message = error instanceof Error ? error.message : 'Impossible de charger /features/summary';
-        setFeatureSummaryError(message);
-        setAdminLoadErrors((current) => ({ ...current, featureSummaryError: message }));
-        return null;
-      }),
+      getFeatureSummary().catch(() => null),
       getFeatureQualityReport().catch(() => null),
       getModelGovernance().catch(() => null),
       getAdminAlerts().catch(() => null),
@@ -162,11 +154,7 @@ export default function AdminPage() {
       }
     }
     if (workflow) setWorkflowStatus(workflow);
-    if (featureStore) {
-      setFeatureSummary(featureStore);
-      setFeatureSummaryError(null);
-      setAdminLoadErrors((current) => ({ ...current, featureSummaryError: null }));
-    }
+    if (featureStore) setFeatureSummary(featureStore);
     if (quality) setFeatureQuality(quality);
     if (governance) setModelGovernance(governance);
     if (alerts) setAdminAlerts(alerts);
@@ -372,8 +360,8 @@ export default function AdminPage() {
   }
 
   async function handleTrainCandidate() {
-    if (!displayedFeatureReady) {
-      setError("Construisez d'abord le Feature Store avant d'entraÃ®ner le modÃ¨le.");
+    if (!effectiveFeatureStoreReady) {
+      setError("Construisez d'abord le Feature Store avant d'entraîner le modèle.");
       return;
     }
 
@@ -567,13 +555,13 @@ export default function AdminPage() {
             <div className="metric"><span>Données actualisées</span><strong>{dataImported ? 'oui' : 'non'}</strong></div>
             <div className="metric"><span>Source</span><strong>{resolvedRefreshSource}</strong></div>
             <div className="metric"><span>Stockage</span><strong>{formatStorage(resolvedRefreshStorage)}</strong></div>
-            <div className="metric"><span>Feature Store prÃªt</span><strong>{displayedFeatureReady ? 'oui' : 'non'}</strong></div>
-            <div className="metric"><span>ModÃ¨le candidat entraÃ®nÃ©</span><strong>{candidateModelTrained ? 'oui' : 'non'}</strong></div>
+            <div className="metric"><span>Feature Store prêt</span><strong>{effectiveFeatureStoreReady ? 'oui' : 'non'}</strong></div>
+            <div className="metric"><span>Modèle candidat entraîné</span><strong>{candidateModelTrained ? 'oui' : 'non'}</strong></div>
             <div className="metric"><span>Prédictions shadow générées</span><strong>{workflowStatus?.shadow_predictions.generated ? 'oui' : 'non'}</strong></div>
             <div className="metric"><span>Backtesting shadow</span><strong>{workflowStatus?.shadow_backtesting.ready ? 'disponible' : 'indisponible'}</strong></div>
             <div className="metric"><span>Score qualitÃ©</span><strong>{featureQuality?.average_quality_score ?? 0}/100</strong></div>
             <div className="metric"><span>Gouvernance</span><strong>{modelGovernance?.promotion_readiness.level ?? 'unknown'}</strong></div>
-            <div className="metric"><span>Prochaine Ã©tape</span><strong>{displayedNextStep}</strong></div>
+            <div className="metric"><span>Prochaine étape</span><strong>{displayedNextStep}</strong></div>
           </div>
 
           <div className="sectionSplit">
@@ -594,7 +582,7 @@ export default function AdminPage() {
               )}
               <div className="dataList">
                 <span>Snapshots disponibles <strong>{effectiveFeatureSnapshots}</strong></span>
-                <span>Lignes entraÂ®nables <strong>{effectiveTrainingRows}</strong></span>
+                <span>Lignes entraÃ®nables <strong>{effectiveTrainingRows}</strong></span>
                 <span>Couverture target <strong>{featureSummary?.target_coverage ?? workflowStatus?.feature_store.target_coverage ?? dashboardSummary?.target_coverage ?? 0}%</strong></span>
                 <span>Stockage Feature Store <strong>{formatStorage(featureSummary?.storage ?? resolvedRefreshStorage)}</strong></span>
               </div>
@@ -633,11 +621,11 @@ export default function AdminPage() {
                   <input min={1} max={10000} type="number" value={trainingLimit} onChange={(event) => setTrainingLimit(Number(event.target.value))} />
                 </label>
               </div>
-              {!displayedFeatureReady && (
-                <div className="banner warning">Construisez d'abord le Feature Store avant d'entraÃ®ner le modÃ¨le.</div>
+              {!effectiveFeatureStoreReady && (
+                <div className="banner warning">Construisez d'abord le Feature Store avant d'entraîner le modèle.</div>
               )}
               <button className="button primary" type="button" onClick={handleTrainCandidate} disabled={isTraining || !isAdmin || !effectiveFeatureStoreReady}>
-                {isTraining ? 'EntraÃ®nement...' : 'EntraÃ®ner le modÃ¨le'}
+                {isTraining ? 'Entraînement...' : 'Entraîner le modèle'}
               </button>
               {trainingReport && (
                 <div className="dataList">
@@ -744,23 +732,4 @@ export default function AdminPage() {
     </ProtectedRoute>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
