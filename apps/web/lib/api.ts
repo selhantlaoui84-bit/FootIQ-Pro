@@ -1,8 +1,9 @@
-﻿import {
+import {
   getMockPrediction,
   getMockMatch,
   getMockTeam,
   mockBacktestingReport,
+  mockBuildFeatureStoreResponse,
   mockFeatureDataset,
   mockFeatureQualityReport,
   mockFeatureSummary,
@@ -21,6 +22,7 @@
   mockHybridEngineSummary,
   mockExplainabilitySummary,
   mockAdminWorkflowStatus,
+  mockRefreshJobStatus,
   buildDashboardSummary,
   matches,
   performanceMetrics,
@@ -93,37 +95,12 @@ async function safeFetchJson<T>(path: string, init?: RequestInit, timeoutMs = 80
   }
 }
 
-async function fetchProxyJson<T>(path: string): Promise<T> {
-  const response = await fetch(path, {
-    method: 'GET',
-    headers: { Accept: 'application/json' },
-  });
-  const text = await response.text();
-  let body: any = null;
-
-  if (text) {
-    try {
-      body = JSON.parse(text);
-    } catch {
-      body = { detail: text };
-    }
-  }
-
-  if (!response.ok) {
-    throw new Error(body?.detail ?? body?.error ?? `Proxy request failed with status ${response.status}`);
-  }
-
-  if (!body) {
-    throw new Error(`Proxy ${path} returned an empty response.`);
-  }
-
-  return body as T;
-}
-
 export async function getAdminAlerts(): Promise<AdminAlertsReport> {
   if (IS_BUILD) return mockAdminAlertsReport;
 
-  return fetchProxyJson<AdminAlertsReport>('/api/admin/alerts');
+  const data = await safeFetchJson<AdminAlertsReport>('/api/admin/alerts', undefined, 5000);
+
+  return data ?? mockAdminAlertsReport;
 }
 
 export async function getBackendHealth(): Promise<HealthResponse | null> {
@@ -239,15 +216,8 @@ export async function getBacktesting(): Promise<BacktestingReport> {
 export async function getFeatureSummary(): Promise<FeatureSummary> {
   if (IS_BUILD) return mockFeatureSummary;
 
-  try {
-    return await fetchProxyJson<FeatureSummary>('/api/admin/feature-summary');
-  } catch (error) {
-    throw new Error(
-      error instanceof Error
-        ? `Impossible de charger /features/summary depuis le backend. ${error.message}`
-        : 'Impossible de charger /features/summary depuis le backend.',
-    );
-  }
+  const data = await safeFetchJson<FeatureSummary>('/features/summary', undefined, 3000);
+  return data ?? mockFeatureSummary;
 }
 
 export async function getFeatureDataset(limit = 100): Promise<FeatureDatasetRow[]> {
@@ -263,7 +233,9 @@ export async function getFeatureQualityReport(limit = 1000): Promise<DatasetQual
   if (IS_BUILD) return mockFeatureQualityReport;
 
   const safeLimit = Math.min(Math.max(Math.round(limit), 1), 5000);
-  return fetchProxyJson<DatasetQualityReport>(`/api/admin/feature-quality-report?limit=${safeLimit}`);
+  const data = await safeFetchJson<DatasetQualityReport>(`/features/quality-report?limit=${safeLimit}`, undefined, 3000);
+
+  return data ?? mockFeatureQualityReport;
 }
 
 export async function getMlStatus(): Promise<MlStatus> {
@@ -387,13 +359,15 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
     return buildDashboardSummary();
   }
 
-  return fetchProxyJson<DashboardSummary>('/api/admin/dashboard-summary');
+  const data = await safeFetchJson<DashboardSummary>('/dashboard/summary', undefined, 3000);
+
+  return data ?? buildDashboardSummary();
 }
 
 export async function getRefreshStatus(): Promise<RefreshResponse | null> {
   if (IS_BUILD) return null;
 
-  return fetchProxyJson<RefreshResponse>('/api/admin/refresh-status');
+  return safeFetchJson<RefreshResponse>('/api/admin/refresh-status', undefined, 5000);
 }
 
 export async function getAdminDiagnostics(): Promise<AdminDiagnosticsResponse | null> {
@@ -488,18 +462,50 @@ export async function getExplainabilitySummary(limit = 200, view: MatchView = 'u
 export async function getAdminWorkflowStatus(): Promise<AdminWorkflowStatus> {
   if (IS_BUILD) return mockAdminWorkflowStatus;
 
-  return fetchProxyJson<AdminWorkflowStatus>('/api/admin/workflow-status');
+  const data = await safeFetchJson<AdminWorkflowStatus>('/api/admin/workflow-status', undefined, 5000);
+
+  return data ?? mockAdminWorkflowStatus;
 }
 
 
 export async function getRefreshJobStatus(jobId?: string): Promise<RefreshJobStatus> {
   const query = jobId ? `?job_id=${encodeURIComponent(jobId)}` : '';
-  return fetchProxyJson<RefreshJobStatus>(`/api/admin/refresh-job-status${query}`);
+  try {
+    const response = await fetch(`/api/admin/refresh-job-status${query}`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+    const contentType = response.headers.get('content-type') ?? '';
+    const body = contentType.includes('application/json') ? await response.json() : null;
+
+    if (!response.ok) {
+      return { ...mockRefreshJobStatus, status: 'error', error: body?.detail ?? `Job status failed with status ${response.status}` };
+    }
+
+    return (body as RefreshJobStatus) ?? mockRefreshJobStatus;
+  } catch (error) {
+    return { ...mockRefreshJobStatus, status: 'error', error: error instanceof Error ? error.message : 'Refresh job status failed' };
+  }
 }
 
 export async function getFeatureStoreJobStatus(jobId?: string): Promise<RefreshJobStatus> {
   const query = jobId ? `?job_id=${encodeURIComponent(jobId)}` : '';
-  return fetchProxyJson<RefreshJobStatus>(`/api/admin/feature-store-job-status${query}`);
+  try {
+    const response = await fetch(`/api/admin/feature-store-job-status${query}`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+    const contentType = response.headers.get('content-type') ?? '';
+    const body = contentType.includes('application/json') ? await response.json() : null;
+
+    if (!response.ok) {
+      return { ...mockRefreshJobStatus, status: 'error', error: body?.detail ?? `Feature Store job status failed with status ${response.status}` };
+    }
+
+    return (body as RefreshJobStatus) ?? mockRefreshJobStatus;
+  } catch (error) {
+    return { ...mockRefreshJobStatus, status: 'error', error: error instanceof Error ? error.message : 'Feature Store job status failed' };
+  }
 }
 
 export async function refreshData(): Promise<RefreshResponse | null> {
@@ -542,14 +548,16 @@ export async function buildFeatureStore(options?: { limit?: number; force?: bool
 
     if (!response.ok) {
       return {
+        ...mockBuildFeatureStoreResponse,
         status: 'error',
         detail: body?.detail ?? `Feature Store failed with status ${response.status}`,
       };
     }
 
-    return body as BuildFeatureStoreResponse;
+    return (body as BuildFeatureStoreResponse) ?? mockBuildFeatureStoreResponse;
   } catch (error) {
     return {
+      ...mockBuildFeatureStoreResponse,
       status: 'error',
       detail: error instanceof Error ? error.message : 'Feature Store request failed',
     };
@@ -571,5 +579,7 @@ export async function getMlShadowBacktesting(limit = 500) {
 export async function getModelGovernance(): Promise<ModelGovernanceReport> {
   if (IS_BUILD) return mockModelGovernance;
 
-  return fetchProxyJson<ModelGovernanceReport>('/api/admin/model-governance');
+  const data = await safeFetchJson<ModelGovernanceReport>('/models/governance', undefined, 3000);
+
+  return data ?? mockModelGovernance;
 }

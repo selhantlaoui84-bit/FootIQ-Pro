@@ -5,7 +5,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   return proxyBackendRequest(req, res, {
     backendPath: '/features/summary',
     method: 'GET',
-    includeAdminKey: true,
+    requireAdminKey: true,
     timeoutMs: 15000,
   });
 }
+

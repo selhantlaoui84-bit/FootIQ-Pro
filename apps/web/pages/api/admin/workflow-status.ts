@@ -1,11 +1,16 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { proxyBackendRequest } from '~/lib/server/admin-proxy';
+import { proxyAdminRequest } from '~/lib/server/admin-proxy';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  return proxyBackendRequest(req, res, {
+  if (req.method !== 'GET') {
+    return res.status(405).json({ status: 'error', detail: 'Method not allowed' });
+  }
+
+  return proxyAdminRequest(req, res, {
     backendPath: '/admin/workflow-status',
     method: 'GET',
-    requireAdminKey: true,
     timeoutMs: 15000,
+    requireAdminKey: true,
   });
 }
+

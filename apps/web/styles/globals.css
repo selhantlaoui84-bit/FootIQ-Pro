@@ -1461,3 +1461,103 @@ input::placeholder {
 .mutedText {
   color: var(--muted);
 }
+
+/* ── Footer ── */
+.siteFooter {
+  margin-top: 80px;
+  padding: 32px 0 24px;
+  border-top: 1px solid var(--border);
+}
+
+.footerInner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 28px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.footerBrand {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.footerLinks {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.footerLinks a {
+  color: var(--muted);
+  transition: color 0.15s;
+}
+
+.footerLinks a:hover {
+  color: var(--text);
+}
+
+.footerNotice {
+  flex: 1;
+  min-width: 200px;
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+.footerCopy {
+  font-size: 12px;
+  opacity: 0.5;
+  margin-left: auto;
+}
+
+/* ── Legal pages ── */
+.legalPage {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 40px 0 80px;
+}
+
+.legalPage h1 {
+  font-size: 28px;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+.legalPage h2 {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 32px 0 10px;
+  color: var(--text);
+}
+
+.legalPage p,
+.legalPage li {
+  font-size: 15px;
+  color: var(--muted);
+  line-height: 1.75;
+  margin-bottom: 10px;
+}
+
+.legalPage ul {
+  padding-left: 20px;
+  margin-bottom: 12px;
+}
+
+.legalPage a {
+  color: var(--green);
+  text-decoration: underline;
+}
+
+.legalDate {
+  font-size: 13px;
+  color: var(--muted);
+  opacity: 0.6;
+  margin-bottom: 40px;
+}
+
+.legalPage section {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}

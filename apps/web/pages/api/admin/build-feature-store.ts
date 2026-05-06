@@ -1,17 +1,23 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { proxyBackendRequest } from '~/lib/server/admin-proxy';
+import { proxyAdminRequest } from '~/lib/server/admin-proxy';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ status: 'error', detail: 'Method not allowed' });
+  }
+
   const rawLimit = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
   const rawForce = Array.isArray(req.query.force) ? req.query.force[0] : req.query.force;
-  const limit = rawLimit ?? '500';
-  const force = rawForce ?? 'false';
 
-  return proxyBackendRequest(req, res, {
-    backendPath: `/admin/build-feature-store?limit=${encodeURIComponent(limit)}&force=${encodeURIComponent(force)}`,
+  const limit = encodeURIComponent(rawLimit ?? '500');
+  const force = encodeURIComponent(rawForce ?? 'false');
+
+  return proxyAdminRequest(req, res, {
+    backendPath: `/admin/build-feature-store?limit=${limit}&force=${force}`,
     method: 'POST',
-    requireAdminKey: true,
     timeoutMs: 60000,
-    timeoutDetail: 'Backend Feature Store build timed out',
+    timeoutMessage: 'Backend Feature Store build timed out',
+    requireAdminKey: true,
   });
 }
+
