@@ -72,3 +72,5 @@ export async function proxyBackendRequest(
     clearTimeout(timeout);
   }
 }
+
+export const proxyAdminRequest = proxyBackendRequest;

@@ -1,20 +1,31 @@
-﻿import type { NextApiRequest, NextApiResponse } from 'next';
-import { proxyBackendRequest } from '~/lib/server/admin-proxy';
+import type { NextApiRequest, NextApiResponse } from 'next';
+import { proxyAdminRequest } from '~/lib/server/admin-proxy';
+
+function firstQueryValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const modelType = typeof req.query.model_type === 'string' ? req.query.model_type : 'random_forest';
-  const limit = typeof req.query.limit === 'string' ? req.query.limit : '5000';
-  const bypassQualityGate =
-    typeof req.query.bypass_quality_gate === 'string' ? req.query.bypass_quality_gate : 'false';
+  if (req.method !== 'POST') {
+    return res.status(405).json({ status: 'error', detail: 'Method not allowed' });
+  }
 
-  return proxyBackendRequest(req, res, {
+  const rawModelType = firstQueryValue(req.query.model_type) ?? firstQueryValue(req.query.modelType);
+  const rawLimit = firstQueryValue(req.query.limit);
+  const rawBypassQualityGate = firstQueryValue(req.query.bypass_quality_gate) ?? firstQueryValue(req.query.bypassQualityGate);
+
+  const modelType = encodeURIComponent(rawModelType ?? 'random_forest');
+  const limit = encodeURIComponent(rawLimit ?? '500');
+  const bypassQualityGate = encodeURIComponent(rawBypassQualityGate ?? 'false');
+
+  return proxyAdminRequest(req, res, {
     backendPath:
-      `/admin/train-candidate-model?model_type=${encodeURIComponent(modelType)}` +
-      `&limit=${encodeURIComponent(limit)}` +
-      `&bypass_quality_gate=${encodeURIComponent(bypassQualityGate)}`,
+      `/admin/train-candidate-model?model_type=${modelType}` +
+      `&limit=${limit}` +
+      `&bypass_quality_gate=${bypassQualityGate}`,
     method: 'POST',
-    requireAdminKey: true,
     timeoutMs: 60000,
+    requireAdminKey: true,
     timeoutDetail: 'Backend candidate training timed out',
   });
 }

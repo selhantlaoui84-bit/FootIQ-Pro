@@ -45,6 +45,7 @@ async function run() {
   assert.match(adminProxySource, /NEXT_PUBLIC_API_URL missing on Vercel environment/);
   assert.match(adminProxySource, /ADMIN_API_KEY missing on Vercel server environment/);
   assert.match(adminProxySource, /headers\['X-Admin-Key'\] = adminKey/);
+  assert.match(adminProxySource, /export const proxyAdminRequest = proxyBackendRequest/);
   assert.doesNotMatch(adminProxySource, /footiq-pro-production\.up\.railway\.app/);
   assert.doesNotMatch(adminProxySource, publicAdminKeyPattern);
 
@@ -63,6 +64,17 @@ async function run() {
   assert.match(buildFeatureStoreSource, /requireAdminKey: true/);
   assert.match(buildFeatureStoreSource, /timeoutMs: 60000/);
   assert.match(buildFeatureStoreSource, /Backend Feature Store build timed out/);
+
+  const trainCandidateSource = await readFile(trainCandidateProxy, 'utf8');
+  assert.match(trainCandidateSource, /proxyAdminRequest/);
+  assert.match(trainCandidateSource, /\/admin\/train-candidate-model/);
+  assert.match(trainCandidateSource, /model_type/);
+  assert.match(trainCandidateSource, /modelType/);
+  assert.match(trainCandidateSource, /limit/);
+  assert.match(trainCandidateSource, /method: 'POST'/);
+  assert.match(trainCandidateSource, /timeoutMs: 60000/);
+  assert.match(trainCandidateSource, /requireAdminKey: true/);
+  assert.doesNotMatch(trainCandidateSource, publicAdminKeyPattern);
 
   for (const mutationSource of [
     await readFile(refreshDataSyncProxy, 'utf8'),
@@ -193,6 +205,7 @@ async function run() {
   assert.doesNotMatch(apiClientSource, /fetchBackendJson<AdminAlertsReport>\('\/admin\/alerts'/);
   assert.doesNotMatch(apiClientSource, /fetchBackendJson<[^>]+>\('\/api\/admin/);
   assert.doesNotMatch(apiClientSource, /footiq-pro-production\.up\.railway\.app\/admin/);
+  assert.match(apiClientSource, /\/api\/admin\/train-candidate-model\?model_type=/);
   assert.doesNotMatch(apiClientSource, /return data \?\? mockFeatureSummary/);
   assert.doesNotMatch(apiClientSource, /return data \?\? mockAdminWorkflowStatus/);
   assert.doesNotMatch(apiClientSource, /return data \?\? mockAdminAlertsReport/);
