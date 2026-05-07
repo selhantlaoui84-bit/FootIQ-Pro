@@ -544,8 +544,8 @@ def _refresh_status():
         storage = "postgresql" if stored_matches_count else latest_log.get("storage", "postgresql")
         if storage == "postgresql" and stored_matches_count and source in {None, "", "mock"}:
             source = "football-data.org"
-        predictions_saved = latest_log.get("predictions_saved", stored_predictions_count)
-        predictions_generated = latest_log.get("predictions_generated", predictions_saved)
+        predictions_saved = max(int(latest_log.get("predictions_saved") or 0), stored_predictions_count)
+        predictions_generated = max(int(latest_log.get("predictions_generated") or 0), predictions_saved)
         return {
             "source": source,
             "storage": storage,
