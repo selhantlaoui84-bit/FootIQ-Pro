@@ -217,6 +217,9 @@ async function run() {
   assert.match(backendSource, /next_step = "build_feature_store"/);
   assert.match(backendSource, /"data_imported": data_imported/);
   assert.match(backendSource, /Backend refresh misconfigured: missing/);
+  assert.match(backendSource, /@app\.post\("\/admin\/train-candidate-model"\)/);
+  assert.match(backendSource, /def train_candidate_model_admin/);
+  assert.match(backendSource, /train_candidate_model\(rows, model_type=model_type\)/);
   assert.match(backendSource, /@app\.post\("\/admin\/cron\/hourly-refresh"\)/);
   assert.match(backendSource, /@app\.post\("\/admin\/cron\/match-finished-check"\)/);
 

@@ -95,6 +95,22 @@ class AdminPipelineTests(unittest.TestCase):
         self.assertEqual(response["stable_refresh_status"]["storage"], "postgresql")
         self.assertEqual(response["current_job"]["status"], "running")
 
+    def test_train_candidate_model_endpoint_uses_training_dataset(self):
+        with patch.object(main, "_training_dataset", return_value=[{"features": {}, "target": {"result": "home"}}] * 30), patch.object(
+            main, "build_dataset_quality_report",
+            return_value={"safe_for_training": True, "recommendation": "ok"},
+        ), patch.object(
+            main, "train_candidate_model",
+            return_value={"status": "ok", "rows_used": 30, "accuracy": 50, "model_version": "ml-candidate-v1"},
+        ) as train_mock:
+            result = main.train_candidate_model_admin(model_type="random_forest", limit=30)
+
+        train_mock.assert_called_once()
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["rows_used"], 30)
+        self.assertEqual(result["training_rows_available"], 30)
+        self.assertEqual(result["next_step"], "generate_shadow_predictions")
+
 
 if __name__ == "__main__":
     unittest.main()

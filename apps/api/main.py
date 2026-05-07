@@ -32,6 +32,7 @@ from services.model_monitoring import build_monitoring_report
 from services.model_governance import build_model_governance_report
 from services.prediction_engine import generate_prediction_from_match
 from services.prediction_engine import MODEL_VERSION
+from services.ml_training import load_latest_candidate_metadata, train_candidate_model
 
 
 @asynccontextmanager
@@ -368,7 +369,7 @@ def _feature_summary():
 
 
 def _training_dataset(model_version: str | None = None, limit: int = 100):
-    limit = max(1, min(int(limit or 100), 500))
+    limit = max(1, min(int(limit or 100), 10000))
     rows = repository.get_training_dataset(model_version=model_version, limit=limit)
     if rows:
         return rows
@@ -390,6 +391,9 @@ def _ml_status_compact():
         latest_candidate = repository.get_latest_ml_training_report()
     except Exception:
         latest_candidate = None
+
+    if not latest_candidate:
+        latest_candidate = load_latest_candidate_metadata()
 
     latest_candidate = latest_candidate or {
         "status": "not_trained",
@@ -1397,6 +1401,40 @@ def reset_stale_jobs(
 ):
     _require_admin_key(x_admin_key)
     return runtime_store.reset_stale_jobs(force=force, stale_seconds=5 * 60 if force else runtime_store.JOB_STALE_SECONDS)
+
+
+@app.post("/admin/train-candidate-model")
+def train_candidate_model_admin(
+    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
+    model_type: str = Query(default="random_forest"),
+    limit: int = Query(default=500, ge=1, le=10000),
+    bypass_quality_gate: bool = Query(default=False),
+) -> dict[str, Any]:
+    _require_admin_key(x_admin_key)
+
+    rows = _training_dataset(limit=limit)
+    quality = build_dataset_quality_report(rows, limit=limit)
+
+    if not bypass_quality_gate and quality.get("safe_for_training") is False:
+        return {
+            "status": "blocked",
+            "detail": quality.get("recommendation")
+            or "Dataset quality gate blocked candidate model training.",
+            "rows_used": 0,
+            "training_rows_available": len(rows),
+            "dataset_quality": quality,
+            "next_step": "review_dataset_quality",
+        }
+
+    report = train_candidate_model(rows, model_type=model_type)
+    report["training_rows_available"] = len(rows)
+    report["dataset_quality"] = quality
+    report["next_step"] = (
+        "generate_shadow_predictions"
+        if report.get("status") in {"ok", "trained", "success"}
+        else "train_candidate_model"
+    )
+    return report
 
 
 def _cron_next_step() -> str:
