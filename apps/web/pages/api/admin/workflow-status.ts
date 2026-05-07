@@ -44,10 +44,19 @@ async function fetchBackendJson(
   }
 }
 
-function buildWorkflowFallback(featureSummary: JsonObject, refreshStatus: JsonObject, warning: string): JsonObject {
+function buildWorkflowFallback(
+  featureSummary: JsonObject,
+  refreshStatus: JsonObject,
+  modelGovernance: JsonObject,
+  warning: string,
+): JsonObject {
   const snapshotsCount = numberFrom(featureSummary.snapshots_count);
   const trainingRowsAvailable = numberFrom(featureSummary.with_target_count);
   const featureReady = snapshotsCount > 0 || trainingRowsAvailable > 0;
+  const candidate = (modelGovernance.candidate_model as JsonObject | undefined) ?? {};
+  const candidateStatus = String(candidate.status ?? 'unknown');
+  const candidateTrained =
+    ['ok', 'trained', 'success'].includes(candidateStatus) || numberFrom(candidate.rows_used) >= 30;
   const storage =
     featureSummary.storage === 'postgresql' || refreshStatus.storage === 'postgresql'
       ? 'postgresql'
@@ -80,7 +89,12 @@ function buildWorkflowFallback(featureSummary: JsonObject, refreshStatus: JsonOb
         (featureSummary.advanced_feature_coverage as JsonObject | undefined)?.coverage_percent,
       ),
     },
-    candidate_model: { trained: false, status: 'unknown', model_version: null, accuracy: null },
+    candidate_model: {
+      trained: candidateTrained,
+      status: candidateStatus,
+      model_version: candidate.version ?? candidate.model_version ?? null,
+      accuracy: candidate.accuracy ?? null,
+    },
     shadow_predictions: { generated: false, count: 0, disagreement_count: 0 },
     shadow_backtesting: {
       ready: false,
@@ -89,9 +103,15 @@ function buildWorkflowFallback(featureSummary: JsonObject, refreshStatus: JsonOb
       activation_recommendation: 'unknown',
     },
     hybrid: { mode: 'official_with_shadow_advisory', recommendation: 'workflow_fallback' },
-    next_step: featureReady ? 'train_candidate_model' : dataImported ? 'build_feature_store' : 'refresh_data',
+    next_step: candidateTrained
+      ? 'generate_shadow_predictions'
+      : featureReady
+        ? 'train_candidate_model'
+        : dataImported
+          ? 'build_feature_store'
+          : 'refresh_data',
     warning,
-    fallback_source: 'feature-summary-and-refresh-status',
+    fallback_source: 'feature-summary-refresh-status-and-model-governance',
   };
 }
 
@@ -133,9 +153,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const [featureSummary, refreshStatus] = await Promise.all([
+    const [featureSummary, refreshStatus, modelGovernance] = await Promise.all([
       fetchBackendJson(apiUrl, '/features/summary', serverAdminKey, 15000),
       fetchBackendJson(apiUrl, '/admin/refresh-status', serverAdminKey, 15000),
+      fetchBackendJson(apiUrl, '/models/governance', serverAdminKey, 15000),
     ]);
 
     if (featureSummary.status >= 400) {
@@ -145,7 +166,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const fallback = buildWorkflowFallback(
       featureSummary.body,
       refreshStatus.status < 400 ? refreshStatus.body : {},
-      'Backend workflow-status timed out; workflow synthesized from /features/summary and /admin/refresh-status.',
+      modelGovernance.status < 400 ? modelGovernance.body : {},
+      'Backend workflow-status timed out; workflow synthesized from /features/summary, /admin/refresh-status and /models/governance.',
     );
 
     return res.status(200).json(fallback);
