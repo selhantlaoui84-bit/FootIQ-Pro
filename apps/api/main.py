@@ -581,7 +581,9 @@ def _refresh_status():
 def _dashboard_summary():
     matches = _available_matches()
     teams = _available_teams()
-    predictions = _available_predictions()
+    predictions = repository.get_predictions() or runtime_store.get_predictions()
+    if not predictions:
+        predictions = _generated_predictions(matches[:200])
     total_matches = len(matches)
     reliable = [item for item in predictions if (item.get("confidence") or {}).get("status") == "FIABLE"]
     medium = [item for item in predictions if (item.get("confidence") or {}).get("status") == "MOYEN"]
