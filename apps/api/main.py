@@ -1452,7 +1452,6 @@ def train_candidate_model_admin(
     return report
 
 
-@app.post("/admin/generate-shadow-predictions")
 def run_generate_shadow_predictions_job(job_id: str | None, limit: int, force: bool, view: str) -> dict[str, Any]:
     started = time.perf_counter()
     try:
