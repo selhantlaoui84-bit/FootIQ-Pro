@@ -111,6 +111,41 @@ class AdminPipelineTests(unittest.TestCase):
         self.assertEqual(result["training_rows_available"], 30)
         self.assertEqual(result["next_step"], "generate_shadow_predictions")
 
+    def test_generate_shadow_predictions_endpoint_saves_records(self):
+        match = {"id": "m1", "slug": "m1", "status": "SCHEDULED"}
+        production_prediction = {
+            "id": "m1",
+            "match_id": "m1",
+            "slug": "m1",
+            "model_version": main.MODEL_VERSION,
+            "probabilities": {"home": 60, "draw": 25, "away": 15},
+            "features": {},
+            "goals": {},
+        }
+        shadow_prediction = {
+            "available": True,
+            "model_version": "ml-candidate-v1",
+            "predicted_result": "home",
+            "probabilities": {"home": 55, "draw": 25, "away": 20},
+        }
+
+        with patch.object(main, "_matches_for_shadow_generation", return_value=[match]), patch.object(
+            main, "_available_predictions", return_value=[production_prediction]
+        ), patch.object(main.repository, "get_ml_shadow_prediction", return_value=None), patch.object(
+            main, "generate_shadow_prediction", return_value=shadow_prediction
+        ), patch.object(
+            main, "compare_shadow_to_production",
+            return_value={"same_pick": True, "disagreement_level": "none"},
+        ), patch.object(main.repository, "save_ml_shadow_predictions", return_value=1), patch.object(
+            main.repository, "db_available", return_value=True
+        ):
+            result = main.generate_shadow_predictions_admin(limit=1, view="upcoming")
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["shadow_predictions_generated"], 1)
+        self.assertEqual(result["shadow_predictions_saved"], 1)
+        self.assertEqual(result["next_step"], "review_shadow_backtesting")
+
 
 if __name__ == "__main__":
     unittest.main()

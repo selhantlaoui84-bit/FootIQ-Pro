@@ -220,6 +220,10 @@ async function run() {
   assert.match(backendSource, /@app\.post\("\/admin\/train-candidate-model"\)/);
   assert.match(backendSource, /def train_candidate_model_admin/);
   assert.match(backendSource, /train_candidate_model\(rows, model_type=model_type\)/);
+  assert.match(backendSource, /@app\.post\("\/admin\/generate-shadow-predictions"\)/);
+  assert.match(backendSource, /def generate_shadow_predictions_admin/);
+  assert.match(backendSource, /generate_shadow_prediction\(match, production_prediction\)/);
+  assert.match(backendSource, /save_ml_shadow_predictions\(items\)/);
   assert.match(backendSource, /@app\.post\("\/admin\/cron\/hourly-refresh"\)/);
   assert.match(backendSource, /@app\.post\("\/admin\/cron\/match-finished-check"\)/);
 

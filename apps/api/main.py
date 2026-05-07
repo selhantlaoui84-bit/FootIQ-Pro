@@ -33,6 +33,7 @@ from services.model_governance import build_model_governance_report
 from services.prediction_engine import generate_prediction_from_match
 from services.prediction_engine import MODEL_VERSION
 from services.ml_training import load_latest_candidate_metadata, train_candidate_model
+from services.ml_shadow import compare_shadow_to_production, generate_shadow_prediction
 
 
 @asynccontextmanager
@@ -377,6 +378,20 @@ def _training_dataset(model_version: str | None = None, limit: int = 100):
     if model_version:
         snapshots = [item for item in snapshots if item.get("model_version") == model_version]
     return [item for item in snapshots if item.get("target")][:limit]
+
+
+def _matches_for_shadow_generation(view: str, limit: int) -> list[dict]:
+    normalized_view = (view or "upcoming").lower()
+    matches = _available_matches()
+
+    if normalized_view in {"upcoming", "a_venir"}:
+        selected = [match for match in matches if str(match.get("status", "")).upper() != "FINISHED"]
+    elif normalized_view in {"finished", "termines", "terminated"}:
+        selected = [match for match in matches if str(match.get("status", "")).upper() == "FINISHED"]
+    else:
+        selected = matches
+
+    return selected[: max(1, min(int(limit or 500), 2000))]
 
 def _model_monitoring_report(periods: list[str] | None = None, shadow_limit: int = 2000):
     return build_monitoring_report(
@@ -1435,6 +1450,101 @@ def train_candidate_model_admin(
         else "train_candidate_model"
     )
     return report
+
+
+@app.post("/admin/generate-shadow-predictions")
+def generate_shadow_predictions_admin(
+    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
+    limit: int = Query(default=500, ge=1, le=2000),
+    force: bool = Query(default=False),
+    view: str = Query(default="upcoming"),
+) -> dict[str, Any]:
+    _require_admin_key(x_admin_key)
+
+    matches = _matches_for_shadow_generation(view, limit)
+    predictions = _available_predictions()
+    prediction_by_key: dict[str, dict] = {}
+
+    for prediction in predictions:
+        for key in (prediction.get("match_id"), prediction.get("id"), prediction.get("slug")):
+            if key:
+                prediction_by_key[str(key)] = prediction
+
+    items: list[dict] = []
+    skipped_existing = 0
+    unavailable_count = 0
+    same_pick_count = 0
+    disagreement_count = 0
+    high_disagreement_count = 0
+
+    for match in matches:
+        match_id = _match_id(match)
+        if not match_id:
+            continue
+
+        if not force and repository.get_ml_shadow_prediction(match_id):
+            skipped_existing += 1
+            continue
+
+        production_prediction = (
+            prediction_by_key.get(match_id)
+            or prediction_by_key.get(str(match.get("id")))
+            or prediction_by_key.get(str(match.get("slug")))
+            or _prediction_for_match(match, matches)
+        )
+        shadow_prediction = generate_shadow_prediction(match, production_prediction)
+        comparison = compare_shadow_to_production(production_prediction, shadow_prediction)
+
+        if not shadow_prediction.get("available"):
+            unavailable_count += 1
+        if comparison.get("same_pick") is True:
+            same_pick_count += 1
+        if comparison.get("same_pick") is False:
+            disagreement_count += 1
+        if comparison.get("disagreement_level") == "high":
+            high_disagreement_count += 1
+
+        items.append(
+            {
+                "match_id": match_id,
+                "production_prediction": production_prediction,
+                "shadow_prediction": shadow_prediction,
+                "comparison": comparison,
+            }
+        )
+
+    saved_count = repository.save_ml_shadow_predictions(items)
+    storage = "postgresql" if repository.db_available() else "memory"
+    created_at = datetime.now(timezone.utc).isoformat()
+
+    if items and storage == "postgresql" and saved_count == 0:
+        status = "error"
+        detail = "Shadow predictions generated but not saved to PostgreSQL."
+    elif not items:
+        status = "warning"
+        detail = "Aucune prédiction shadow générée pour cette vue."
+    else:
+        status = "ok"
+        detail = None
+
+    return {
+        "status": status,
+        "storage": storage,
+        "view": view,
+        "shadow_predictions_generated": len(items),
+        "shadow_predictions_saved": saved_count,
+        "available_count": len(items) - unavailable_count,
+        "unavailable_count": unavailable_count,
+        "same_pick_count": same_pick_count,
+        "disagreement_count": disagreement_count,
+        "high_disagreement_count": high_disagreement_count,
+        "skipped_existing_count": skipped_existing,
+        "candidate_is_production": False,
+        "created_at": created_at,
+        "detail": detail,
+        "next_step": "review_shadow_backtesting" if saved_count > 0 else "generate_shadow_predictions",
+        "note": "Prédictions ML shadow générées en observation uniquement.",
+    }
 
 
 def _cron_next_step() -> str:
