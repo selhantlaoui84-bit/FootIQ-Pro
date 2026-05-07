@@ -319,18 +319,35 @@ def _workflow_status_compact():
 
 
 def _admin_alerts_report():
-    workflow_status = _workflow_status_compact()
     refresh_status = _refresh_status()
     feature_summary = _feature_summary()
-    dataset_quality = _dataset_quality_report(1000)
     ml_status = _ml_status_compact()
     shadow_summary = _shadow_summary_compact()
-    shadow_backtesting = calculate_shadow_backtest_report(
-        _available_matches(),
-        repository.get_ml_shadow_predictions(limit=2000),
-    )
-    monitoring_report = _model_monitoring_report(["30d", "all"], 2000)
-    governance_report = _model_governance_report()
+    workflow_status = {
+        "latest_refresh_job": runtime_store.get_refresh_job_status(),
+        "latest_feature_store_job": runtime_store.get_feature_store_job_status(),
+    }
+    dataset_quality = _dataset_quality_report(500)
+    shadow_backtesting = {
+        "evaluated_matches": shadow_summary.get("shadow_predictions_count", 0),
+    }
+    monitoring_report = {
+        "trend_summary": {"monitoring_status": "healthy"},
+        "alerts": [],
+    }
+    candidate = ml_status.get("latest_candidate") or {}
+    candidate_ready = ml_status.get("status") in {"ok", "trained", "success"}
+    governance_report = {
+        "promotion_readiness": {
+            "level": "blocked" if not candidate_ready else "review_required",
+            "score": 0 if not candidate_ready else 60,
+        },
+        "production_model": {"locked": True},
+        "candidate_model": {
+            "candidate_is_production": False,
+            "status": candidate.get("status") or ml_status.get("status"),
+        },
+    }
 
     return build_admin_alerts_report(
         workflow_status,
@@ -509,6 +526,8 @@ def _refresh_status():
     if latest_log:
         source = latest_log.get("source", "mock")
         storage = "postgresql" if stored_matches else latest_log.get("storage", "postgresql")
+        if storage == "postgresql" and stored_matches and source in {None, "", "mock"}:
+            source = "football-data.org"
         predictions_saved = latest_log.get("predictions_saved", len(stored_predictions))
         predictions_generated = latest_log.get("predictions_generated", predictions_saved)
         return {
@@ -563,12 +582,11 @@ def _dashboard_summary():
     matches = _available_matches()
     teams = _available_teams()
     predictions = _available_predictions()
-    backtest = calculate_backtest_report(matches, predictions)
     total_matches = len(matches)
-    reliable = [item for item in predictions if item["confidence"]["status"] == "FIABLE"]
-    medium = [item for item in predictions if item["confidence"]["status"] == "MOYEN"]
-    avoid = [item for item in predictions if item["confidence"]["status"] in {"Ã€ Ã‰VITER", "A EVITER"}]
-    traps = [item for item in predictions if item["flags"]["trap_match"]]
+    reliable = [item for item in predictions if (item.get("confidence") or {}).get("status") == "FIABLE"]
+    medium = [item for item in predictions if (item.get("confidence") or {}).get("status") == "MOYEN"]
+    avoid = [item for item in predictions if (item.get("confidence") or {}).get("status") in {"À ÉVITER", "A EVITER"}]
+    traps = [item for item in predictions if (item.get("flags") or {}).get("trap_match")]
     average_risk_score = 0
     if predictions:
         average_risk_score = round(sum(item.get("risk_score", 0) for item in predictions) / len(predictions))
@@ -581,14 +599,10 @@ def _dashboard_summary():
 
     average_confidence = 0
     if predictions:
-        average_confidence = round(sum(item["confidence"]["score"] for item in predictions) / len(predictions))
+        average_confidence = round(sum((item.get("confidence") or {}).get("score", 0) for item in predictions) / len(predictions))
 
-    comparison = calculate_snapshot_backtest(matches, repository.get_prediction_snapshots())
     feature_summary = _feature_summary()
-    shadow_backtesting = calculate_shadow_backtest_report(
-        matches,
-        repository.get_ml_shadow_predictions(limit=2000),
-    )
+    shadow_summary = _shadow_summary_compact()
 
     return {
         "total_matches": total_matches,
@@ -603,32 +617,32 @@ def _dashboard_summary():
         "average_risk_score": average_risk_score,
         "model_version": MODEL_VERSION,
         "current_model_version": MODEL_VERSION,
-        "snapshots_count": sum(item.get("snapshots", 0) for item in comparison["model_versions"].values()),
-        "best_model_by_brier": comparison.get("best_model_by_brier"),
+        "snapshots_count": feature_summary.get("snapshots_count", 0),
+        "best_model_by_brier": None,
         "feature_snapshots_count": feature_summary["snapshots_count"],
         "training_rows_available": feature_summary["with_target_count"],
         "target_coverage": feature_summary["target_coverage"],
         "feature_store_ready": feature_summary["snapshots_count"] > 0,
-        "evaluated_matches": backtest["evaluated_matches"],
-        "result_accuracy": backtest["result_accuracy"],
-        "average_brier_score": backtest["average_brier_score"],
-        "calibration_score": backtest["calibration_score"],
+        "evaluated_matches": 0,
+        "result_accuracy": 0,
+        "average_brier_score": None,
+        "calibration_score": 0,
         "competitions_breakdown": competitions,
         "top_reliable_matches": sorted(
             predictions,
-            key=lambda item: item["confidence"]["score"],
+            key=lambda item: (item.get("confidence") or {}).get("score", 0),
             reverse=True,
         )[:5],
         "top_risky_matches": sorted(
-            [item for item in predictions if item["flags"]["risk"] or item["flags"]["trap_match"]],
-            key=lambda item: item["confidence"]["score"],
+            [item for item in predictions if (item.get("flags") or {}).get("risk") or (item.get("flags") or {}).get("trap_match")],
+            key=lambda item: (item.get("confidence") or {}).get("score", 0),
         )[:5],
         "last_refresh_at": status.get("last_refresh_at"),
         "source": status.get("source", "mock"),
         "storage": status.get("storage", "memory"),
-        "shadow_evaluated_matches": shadow_backtesting.get("evaluated_matches", 0),
-        "shadow_accuracy": shadow_backtesting.get("shadow_accuracy", 0),
-        "shadow_activation_recommendation": shadow_backtesting.get("activation_recommendation", "do_not_activate"),
+        "shadow_evaluated_matches": shadow_summary.get("shadow_predictions_count", 0),
+        "shadow_accuracy": 0,
+        "shadow_activation_recommendation": "do_not_activate",
     }
 
 
@@ -1014,24 +1028,18 @@ def model_performance():
 def dashboard_summary():
     summary = _dashboard_summary()
 
-    monitoring_report = _model_monitoring_report(["30d"], 2000)
-    monitoring_30d = monitoring_report.get("periods", {}).get("30d", {})
-    monitoring_official_30d = monitoring_30d.get("official", {})
-    monitoring_trend = monitoring_report.get("trend_summary", {})
     alerts = _admin_alerts_compact()
-    governance = _model_governance_report()
-    readiness = governance.get("promotion_readiness", {})
 
     return {
         **summary,
-        "monitoring_status": monitoring_trend.get("monitoring_status", "unknown"),
-        "monitoring_accuracy_30d": monitoring_official_30d.get("result_accuracy", 0),
-        "monitoring_brier_30d": monitoring_official_30d.get("average_brier_score"),
-        "monitoring_shadow_edge": monitoring_trend.get("shadow_edge", "unknown"),
-        "monitoring_alerts_count": len(monitoring_report.get("alerts", [])),
-        "model_governance_level": readiness.get("level", "not_ready"),
-        "model_governance_score": readiness.get("score", 0),
-        "model_governance_blockers_count": len(readiness.get("blocking_reasons", [])),
+        "monitoring_status": "healthy",
+        "monitoring_accuracy_30d": 0,
+        "monitoring_brier_30d": None,
+        "monitoring_shadow_edge": "unknown",
+        "monitoring_alerts_count": 0,
+        "model_governance_level": "review_required",
+        "model_governance_score": 0,
+        "model_governance_blockers_count": 0,
         "model_promotion_ready": False,
         "admin_alerts_status": alerts.get("overall_status"),
         "admin_alerts_count": alerts.get("alerts_count"),

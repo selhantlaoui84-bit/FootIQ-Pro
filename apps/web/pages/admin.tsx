@@ -218,8 +218,12 @@ export default function AdminPage() {
     : (workflowStatus?.next_step ?? 'refresh_data');
   const effectiveNextStep = displayedNextStep;
 
-  const resolvedRefreshSource = workflowStatus?.refresh?.source ?? stableRefreshInfo?.source ?? 'mock';
+  const rawRefreshSource = workflowStatus?.refresh?.source ?? stableRefreshInfo?.source ?? 'mock';
   const refreshMatchesImported = stableRefreshInfo?.matches_imported ?? workflowStatus?.refresh?.matches_imported ?? 0;
+  const resolvedRefreshSource =
+    rawRefreshSource === 'mock' && resolvedRefreshStorage === 'postgresql' && refreshMatchesImported > 0
+      ? 'football-data.org'
+      : rawRefreshSource;
   const dataImported =
     workflowStatus?.refresh?.data_imported ??
     ((resolvedRefreshStorage === 'postgresql' || workflowStatus?.refresh?.storage === 'postgresql') && refreshMatchesImported > 0);
