@@ -519,22 +519,22 @@ def _feature_csv(rows: list[dict]) -> str:
 
 def _refresh_status():
     latest_log = repository.get_latest_refresh_log()
-    stored_matches = repository.get_matches()
-    stored_teams = repository.get_teams()
-    stored_predictions = repository.get_predictions()
+    stored_matches_count = repository.count_matches()
+    stored_teams_count = repository.count_teams()
+    stored_predictions_count = repository.count_predictions()
 
     if latest_log:
         source = latest_log.get("source", "mock")
-        storage = "postgresql" if stored_matches else latest_log.get("storage", "postgresql")
-        if storage == "postgresql" and stored_matches and source in {None, "", "mock"}:
+        storage = "postgresql" if stored_matches_count else latest_log.get("storage", "postgresql")
+        if storage == "postgresql" and stored_matches_count and source in {None, "", "mock"}:
             source = "football-data.org"
-        predictions_saved = latest_log.get("predictions_saved", len(stored_predictions))
+        predictions_saved = latest_log.get("predictions_saved", stored_predictions_count)
         predictions_generated = latest_log.get("predictions_generated", predictions_saved)
         return {
             "source": source,
             "storage": storage,
-            "matches_imported": len(stored_matches),
-            "teams_imported": len(stored_teams),
+            "matches_imported": stored_matches_count,
+            "teams_imported": stored_teams_count,
             "predictions_imported": predictions_saved,
             "predictions_generated": predictions_generated,
             "predictions_saved": predictions_saved,
@@ -544,16 +544,15 @@ def _refresh_status():
             "warning": None if storage == "postgresql" else "PostgreSQL indisponible ou écriture échouée. Fallback mémoire utilisé.",
         }
 
-    if stored_matches:
-        source = stored_matches[0].get("source") or "football-data.org"
+    if stored_matches_count:
         return {
-            "source": source,
+            "source": "football-data.org",
             "storage": "postgresql",
-            "matches_imported": len(stored_matches),
-            "teams_imported": len(stored_teams),
-            "predictions_imported": len(stored_predictions),
-            "predictions_generated": len(stored_predictions),
-            "predictions_saved": len(stored_predictions),
+            "matches_imported": stored_matches_count,
+            "teams_imported": stored_teams_count,
+            "predictions_imported": stored_predictions_count,
+            "predictions_generated": stored_predictions_count,
+            "predictions_saved": stored_predictions_count,
             "predictions_failed": 0,
             "last_refresh_at": None,
             "warning": None,
@@ -579,12 +578,21 @@ def _refresh_status():
 
 
 def _dashboard_summary():
-    matches = _available_matches()
-    teams = _available_teams()
-    predictions = repository.get_predictions() or runtime_store.get_predictions()
-    if not predictions:
+    if repository.db_available() and repository.count_matches() > 0:
+        matches = []
+        teams_count = repository.count_teams()
+        total_matches = repository.count_matches()
+        predictions_count = repository.count_predictions()
+        predictions = []
+    else:
+        matches = _available_matches()
+        teams_count = len(_available_teams())
+        total_matches = len(matches)
+        predictions = runtime_store.get_predictions()
+
+    if not predictions and not repository.db_available():
         predictions = _generated_predictions(matches[:200])
-    total_matches = len(matches)
+    predictions_count = predictions_count if "predictions_count" in locals() else len(predictions)
     reliable = [item for item in predictions if (item.get("confidence") or {}).get("status") == "FIABLE"]
     medium = [item for item in predictions if (item.get("confidence") or {}).get("status") == "MOYEN"]
     avoid = [item for item in predictions if (item.get("confidence") or {}).get("status") in {"À ÉVITER", "A EVITER"}]
@@ -608,8 +616,8 @@ def _dashboard_summary():
 
     return {
         "total_matches": total_matches,
-        "teams_count": len(teams),
-        "predictions_count": len(predictions),
+        "teams_count": teams_count,
+        "predictions_count": predictions_count,
         "upcoming_matches_count": total_matches,
         "reliable_matches_count": len(reliable),
         "medium_matches_count": len(medium),

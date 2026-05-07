@@ -12,9 +12,9 @@ class AdminPipelineTests(unittest.TestCase):
             "source": "football-data.org",
             "storage": "postgresql",
             "last_refresh_at": datetime.now(timezone.utc).isoformat(),
-        }), patch.object(main.repository, "get_matches", return_value=[{"id": "m1"}]), patch.object(
-            main.repository, "get_teams", return_value=[{"id": "t1"}]
-        ), patch.object(main.repository, "get_predictions", return_value=[{"id": "p1"}]):
+        }), patch.object(main.repository, "count_matches", return_value=1), patch.object(
+            main.repository, "count_teams", return_value=1
+        ), patch.object(main.repository, "count_predictions", return_value=1):
             status = main._refresh_status()
 
         self.assertEqual(status["storage"], "postgresql")

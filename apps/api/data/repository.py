@@ -150,6 +150,11 @@ def get_teams() -> list[dict]:
     return [team for team in (_loads(row.get("raw_json")) for row in rows) if team]
 
 
+def count_teams() -> int:
+    row = fetch_one_safe(text("SELECT COUNT(*) AS count FROM teams"))
+    return int(row.get("count", 0)) if row else 0
+
+
 def get_team(team_id: str) -> dict | None:
     row = fetch_one_safe(
         text("SELECT raw_json FROM teams WHERE id = :team_id OR slug = :team_id LIMIT 1"),
@@ -234,6 +239,11 @@ def get_matches() -> list[dict]:
         )
     )
     return [match for match in (_match_payload_from_row(row) for row in rows) if match]
+
+
+def count_matches() -> int:
+    row = fetch_one_safe(text("SELECT COUNT(*) AS count FROM matches"))
+    return int(row.get("count", 0)) if row else 0
 
 
 def get_match(match_id: str) -> dict | None:
