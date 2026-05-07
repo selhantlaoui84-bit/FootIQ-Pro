@@ -5,6 +5,7 @@ import { authConfigured, supabase } from '~/lib/supabase';
 type AuthContextValue = {
   user: User | null;
   session: Session | null;
+  isLoading: boolean;
   loading: boolean;
   authConfigured: boolean;
   isAuthenticated: boolean;
@@ -18,21 +19,25 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 const DEFAULT_ADMIN_EMAIL = 'samir.elh@outlook.fr';
 
-function getAdminEmail() {
-  return (process.env.NEXT_PUBLIC_ADMIN_EMAIL || DEFAULT_ADMIN_EMAIL).trim().toLowerCase();
+function getAdminEmails() {
+  return (process.env.NEXT_PUBLIC_ADMIN_EMAIL || DEFAULT_ADMIN_EMAIL)
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(authConfigured);
+  const [isLoading, setIsLoading] = useState(authConfigured);
   const user = session?.user ?? null;
-  const adminEmail = getAdminEmail();
+  const adminEmails = useMemo(() => getAdminEmails(), []);
+  const adminEmail = adminEmails[0] ?? DEFAULT_ADMIN_EMAIL;
   const isAuthenticated = Boolean(user);
-  const isAdmin = user?.email?.toLowerCase() === adminEmail;
+  const isAdmin = user?.email ? adminEmails.includes(user.email.trim().toLowerCase()) : false;
 
   useEffect(() => {
     if (!supabase) {
-      setLoading(false);
+      setIsLoading(false);
       return;
     }
 
@@ -52,15 +57,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
       .finally(() => {
         if (mounted) {
-          setLoading(false);
+          setIsLoading(false);
         }
       });
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (!mounted) return;
       setSession(nextSession);
-      setLoading(false);
+      setIsLoading(false);
     });
 
     return () => {
@@ -73,7 +79,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       user,
       session,
-      loading,
+      isLoading,
+      loading: isLoading,
       authConfigured,
       isAuthenticated,
       isAdmin,
@@ -83,9 +90,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return { error: 'Supabase auth is not configured.' };
         }
 
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
-        return error ? { error: error.message } : {};
+        if (error) {
+          return { error: error.message };
+        }
+
+        setSession(data.session);
+        setIsLoading(false);
+        return {};
       },
       async signUp(email: string, password: string) {
         if (!supabase) {
@@ -110,7 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(null);
       },
     }),
-    [adminEmail, isAdmin, isAuthenticated, loading, session, user],
+    [adminEmail, isAdmin, isAuthenticated, isLoading, session, user],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -13,11 +13,17 @@ const shadowProxy = new URL('../pages/api/admin/generate-shadow-predictions.ts',
 const hourlyCron = new URL('../pages/api/cron/hourly-refresh.ts', import.meta.url);
 const matchFinishedCron = new URL('../pages/api/cron/match-finished-check.ts', import.meta.url);
 const adminPage = new URL('../pages/admin.tsx', import.meta.url);
+const loginPage = new URL('../pages/login.tsx', import.meta.url);
+const protectedRoute = new URL('../components/ProtectedRoute.tsx', import.meta.url);
+const authProvider = new URL('../lib/auth.tsx', import.meta.url);
+const middleware = new URL('../middleware.ts', import.meta.url);
 const apiClient = new URL('../lib/api.ts', import.meta.url);
 const backendMain = new URL('../../api/main.py', import.meta.url);
 const runtimeStore = new URL('../../api/data/runtime_store.py', import.meta.url);
 
 const brokenEncoding = new RegExp('\\u00c3|\\u00c2|\\u00e2\\u20ac|\\ufffd');
+const publicAdminKeyName = ['NEXT', 'PUBLIC', 'ADMIN', 'API', 'KEY'].join('_');
+const publicAdminKeyPattern = new RegExp(publicAdminKeyName);
 
 async function run() {
   const refreshSource = await readFile(refreshProxy, 'utf8');
@@ -40,7 +46,7 @@ async function run() {
   assert.match(adminProxySource, /ADMIN_API_KEY missing on Vercel server environment/);
   assert.match(adminProxySource, /headers\['X-Admin-Key'\] = adminKey/);
   assert.doesNotMatch(adminProxySource, /footiq-pro-production\.up\.railway\.app/);
-  assert.doesNotMatch(adminProxySource, /NEXT_PUBLIC_ADMIN_API_KEY/);
+  assert.doesNotMatch(adminProxySource, publicAdminKeyPattern);
 
   const refreshJobStatusSource = await readFile(refreshJobStatusProxy, 'utf8');
   assert.match(refreshJobStatusSource, /\/admin\/refresh-job-status/);
@@ -67,7 +73,7 @@ async function run() {
     assert.match(mutationSource, /method: 'POST'/);
     assert.match(mutationSource, /requireAdminKey: true/);
     assert.doesNotMatch(mutationSource, /footiq-pro-production\.up\.railway\.app/);
-    assert.doesNotMatch(mutationSource, /NEXT_PUBLIC_ADMIN_API_KEY/);
+    assert.doesNotMatch(mutationSource, publicAdminKeyPattern);
   }
 
   const readProxyFiles = [
@@ -85,7 +91,7 @@ async function run() {
     assert.match(proxySource, /requireAdminKey: true/);
     assert.match(proxySource, /timeoutMs: 15000/);
     assert.doesNotMatch(proxySource, /footiq-pro-production\.up\.railway\.app/);
-    assert.doesNotMatch(proxySource, /NEXT_PUBLIC_ADMIN_API_KEY/);
+    assert.doesNotMatch(proxySource, publicAdminKeyPattern);
   }
 
   const workflowProxySource = await readFile(new URL('../pages/api/admin/workflow-status.ts', import.meta.url), 'utf8');
@@ -94,7 +100,7 @@ async function run() {
   assert.match(workflowProxySource, /requireAdminKey: true/);
   assert.match(workflowProxySource, /timeoutMs: 45000/);
   assert.doesNotMatch(workflowProxySource, /footiq-pro-production\.up\.railway\.app/);
-  assert.doesNotMatch(workflowProxySource, /NEXT_PUBLIC_ADMIN_API_KEY/);
+  assert.doesNotMatch(workflowProxySource, publicAdminKeyPattern);
 
   const adminPageSource = await readFile(adminPage, 'utf8');
   assert.doesNotMatch(adminPageSource, brokenEncoding);
@@ -140,6 +146,33 @@ async function run() {
   assert.match(adminPageSource, /Aucun nouveau snapshot créé : le Feature Store contient déjà des snapshots disponibles\./);
   assert.doesNotMatch(adminPageSource, /<span>Snapshots créés <strong>\{featureBuildInfo\.feature_snapshots_built/);
 
+  const loginPageSource = await readFile(loginPage, 'utf8');
+  assert.doesNotMatch(loginPageSource, brokenEncoding);
+  assert.match(loginPageSource, /function safeNextPath/);
+  assert.match(loginPageSource, /if \(isSubmitting \|\| isRedirecting\) return/);
+  assert.match(loginPageSource, /disabled=\{!authConfigured \|\| isSubmitting \|\| isRedirecting\}/);
+  assert.match(loginPageSource, /Connexion\.\.\./);
+  assert.match(loginPageSource, /router\.isReady \|\| loading \|\| !isAuthenticated/);
+  assert.match(loginPageSource, /void router\.replace\(nextPath\)/);
+  assert.doesNotMatch(loginPageSource, /signInWithPassword/);
+
+  const protectedRouteSource = await readFile(protectedRoute, 'utf8');
+  assert.doesNotMatch(protectedRouteSource, brokenEncoding);
+  assert.match(protectedRouteSource, /if \(loading \|\| !router\.isReady \|\| !requireAuth \|\| isAuthenticated\) return/);
+  assert.match(protectedRouteSource, /Accès admin requis/);
+  assert.doesNotMatch(protectedRouteSource, /requireAdmin && !isAdmin[\s\S]*\/login/);
+
+  const authSource = await readFile(authProvider, 'utf8');
+  assert.match(authSource, /split\(','\)/);
+  assert.match(authSource, /email\.trim\(\)\.toLowerCase\(\)/);
+  assert.match(authSource, /adminEmails\.includes\(user\.email\.trim\(\)\.toLowerCase\(\)\)/);
+  assert.match(authSource, /isLoading/);
+  assert.match(authSource, /onAuthStateChange/);
+  assert.doesNotMatch(authSource, publicAdminKeyPattern);
+
+  const middlewareSource = await readFile(middleware, 'utf8');
+  assert.doesNotMatch(middlewareSource, /NextResponse\.redirect/);
+
   const apiClientSource = await readFile(apiClient, 'utf8');
   assert.match(apiClientSource, /async function fetchBackendJson/);
   assert.match(apiClientSource, /async function fetchProxyJson/);
@@ -164,7 +197,7 @@ async function run() {
   assert.doesNotMatch(apiClientSource, /return data \?\? mockAdminWorkflowStatus/);
   assert.doesNotMatch(apiClientSource, /return data \?\? mockAdminAlertsReport/);
   assert.doesNotMatch(apiClientSource, /return data \?\? mockModelGovernance/);
-  assert.doesNotMatch(apiClientSource, /NEXT_PUBLIC_ADMIN_API_KEY/);
+  assert.doesNotMatch(apiClientSource, publicAdminKeyPattern);
 
   const backendSource = await readFile(backendMain, 'utf8');
   assert.match(backendSource, /data_imported = refresh_matches_imported > 0 or repository_matches_count > 0/);

@@ -1,5 +1,5 @@
-import { useRouter } from 'next/router';
 import Link from 'next/link';
+import { useRouter } from 'next/router';
 import { useEffect, type ReactNode } from 'react';
 import { useAuth } from '~/lib/auth';
 
@@ -14,10 +14,10 @@ export function ProtectedRoute({ children, requireAuth = true, requireAdmin = fa
   const { isAuthenticated, isAdmin, loading, user, adminEmail } = useAuth();
 
   useEffect(() => {
-    if (!loading && requireAuth && !isAuthenticated) {
-      const next = router.asPath || '/dashboard';
-      void router.replace(`/login?next=${encodeURIComponent(next)}`);
-    }
+    if (loading || !router.isReady || !requireAuth || isAuthenticated) return;
+
+    const next = router.asPath || '/dashboard';
+    void router.replace(`/login?next=${encodeURIComponent(next)}`);
   }, [isAuthenticated, loading, requireAuth, router]);
 
   if (loading || (requireAuth && !isAuthenticated)) {
@@ -36,7 +36,8 @@ export function ProtectedRoute({ children, requireAuth = true, requireAdmin = fa
           <span className="roleBadge">Utilisateur</span>
           <h1>Accès refusé</h1>
           <p>
-            La console admin est réservée à {adminEmail}. Vous êtes connecté avec {user?.email ?? 'utilisateur inconnu'}.
+            Accès admin requis. La console admin est réservée à {adminEmail}. Vous êtes connecté avec{' '}
+            {user?.email ?? 'utilisateur inconnu'}.
           </p>
           <Link className="button primary" href="/dashboard">
             Retour au tableau de bord
@@ -48,4 +49,3 @@ export function ProtectedRoute({ children, requireAuth = true, requireAdmin = fa
 
   return <>{children}</>;
 }
-

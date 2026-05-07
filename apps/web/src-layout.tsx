@@ -12,7 +12,8 @@ const links = [
 
 export function Layout({ children }: { children: ReactNode }) {
   const router = useRouter();
-  const { user, isAdmin, signOut } = useAuth();
+  const { user, isAdmin, loading, signOut } = useAuth();
+  const hideAuthNavDuringLoginRedirect = router.pathname === '/login' && Boolean(user);
 
   async function handleLogout() {
     await signOut();
@@ -26,7 +27,7 @@ export function Layout({ children }: { children: ReactNode }) {
           FootIQ Pro
         </Link>
         <nav>
-          {user ? (
+          {loading || hideAuthNavDuringLoginRedirect ? null : user ? (
             <>
               <Link href="/dashboard">Tableau de bord</Link>
               {links.map((link) => (
@@ -68,4 +69,3 @@ export function Layout({ children }: { children: ReactNode }) {
     </div>
   );
 }
-
