@@ -10,6 +10,7 @@ const buildFeatureStoreProxy = new URL('../pages/api/admin/build-feature-store.t
 const refreshDataSyncProxy = new URL('../pages/api/admin/refresh-data-sync.ts', import.meta.url);
 const trainCandidateProxy = new URL('../pages/api/admin/train-candidate-model.ts', import.meta.url);
 const shadowProxy = new URL('../pages/api/admin/generate-shadow-predictions.ts', import.meta.url);
+const shadowJobStatusProxy = new URL('../pages/api/admin/shadow-prediction-job-status.ts', import.meta.url);
 const hourlyCron = new URL('../pages/api/cron/hourly-refresh.ts', import.meta.url);
 const matchFinishedCron = new URL('../pages/api/cron/match-finished-check.ts', import.meta.url);
 const adminPage = new URL('../pages/admin.tsx', import.meta.url);
@@ -58,6 +59,11 @@ async function run() {
   assert.match(featureStoreJobStatusSource, /\/admin\/feature-store-job-status/);
   assert.match(featureStoreJobStatusSource, /requireAdminKey: true/);
   assert.match(featureStoreJobStatusSource, /timeoutMs: 10000/);
+
+  const shadowJobStatusSource = await readFile(shadowJobStatusProxy, 'utf8');
+  assert.match(shadowJobStatusSource, /\/admin\/shadow-prediction-job-status/);
+  assert.match(shadowJobStatusSource, /requireAdminKey: true/);
+  assert.match(shadowJobStatusSource, /timeoutMs: 10000/);
 
   const buildFeatureStoreSource = await readFile(buildFeatureStoreProxy, 'utf8');
   assert.match(buildFeatureStoreSource, /\/admin\/build-feature-store/);
@@ -138,6 +144,9 @@ async function run() {
   assert.match(adminPageSource, /Impossible de charger \/features\/summary/);
   assert.match(adminPageSource, /displayedFeatureReady/);
   assert.match(adminPageSource, /disabled=\{isTraining \|\| !isAdmin \|\| !effectiveFeatureStoreReady\}/);
+  assert.match(adminPageSource, /getShadowPredictionJobStatus/);
+  assert.match(adminPageSource, /shadowJobId/);
+  assert.match(adminPageSource, /Job shadow/);
   assert.match(adminPageSource, /effectiveNextStep/);
   assert.match(adminPageSource, /train_candidate_model/);
   assert.match(adminPageSource, /workflowStatus\?\.candidate_model\?\.trained \? 'generate_shadow_predictions' : 'train_candidate_model'/);
@@ -197,6 +206,7 @@ async function run() {
   assert.match(apiClientSource, /fetchProxyJson<DatasetQualityReport>\(`\/api\/admin\/feature-quality-report\?limit=\$\{safeLimit\}`, undefined, 15000\)/);
   assert.match(apiClientSource, /fetchProxyJson<ModelGovernanceReport>\('\/api\/admin\/model-governance', undefined, 15000\)/);
   assert.match(apiClientSource, /fetchProxyJson<DashboardSummary>\('\/api\/admin\/dashboard-summary', undefined, 15000\)/);
+  assert.match(apiClientSource, /fetchProxyJson<RefreshJobStatus>\(`\/api\/admin\/shadow-prediction-job-status/);
   assert.match(apiClientSource, /Impossible de charger \/features\/summary depuis le backend\./);
   assert.doesNotMatch(apiClientSource, /safeFetchJson/);
   assert.doesNotMatch(apiClientSource, /fetchBackendJson<FeatureSummary>\('\/features\/summary'/);

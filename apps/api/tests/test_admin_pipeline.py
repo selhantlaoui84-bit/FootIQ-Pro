@@ -139,7 +139,7 @@ class AdminPipelineTests(unittest.TestCase):
         ), patch.object(main.repository, "save_ml_shadow_predictions", return_value=1), patch.object(
             main.repository, "db_available", return_value=True
         ):
-            result = main.generate_shadow_predictions_admin(limit=1, view="upcoming")
+            result = main.run_generate_shadow_predictions_job(None, limit=1, force=True, view="upcoming")
 
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["shadow_predictions_generated"], 1)

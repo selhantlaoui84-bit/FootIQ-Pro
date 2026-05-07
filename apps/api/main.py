@@ -1453,98 +1453,143 @@ def train_candidate_model_admin(
 
 
 @app.post("/admin/generate-shadow-predictions")
+def run_generate_shadow_predictions_job(job_id: str | None, limit: int, force: bool, view: str) -> dict[str, Any]:
+    started = time.perf_counter()
+    try:
+        matches = _matches_for_shadow_generation(view, limit)
+        predictions = _available_predictions()
+        prediction_by_key: dict[str, dict] = {}
+
+        for prediction in predictions:
+            for key in (prediction.get("match_id"), prediction.get("id"), prediction.get("slug")):
+                if key:
+                    prediction_by_key[str(key)] = prediction
+
+        items: list[dict] = []
+        skipped_existing = 0
+        unavailable_count = 0
+        same_pick_count = 0
+        disagreement_count = 0
+        high_disagreement_count = 0
+
+        for match in matches:
+            match_id = _match_id(match)
+            if not match_id:
+                continue
+
+            if not force and repository.get_ml_shadow_prediction(match_id):
+                skipped_existing += 1
+                continue
+
+            production_prediction = (
+                prediction_by_key.get(match_id)
+                or prediction_by_key.get(str(match.get("id")))
+                or prediction_by_key.get(str(match.get("slug")))
+                or _prediction_for_match(match, matches)
+            )
+            shadow_prediction = generate_shadow_prediction(match, production_prediction)
+            comparison = compare_shadow_to_production(production_prediction, shadow_prediction)
+
+            if not shadow_prediction.get("available"):
+                unavailable_count += 1
+            if comparison.get("same_pick") is True:
+                same_pick_count += 1
+            if comparison.get("same_pick") is False:
+                disagreement_count += 1
+            if comparison.get("disagreement_level") == "high":
+                high_disagreement_count += 1
+
+            items.append(
+                {
+                    "match_id": match_id,
+                    "production_prediction": production_prediction,
+                    "shadow_prediction": shadow_prediction,
+                    "comparison": comparison,
+                }
+            )
+
+        saved_count = repository.save_ml_shadow_predictions(items)
+        storage = "postgresql" if repository.db_available() else "memory"
+        created_at = datetime.now(timezone.utc).isoformat()
+
+        if items and storage == "postgresql" and saved_count == 0:
+            status = "error"
+            detail = "Shadow predictions generated but not saved to PostgreSQL."
+        elif not items:
+            status = "warning"
+            detail = "Aucune prédiction shadow générée pour cette vue."
+        else:
+            status = "ok"
+            detail = None
+
+        result = {
+            "status": status,
+            "storage": storage,
+            "view": view,
+            "shadow_predictions_generated": len(items),
+            "shadow_predictions_saved": saved_count,
+            "available_count": len(items) - unavailable_count,
+            "unavailable_count": unavailable_count,
+            "same_pick_count": same_pick_count,
+            "disagreement_count": disagreement_count,
+            "high_disagreement_count": high_disagreement_count,
+            "skipped_existing_count": skipped_existing,
+            "candidate_is_production": False,
+            "created_at": created_at,
+            "detail": detail,
+            "next_step": "review_shadow_backtesting" if saved_count > 0 else "generate_shadow_predictions",
+            "note": "Prédictions ML shadow générées en observation uniquement.",
+            "duration_ms": round((time.perf_counter() - started) * 1000),
+        }
+
+        if job_id:
+            runtime_store.finish_shadow_prediction_job(job_id, result)
+
+        return result
+    except Exception as exc:
+        if job_id:
+            runtime_store.fail_shadow_prediction_job(job_id, exc)
+        raise
+
+
+@app.post("/admin/generate-shadow-predictions")
 def generate_shadow_predictions_admin(
+    background_tasks: BackgroundTasks,
     x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
     limit: int = Query(default=500, ge=1, le=2000),
     force: bool = Query(default=False),
     view: str = Query(default="upcoming"),
+    sync: bool = Query(default=False),
 ) -> dict[str, Any]:
     _require_admin_key(x_admin_key)
 
-    matches = _matches_for_shadow_generation(view, limit)
-    predictions = _available_predictions()
-    prediction_by_key: dict[str, dict] = {}
+    if sync or limit <= 25:
+        return run_generate_shadow_predictions_job(None, limit, force, view)
 
-    for prediction in predictions:
-        for key in (prediction.get("match_id"), prediction.get("id"), prediction.get("slug")):
-            if key:
-                prediction_by_key[str(key)] = prediction
+    if not runtime_store.acquire_shadow_prediction_lock():
+        latest = runtime_store.get_shadow_prediction_job()
+        return {
+            "status": "accepted",
+            "job_id": latest.get("job_id"),
+            "message": "Une génération shadow est déjà en cours.",
+            "next_check_endpoint": f"/admin/shadow-prediction-job-status?job_id={latest.get('job_id')}",
+        }
 
-    items: list[dict] = []
-    skipped_existing = 0
-    unavailable_count = 0
-    same_pick_count = 0
-    disagreement_count = 0
-    high_disagreement_count = 0
-
-    for match in matches:
-        match_id = _match_id(match)
-        if not match_id:
-            continue
-
-        if not force and repository.get_ml_shadow_prediction(match_id):
-            skipped_existing += 1
-            continue
-
-        production_prediction = (
-            prediction_by_key.get(match_id)
-            or prediction_by_key.get(str(match.get("id")))
-            or prediction_by_key.get(str(match.get("slug")))
-            or _prediction_for_match(match, matches)
-        )
-        shadow_prediction = generate_shadow_prediction(match, production_prediction)
-        comparison = compare_shadow_to_production(production_prediction, shadow_prediction)
-
-        if not shadow_prediction.get("available"):
-            unavailable_count += 1
-        if comparison.get("same_pick") is True:
-            same_pick_count += 1
-        if comparison.get("same_pick") is False:
-            disagreement_count += 1
-        if comparison.get("disagreement_level") == "high":
-            high_disagreement_count += 1
-
-        items.append(
-            {
-                "match_id": match_id,
-                "production_prediction": production_prediction,
-                "shadow_prediction": shadow_prediction,
-                "comparison": comparison,
-            }
-        )
-
-    saved_count = repository.save_ml_shadow_predictions(items)
-    storage = "postgresql" if repository.db_available() else "memory"
-    created_at = datetime.now(timezone.utc).isoformat()
-
-    if items and storage == "postgresql" and saved_count == 0:
-        status = "error"
-        detail = "Shadow predictions generated but not saved to PostgreSQL."
-    elif not items:
-        status = "warning"
-        detail = "Aucune prédiction shadow générée pour cette vue."
-    else:
-        status = "ok"
-        detail = None
+    job_id = str(uuid.uuid4())
+    runtime_store.start_shadow_prediction_job(job_id)
+    background_tasks.add_task(run_generate_shadow_predictions_job, job_id, limit, force, view)
 
     return {
-        "status": status,
-        "storage": storage,
-        "view": view,
-        "shadow_predictions_generated": len(items),
-        "shadow_predictions_saved": saved_count,
-        "available_count": len(items) - unavailable_count,
-        "unavailable_count": unavailable_count,
-        "same_pick_count": same_pick_count,
-        "disagreement_count": disagreement_count,
-        "high_disagreement_count": high_disagreement_count,
-        "skipped_existing_count": skipped_existing,
-        "candidate_is_production": False,
-        "created_at": created_at,
-        "detail": detail,
-        "next_step": "review_shadow_backtesting" if saved_count > 0 else "generate_shadow_predictions",
-        "note": "Prédictions ML shadow générées en observation uniquement.",
+        "status": "accepted",
+        "job_id": job_id,
+        "message": "Génération des prédictions shadow lancée.",
+        "next_check_endpoint": f"/admin/shadow-prediction-job-status?job_id={job_id}",
     }
+
+
+@app.get("/admin/shadow-prediction-job-status")
+def shadow_prediction_job_status(job_id: str | None = None):
+    return runtime_store.get_shadow_prediction_job(job_id)
 
 
 def _cron_next_step() -> str:

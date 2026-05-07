@@ -12,6 +12,7 @@ import {
   getFeatureQualityReport,
   getFeatureSummary,
   getFeatureStoreJobStatus,
+  getShadowPredictionJobStatus,
   getModelGovernance,
   getRefreshJobStatus,
   getRefreshStatus,
@@ -157,6 +158,8 @@ export default function AdminPage() {
   const [shadowForce, setShadowForce] = useState(false);
   const [shadowView, setShadowView] = useState<MatchView>('upcoming');
   const [shadowResult, setShadowResult] = useState<GenerateShadowPredictionsResponse | null>(null);
+  const [shadowJob, setShadowJob] = useState<RefreshJobStatus | null>(null);
+  const [shadowJobId, setShadowJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { user, isAdmin } = useAuth();
 
@@ -427,6 +430,56 @@ export default function AdminPage() {
     };
   }, [featureStoreJobId]);
 
+  useEffect(() => {
+    if (!shadowJobId) return undefined;
+
+    let cancelled = false;
+
+    async function pollShadowJob() {
+      try {
+        const job = await getShadowPredictionJobStatus(shadowJobId ?? undefined);
+        if (cancelled) return;
+
+        setShadowJob(job);
+
+        if (isProbablyStale(job)) {
+          setError('Job de prédictions shadow probablement bloqué.');
+          setIsGeneratingShadow(false);
+          setShadowJobId(null);
+          return;
+        }
+
+        if (job.status === 'success') {
+          if (job.result) setShadowResult(job.result as GenerateShadowPredictionsResponse);
+          setIsGeneratingShadow(false);
+          setShadowJobId(null);
+          await reloadAdminState();
+          return;
+        }
+
+        if (job.status === 'error') {
+          setError(job.error ?? 'Génération des prédictions shadow en erreur.');
+          setIsGeneratingShadow(false);
+          setShadowJobId(null);
+          await reloadAdminState();
+        }
+      } catch (pollError) {
+        if (cancelled) return;
+        setError(pollError instanceof Error ? pollError.message : 'Suivi du job shadow indisponible.');
+        setIsGeneratingShadow(false);
+        setShadowJobId(null);
+      }
+    }
+
+    void pollShadowJob();
+    const interval = window.setInterval(pollShadowJob, 2000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [shadowJobId]);
+
   async function handleRefresh() {
     setIsRefreshing(true);
     setError(null);
@@ -533,10 +586,18 @@ export default function AdminPage() {
 
     setIsGeneratingShadow(true);
     setError(null);
+    setShadowJob(null);
+    setShadowJobId(null);
 
     try {
       const result = await generateShadowPredictions({ limit: shadowLimit, force: shadowForce, view: shadowView });
       setShadowResult(result);
+
+      if (result.status === 'accepted' && result.job_id) {
+        setShadowJobId(result.job_id);
+        setShadowJob(runningJob(result.job_id));
+        return;
+      }
 
       if (result.status === 'error') {
         setError(result.detail ?? 'Génération des prédictions shadow impossible.');
@@ -777,11 +838,13 @@ export default function AdminPage() {
               </button>
               {shadowResult && (
                 <div className="dataList">
+                  {shadowResult.status === 'accepted' && <span>Job shadow <strong>en cours</strong></span>}
                   <span>Prédictions générées <strong>{shadowResult.shadow_predictions_generated ?? 0}</strong></span>
                   <span>Prédictions sauvegardées <strong>{shadowResult.shadow_predictions_saved ?? 0}</strong></span>
                   <span>Désaccords élevés <strong>{shadowResult.high_disagreement_count ?? 0}</strong></span>
                 </div>
               )}
+              {shadowJob?.status === 'running' && <div className="banner">Génération shadow en cours...</div>}
             </article>
 
             <article>

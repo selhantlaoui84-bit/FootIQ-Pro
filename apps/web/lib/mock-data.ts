@@ -142,6 +142,9 @@ export type MlShadowSummary = {
 
 export type GenerateShadowPredictionsResponse = {
   status: string;
+  job_id?: string | null;
+  message?: string;
+  next_check_endpoint?: string;
   storage?: string;
   view?: MatchView;
   shadow_predictions_generated?: number;

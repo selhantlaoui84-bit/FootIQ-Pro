@@ -356,6 +356,11 @@ export async function generateShadowPredictions(options?: { limit?: number; forc
   }
 }
 
+export async function getShadowPredictionJobStatus(jobId?: string): Promise<RefreshJobStatus> {
+  const query = jobId ? `?job_id=${encodeURIComponent(jobId)}` : '';
+  return fetchProxyJson<RefreshJobStatus>(`/api/admin/shadow-prediction-job-status${query}`, undefined, 10000);
+}
+
 export async function trainCandidateModel(options?: { modelType?: string; limit?: number; bypassQualityGate?: boolean }): Promise<TrainingReport> {
   const modelType = options?.modelType ?? 'random_forest';
   const limit = Math.min(Math.max(Math.round(options?.limit ?? 5000), 1), 10000);
