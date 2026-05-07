@@ -723,6 +723,22 @@ def count_feature_snapshots() -> int:
     return int(row.get("count", 0)) if row else 0
 
 
+def count_feature_snapshots_with_target() -> int:
+    row = fetch_one_safe(
+        text(
+            """
+            SELECT COUNT(*) AS count
+            FROM feature_snapshots
+            WHERE target_json IS NOT NULL
+              AND target_json <> ''
+              AND target_json <> '{}'
+              AND target_json <> 'null'
+            """
+        )
+    )
+    return int(row.get("count", 0)) if row else 0
+
+
 def feature_snapshots_schema_ok() -> bool:
     engine = get_engine()
     if engine is None:

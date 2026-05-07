@@ -320,7 +320,7 @@ def _workflow_status_compact():
 
 def _admin_alerts_report():
     refresh_status = _refresh_status()
-    feature_summary = _feature_summary()
+    feature_summary = _feature_summary_fast()
     ml_status = _ml_status_compact()
     shadow_summary = _shadow_summary_compact()
     workflow_status = {
@@ -384,6 +384,22 @@ def _feature_summary():
     snapshots = _available_feature_snapshots()
     summary = repository.get_feature_store_summary() if repository.get_feature_snapshots(limit=1) else summarize_feature_store(snapshots)
     return {**summary, "storage": "postgresql" if repository.get_feature_snapshots(limit=1) else "memory"}
+
+
+def _feature_summary_fast():
+    if repository.db_available() and repository.count_feature_snapshots() > 0:
+        snapshots_count = repository.count_feature_snapshots()
+        with_target_count = repository.count_feature_snapshots_with_target()
+        return {
+            "snapshots_count": snapshots_count,
+            "with_target_count": with_target_count,
+            "without_target_count": snapshots_count - with_target_count,
+            "target_coverage": round((with_target_count / snapshots_count) * 100) if snapshots_count else 0,
+            "storage": "postgresql",
+            "model_versions": {},
+            "feature_names": [],
+        }
+    return _feature_summary()
 
 
 def _training_dataset(model_version: str | None = None, limit: int = 100):
@@ -611,7 +627,7 @@ def _dashboard_summary():
     if predictions:
         average_confidence = round(sum((item.get("confidence") or {}).get("score", 0) for item in predictions) / len(predictions))
 
-    feature_summary = _feature_summary()
+    feature_summary = _feature_summary_fast()
     shadow_summary = _shadow_summary_compact()
 
     return {
@@ -1038,8 +1054,6 @@ def model_performance():
 def dashboard_summary():
     summary = _dashboard_summary()
 
-    alerts = _admin_alerts_compact()
-
     return {
         **summary,
         "monitoring_status": "healthy",
@@ -1051,9 +1065,9 @@ def dashboard_summary():
         "model_governance_score": 0,
         "model_governance_blockers_count": 0,
         "model_promotion_ready": False,
-        "admin_alerts_status": alerts.get("overall_status"),
-        "admin_alerts_count": alerts.get("alerts_count"),
-        "admin_critical_alerts_count": alerts.get("critical_count"),
+        "admin_alerts_status": "unknown",
+        "admin_alerts_count": 0,
+        "admin_critical_alerts_count": 0,
     }
 
 
