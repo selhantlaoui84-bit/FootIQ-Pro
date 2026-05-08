@@ -24,14 +24,36 @@ type DashboardProps = {
 };
 
 export const getServerSideProps: GetServerSideProps<DashboardProps> = async () => {
-  const [matches, predictions, summary] = await Promise.all([
+  const [allMatches, predictions, summary] = await Promise.all([
     getMatches({ includeFinished: true }),
     getPredictions({ includeHybridEngine: true, includeExplainability: true, limit: 100, view: 'upcoming' }),
     getPublicDashboardSummary(),
   ]);
+  const upcoming = [...allMatches]
+    .filter((match) => String(match.status ?? '').toUpperCase() !== 'FINISHED')
+    .sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime());
+  const finished = [...allMatches]
+    .filter((match) => String(match.status ?? '').toUpperCase() === 'FINISHED')
+    .sort((a, b) => new Date(b.kickoff).getTime() - new Date(a.kickoff).getTime());
+  const competitionsBreakdown = allMatches.reduce<Record<string, number>>((accumulator, match) => {
+    const competition = match.competition || 'Unknown';
+    accumulator[competition] = (accumulator[competition] ?? 0) + 1;
+    return accumulator;
+  }, {});
+  const dashboardSummary = {
+    ...summary,
+    total_matches: allMatches.length || summary.total_matches,
+    upcoming_matches_count: upcoming.length,
+    historical_matches_count: finished.length,
+    competitions_breakdown: competitionsBreakdown,
+  };
 
   return {
-    props: { matches, predictions, summary },
+    props: {
+      matches: [...upcoming.slice(0, 5), ...finished.slice(0, 5)],
+      predictions,
+      summary: dashboardSummary,
+    },
   };
 };
 
