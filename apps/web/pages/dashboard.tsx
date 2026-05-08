@@ -2,7 +2,7 @@ import type { GetServerSideProps } from 'next';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
-import { getMatches, getPredictions, getPublicDashboardSummary } from '~/lib/api';
+import { getMatches, getPublicDashboardSummary } from '~/lib/api';
 import {
   matchHref,
   statusClass,
@@ -24,11 +24,14 @@ type DashboardProps = {
 };
 
 export const getServerSideProps: GetServerSideProps<DashboardProps> = async () => {
-  const [allMatches, predictions, summary] = await Promise.all([
+  const [rawMatches, summary] = await Promise.all([
     getMatches({ includeFinished: true }),
-    getPredictions({ includeHybridEngine: true, includeExplainability: true, limit: 100, view: 'upcoming' }),
     getPublicDashboardSummary(),
   ]);
+  const hasOfficialMatches = rawMatches.some((match) => match.source === 'football-data.org');
+  const allMatches = hasOfficialMatches
+    ? rawMatches.filter((match) => match.source === 'football-data.org')
+    : rawMatches;
   const upcoming = [...allMatches]
     .filter((match) => String(match.status ?? '').toUpperCase() !== 'FINISHED')
     .sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime());
@@ -51,7 +54,7 @@ export const getServerSideProps: GetServerSideProps<DashboardProps> = async () =
   return {
     props: {
       matches: [...upcoming.slice(0, 5), ...finished.slice(0, 5)],
-      predictions,
+      predictions: [],
       summary: dashboardSummary,
     },
   };
@@ -149,7 +152,7 @@ export default function DashboardPage({ matches, predictions, summary }: Dashboa
         </section>
 
         <section className="sectionSplit">
-          <Distribution title="Répartition des signaux" rows={statusDistribution} total={predictions.length} />
+          <Distribution title="Répartition des signaux" rows={statusDistribution} total={summary.predictions_count} />
 
           <Distribution
             title="Compétitions suivies"
