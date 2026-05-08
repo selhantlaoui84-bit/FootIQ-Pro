@@ -166,7 +166,7 @@ export async function getPredictions(options?: { includeHybridEngine?: boolean; 
   if (options?.view) params.set('view', options.view);
 
   const query = params.toString();
-  const data = await fetchBackendJson<Prediction[]>(`/predictions${query ? `?${query}` : ''}`, undefined, 3000);
+  const data = await fetchBackendJson<Prediction[]>(`/predictions${query ? `?${query}` : ''}`, undefined, 15000);
 
   return Array.isArray(data) && data.length > 0 ? data : predictions;
 }
@@ -174,7 +174,7 @@ export async function getPredictions(options?: { includeHybridEngine?: boolean; 
 export async function getPrediction(matchId: string): Promise<Prediction> {
   if (IS_BUILD) return getMockPrediction(matchId);
 
-  const data = await fetchBackendJson<Prediction>(`/predictions/${encodeURIComponent(matchId)}`, undefined, 3000);
+  const data = await fetchBackendJson<Prediction>(`/predictions/${encodeURIComponent(matchId)}`, undefined, 15000);
 
   return data ?? getMockPrediction(matchId);
 }
@@ -191,7 +191,7 @@ export async function getMatches(options?: { view?: MatchView; q?: string; statu
   if (typeof options?.includeFinished === 'boolean') params.set('include_finished', String(options.includeFinished));
 
   const query = params.toString();
-  const data = await fetchBackendJson<Match[]>(`/matches${query ? `?${query}` : ''}`, undefined, 3000);
+  const data = await fetchBackendJson<Match[]>(`/matches${query ? `?${query}` : ''}`, undefined, 15000);
 
   return Array.isArray(data) && data.length > 0 ? data : matches;
 }
@@ -199,7 +199,7 @@ export async function getMatches(options?: { view?: MatchView; q?: string; statu
 export async function getMatch(matchId: string): Promise<Match> {
   if (IS_BUILD) return getMockMatch(matchId);
 
-  const data = await fetchBackendJson<Match>(`/matches/${encodeURIComponent(matchId)}`, undefined, 3000);
+  const data = await fetchBackendJson<Match>(`/matches/${encodeURIComponent(matchId)}`, undefined, 15000);
 
   return data ?? getMockMatch(matchId);
 }
@@ -209,7 +209,7 @@ export async function getTeams(): Promise<Team[]> {
     return teams;
   }
 
-  const data = await fetchBackendJson<Team[]>('/teams', undefined, 3000);
+  const data = await fetchBackendJson<Team[]>('/teams', undefined, 15000);
 
   return Array.isArray(data) && data.length > 0 ? data : teams;
 }
@@ -217,7 +217,7 @@ export async function getTeams(): Promise<Team[]> {
 export async function getTeam(teamId: string): Promise<Team> {
   if (IS_BUILD) return getMockTeam(teamId);
 
-  const data = await fetchBackendJson<Team>(`/teams/${encodeURIComponent(teamId)}`, undefined, 3000);
+  const data = await fetchBackendJson<Team>(`/teams/${encodeURIComponent(teamId)}`, undefined, 15000);
 
   return data ?? getMockTeam(teamId);
 }
@@ -411,6 +411,16 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
   }
 
   return fetchProxyJson<DashboardSummary>('/api/admin/dashboard-summary', undefined, 15000);
+}
+
+export async function getPublicDashboardSummary(): Promise<DashboardSummary> {
+  if (IS_BUILD) {
+    return buildDashboardSummary();
+  }
+
+  const data = await fetchBackendJson<DashboardSummary>('/dashboard/summary', undefined, 15000);
+
+  return data ?? buildDashboardSummary();
 }
 
 export async function getRefreshStatus(): Promise<RefreshResponse | null> {

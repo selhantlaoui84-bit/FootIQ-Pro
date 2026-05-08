@@ -1,8 +1,8 @@
-import type { GetStaticProps } from 'next';
+import type { GetServerSideProps } from 'next';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
-import { getDashboardSummary, getMatches, getPredictions } from '~/lib/api';
+import { getMatches, getPredictions, getPublicDashboardSummary } from '~/lib/api';
 import {
   matchHref,
   statusClass,
@@ -23,16 +23,15 @@ type DashboardProps = {
   summary: DashboardSummary;
 };
 
-export const getStaticProps: GetStaticProps<DashboardProps> = async () => {
+export const getServerSideProps: GetServerSideProps<DashboardProps> = async () => {
   const [matches, predictions, summary] = await Promise.all([
-    getMatches(),
-    getPredictions(),
-    getDashboardSummary(),
+    getMatches({ includeFinished: true }),
+    getPredictions({ includeHybridEngine: true, includeExplainability: true, limit: 100, view: 'upcoming' }),
+    getPublicDashboardSummary(),
   ]);
 
   return {
     props: { matches, predictions, summary },
-    revalidate: 120,
   };
 };
 
