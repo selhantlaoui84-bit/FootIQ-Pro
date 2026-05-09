@@ -54,7 +54,9 @@ def _empty_report(status: str, detail: str | None = None) -> dict[str, Any]:
         "model_type": "random_forest",
         "fallback_used": False,
         "model_version": MODEL_VERSION,
+        "rows_loaded": 0,
         "rows_used": 0,
+        "invalid_rows": 0,
         "train_rows": 0,
         "test_rows": 0,
         "accuracy": 0,
@@ -63,8 +65,10 @@ def _empty_report(status: str, detail: str | None = None) -> dict[str, Any]:
         "confusion_matrix": {},
         "feature_importance": [],
         "feature_columns": FEATURE_COLUMNS,
+        "features_used": FEATURE_COLUMNS,
         "feature_set_version": FEATURE_SET_VERSION,
         "feature_columns_count": len(FEATURE_COLUMNS),
+        "target_distribution": {},
         "trained_at": now,
         "artifact_path": "ml_models/latest_candidate.joblib",
         "metadata_path": "ml_models/latest_candidate_metadata.json",
@@ -99,26 +103,35 @@ def _to_float(value: Any) -> float:
 def prepare_training_rows(feature_rows: list[dict]) -> dict[str, Any]:
     x_rows = []
     y_rows = []
+    invalid_rows = 0
+    target_distribution: dict[str, int] = {}
 
     for row in feature_rows or []:
         target = row.get("target") or {}
         result = target.get("result")
         if result not in LABEL_MAPPING:
+            invalid_rows += 1
             continue
 
         features = row.get("features") or {}
         try:
             x_rows.append([_to_float(features.get(column)) for column in FEATURE_COLUMNS])
             y_rows.append(LABEL_MAPPING[result])
+            target_distribution[result] = target_distribution.get(result, 0) + 1
         except Exception:
+            invalid_rows += 1
             continue
 
     return {
         "X": np.array(x_rows, dtype=float),
         "y": np.array(y_rows, dtype=int),
+        "rows_loaded": len(feature_rows or []),
         "rows_used": len(y_rows),
+        "invalid_rows": invalid_rows,
         "feature_columns": FEATURE_COLUMNS,
+        "features_used": FEATURE_COLUMNS,
         "label_mapping": LABEL_MAPPING,
+        "target_distribution": target_distribution,
     }
 
 
@@ -191,10 +204,16 @@ def train_candidate_model(feature_rows: list[dict], model_type: str = "random_fo
     x = prepared["X"]
     y = prepared["y"]
     rows_used = prepared["rows_used"]
+    rows_loaded = prepared["rows_loaded"]
+    invalid_rows = prepared["invalid_rows"]
+    target_distribution = prepared["target_distribution"]
 
     if rows_used < 30:
         report = _empty_report("insufficient_data", "At least 30 supervised rows are required to train a candidate model.")
+        report["rows_loaded"] = rows_loaded
         report["rows_used"] = rows_used
+        report["invalid_rows"] = invalid_rows
+        report["target_distribution"] = target_distribution
         return report
 
     try:
@@ -229,7 +248,9 @@ def train_candidate_model(feature_rows: list[dict], model_type: str = "random_fo
             "model_type": resolved_type,
             "fallback_used": fallback_used,
             "model_version": MODEL_VERSION,
+            "rows_loaded": rows_loaded,
             "rows_used": rows_used,
+            "invalid_rows": invalid_rows,
             "train_rows": int(len(y_train)),
             "test_rows": int(len(y_test)),
             "accuracy": round(float(accuracy_score(y_test, predictions)) * 100),
@@ -241,8 +262,10 @@ def train_candidate_model(feature_rows: list[dict], model_type: str = "random_fo
             },
             "feature_importance": _feature_importance(model),
             "feature_columns": FEATURE_COLUMNS,
+            "features_used": FEATURE_COLUMNS,
             "feature_set_version": FEATURE_SET_VERSION,
             "feature_columns_count": len(FEATURE_COLUMNS),
+            "target_distribution": target_distribution,
             "trained_at": now,
             "artifact_path": "ml_models/latest_candidate.joblib",
             "metadata_path": "ml_models/latest_candidate_metadata.json",

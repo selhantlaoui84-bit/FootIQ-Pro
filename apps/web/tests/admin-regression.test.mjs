@@ -105,6 +105,9 @@ async function run() {
     '../pages/api/admin/feature-summary.ts',
     '../pages/api/admin/feature-quality-report.ts',
     '../pages/api/admin/model-governance.ts',
+    '../pages/api/admin/learning-feedback.ts',
+    '../pages/api/admin/calibration.ts',
+    '../pages/api/admin/model-versions.ts',
     '../pages/api/admin/dashboard-summary.ts',
   ];
 
@@ -146,6 +149,13 @@ async function run() {
   assert.match(adminPageSource, /featureSummaryError/);
   assert.match(adminPageSource, /adminLoadErrors/);
   assert.match(adminPageSource, /Erreurs de chargement API admin/);
+  assert.match(adminPageSource, /getLearningFeedback/);
+  assert.match(adminPageSource, /getCalibrationReport/);
+  assert.match(adminPageSource, /getModelVersionsRegistry/);
+  assert.match(adminPageSource, /Auto-learning/);
+  assert.match(adminPageSource, /Performance par marché/);
+  assert.match(adminPageSource, /Erreurs fréquentes/);
+  assert.match(adminPageSource, /Recommandations IA/);
   assert.match(adminPageSource, /Impossible de charger \/features\/summary/);
   assert.match(adminPageSource, /displayedFeatureReady/);
   assert.match(adminPageSource, /disabled=\{isTraining \|\| !isAdmin \|\| !effectiveFeatureStoreReady\}/);
@@ -210,6 +220,9 @@ async function run() {
   assert.match(apiClientSource, /fetchProxyJson<FeatureSummary>\('\/api\/admin\/feature-summary', undefined, 15000\)/);
   assert.match(apiClientSource, /fetchProxyJson<DatasetQualityReport>\(`\/api\/admin\/feature-quality-report\?limit=\$\{safeLimit\}`, undefined, 15000\)/);
   assert.match(apiClientSource, /fetchProxyJson<ModelGovernanceReport>\('\/api\/admin\/model-governance', undefined, 15000\)/);
+  assert.match(apiClientSource, /fetchProxyJson<LearningFeedbackReport>\('\/api\/admin\/learning-feedback', undefined, 15000\)/);
+  assert.match(apiClientSource, /fetchProxyJson<CalibrationReport>\('\/api\/admin\/calibration', undefined, 15000\)/);
+  assert.match(apiClientSource, /fetchProxyJson<ModelVersionsResponse>\('\/api\/admin\/model-versions', undefined, 15000\)/);
   assert.match(apiClientSource, /fetchProxyJson<DashboardSummary>\('\/api\/admin\/dashboard-summary', undefined, 15000\)/);
   assert.match(apiClientSource, /fetchProxyJson<RefreshJobStatus>\(`\/api\/admin\/shadow-prediction-job-status/);
   assert.match(apiClientSource, /Impossible de charger \/features\/summary depuis le backend\./);
@@ -225,6 +238,8 @@ async function run() {
   assert.doesNotMatch(apiClientSource, /return data \?\? mockAdminWorkflowStatus/);
   assert.doesNotMatch(apiClientSource, /return data \?\? mockAdminAlertsReport/);
   assert.doesNotMatch(apiClientSource, /return data \?\? mockModelGovernance/);
+  assert.doesNotMatch(apiClientSource, /return data \?\? mockLearningFeedbackReport/);
+  assert.doesNotMatch(apiClientSource, /return data \?\? mockCalibrationReport/);
   assert.doesNotMatch(apiClientSource, publicAdminKeyPattern);
 
   const matchesPageSource = await readFile(matchesPage, 'utf8');
@@ -253,6 +268,10 @@ async function run() {
   assert.match(performancePageSource, /buildEffectiveGovernanceGates/);
   assert.match(performancePageSource, /rows_with_target/);
   assert.match(performancePageSource, /safe_to_train/);
+  assert.match(performancePageSource, /learning-feedback/);
+  assert.match(performancePageSource, /Feedback moteur et calibration/);
+  assert.match(performancePageSource, /Performance par marché/);
+  assert.match(performancePageSource, /Fiabilité par niveau de confiance/);
 
   const layoutSource = await readFile(layoutSourceFile, 'utf8');
   assert.doesNotMatch(layoutSource, brokenEncoding);

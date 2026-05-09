@@ -30,6 +30,10 @@ from services.elo_model import calculate_team_elos
 from services.model_registry import get_model_metadata
 from services.model_monitoring import build_monitoring_report
 from services.model_governance import build_model_governance_report
+from services.feedback_engine import build_feedback_report
+from services.calibration_engine import CALIBRATION_VERSION, build_calibration_profile
+from services.model_versioning import list_model_versions, record_model_version
+from services.user_learning_engine import analyze_user_bets
 from services.prediction_engine import generate_prediction_from_match
 from services.prediction_engine import MODEL_VERSION
 from services.ml_training import load_latest_candidate_metadata, train_candidate_model
@@ -443,6 +447,19 @@ def _ml_status_compact():
     if not latest_candidate:
         latest_candidate = load_latest_candidate_metadata()
 
+    latest_registered_candidate = None
+    try:
+        latest_registered_candidate = next(
+            (
+                item
+                for item in list_model_versions()
+                if item.get("status") in {"candidate", "shadow"}
+            ),
+            None,
+        )
+    except Exception:
+        latest_registered_candidate = None
+
     latest_candidate = latest_candidate or {
         "status": "not_trained",
         "model_version": "ml-candidate-v1",
@@ -452,6 +469,8 @@ def _ml_status_compact():
         "brier_score_1x2": None,
         "trained_at": None,
     }
+    if latest_registered_candidate:
+        latest_candidate["registry_entry"] = latest_registered_candidate
 
     return {
         "status": latest_candidate.get("status", "not_trained"),
@@ -459,6 +478,7 @@ def _ml_status_compact():
         "candidate_model_exists": latest_candidate.get("status") not in {"not_trained", None},
         "production_model_version": MODEL_VERSION,
         "candidate_is_production": False,
+        "model_versions": list_model_versions(),
     }
 
 
@@ -481,6 +501,7 @@ def _model_governance_report():
         _available_matches(),
         repository.get_ml_shadow_predictions(limit=2000),
     )
+    feedback_report = build_feedback_report(_available_matches(), _available_predictions(), model_version=MODEL_VERSION)
 
     try:
         hybrid_engine_summary = hybrid_engine_summary_report(limit=200, view="upcoming")
@@ -497,6 +518,7 @@ def _model_governance_report():
         monitoring_report,
         shadow_backtesting,
         hybrid_engine_summary,
+        feedback_report,
     )
 
 
@@ -839,9 +861,33 @@ def models_governance():
     return _model_governance_report()
 
 
+@app.get("/models/versions")
+def model_versions():
+    return {
+        "status": "ok",
+        "versions": list_model_versions(),
+        "note": "Model versions are append-only candidate/production/shadow registry entries.",
+    }
+
+
 @app.get("/models/comparison")
 def model_comparison():
     return calculate_snapshot_backtest(_available_matches(), repository.get_prediction_snapshots())
+
+
+@app.get("/learning/feedback")
+def learning_feedback(model_version: str | None = None):
+    return build_feedback_report(_available_matches(), _available_predictions(), model_version=model_version)
+
+
+@app.get("/learning/calibration")
+def learning_calibration(model_version: str | None = None):
+    return build_calibration_profile(_available_matches(), _available_predictions(), model_version=model_version)
+
+
+@app.get("/learning/user-profile/{user_id}")
+def user_learning_profile(user_id: str):
+    return analyze_user_bets(user_id, [])
 
 
 @app.get("/debug/finished-matches")
@@ -1017,6 +1063,8 @@ def model_performance():
     monitoring_report = _model_monitoring_report(["7d", "30d", "90d", "all"], 2000) 
     model_governance = _model_governance_report()
     admin_alerts = _admin_alerts_compact()
+    learning_feedback = build_feedback_report(_available_matches(), predictions, model_version=MODEL_VERSION)
+    calibration_report = build_calibration_profile(_available_matches(), predictions, model_version=MODEL_VERSION)
 
 
     return {
@@ -1046,6 +1094,9 @@ def model_performance():
         "ml_shadow_backtesting": shadow_backtesting,
         "model_monitoring": monitoring_report,
         "model_governance": model_governance,
+        "learning_feedback": learning_feedback,
+        "calibration_report": calibration_report,
+        "model_version_registry": {"status": "ok", "versions": list_model_versions()},
         "admin_alerts": admin_alerts,
     }
 
@@ -1467,13 +1518,22 @@ def train_candidate_model_admin(
             "status": "blocked",
             "detail": quality.get("recommendation")
             or "Dataset quality gate blocked candidate model training.",
+            "rows_loaded": len(rows),
             "rows_used": 0,
+            "invalid_rows": len(rows),
+            "features_used": [],
+            "target_distribution": {},
+            "accuracy": 0,
+            "log_loss": None,
+            "brier_score": None,
+            "brier_score_1x2": None,
             "training_rows_available": len(rows),
             "dataset_quality": quality,
             "next_step": "review_dataset_quality",
         }
 
     report = train_candidate_model(rows, model_type=model_type)
+    report["brier_score"] = report.get("brier_score_1x2")
     report["training_rows_available"] = len(rows)
     report["dataset_quality"] = quality
     report["next_step"] = (
@@ -1481,6 +1541,26 @@ def train_candidate_model_admin(
         if report.get("status") in {"ok", "trained", "success"}
         else "train_candidate_model"
     )
+    if report.get("status") in {"ok", "trained", "success"}:
+        try:
+            report["registry_entry"] = record_model_version(
+                model_version=report.get("model_version") or "ml-candidate-v1",
+                feature_set_version=report.get("feature_set_version"),
+                calibration_version=CALIBRATION_VERSION,
+                trained_at=report.get("trained_at"),
+                rows_used=int(report.get("rows_used") or 0),
+                metrics={
+                    "accuracy": report.get("accuracy"),
+                    "log_loss": report.get("log_loss"),
+                    "brier_score": report.get("brier_score_1x2"),
+                    "target_distribution": report.get("target_distribution", {}),
+                },
+                status="candidate",
+                family=report.get("model_type"),
+                artifact_path=report.get("artifact_path"),
+            )
+        except Exception as exc:
+            report["registry_warning"] = f"Model version registry not updated: {exc}"
     return report
 
 
@@ -1572,6 +1652,26 @@ def run_generate_shadow_predictions_job(job_id: str | None, limit: int, force: b
             "note": "Prédictions ML shadow générées en observation uniquement.",
             "duration_ms": round((time.perf_counter() - started) * 1000),
         }
+        if saved_count > 0:
+            try:
+                candidate = _ml_status_compact().get("latest_candidate") or {}
+                result["registry_entry"] = record_model_version(
+                    model_version=candidate.get("model_version") or "ml-candidate-v1",
+                    feature_set_version=candidate.get("feature_set_version"),
+                    calibration_version=CALIBRATION_VERSION,
+                    trained_at=candidate.get("trained_at"),
+                    rows_used=int(candidate.get("rows_used") or 0),
+                    metrics={
+                        "shadow_predictions_saved": saved_count,
+                        "disagreement_count": disagreement_count,
+                        "high_disagreement_count": high_disagreement_count,
+                    },
+                    status="shadow",
+                    family=candidate.get("model_type"),
+                    artifact_path=candidate.get("artifact_path"),
+                )
+            except Exception as exc:
+                result["registry_warning"] = f"Model version registry not updated: {exc}"
 
         if job_id:
             runtime_store.finish_shadow_prediction_job(job_id, result)

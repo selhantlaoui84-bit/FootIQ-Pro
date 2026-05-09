@@ -1,4 +1,4 @@
-export type ConfidenceStatus = 'FIABLE' | 'MOYEN' | 'À ÉVITER';
+﻿export type ConfidenceStatus = 'FIABLE' | 'MOYEN' | 'À ÉVITER';
 export type Recommendation = 'Exploitable' | 'Prudence' | 'À éviter' | 'À éviter';
 
 export type ExplainabilityFactor = {
@@ -493,6 +493,77 @@ export type BacktestingReport = {
   note: string;
 };
 
+export type LearningGroupMetrics = {
+  count: number;
+  accuracy: number;
+  log_loss?: number | null;
+  brier_score?: number | null;
+  theoretical_roi?: number | null;
+};
+
+export type FrequentLearningError = {
+  error: string;
+  count: number;
+};
+
+export type LearningFeedbackReport = {
+  status: string;
+  generated_at?: string;
+  model_version: string;
+  evaluated_matches: number;
+  accuracy: number;
+  log_loss: number | null;
+  brier_score: number | null;
+  theoretical_roi: number | null;
+  performance_by_market: Record<string, LearningGroupMetrics>;
+  performance_by_competition: Record<string, LearningGroupMetrics>;
+  performance_by_confidence: Record<string, LearningGroupMetrics>;
+  frequent_errors: FrequentLearningError[];
+  note?: string;
+};
+
+export type CalibrationBucket = {
+  bucket: string;
+  count: number;
+  predicted_probability: number;
+  observed_success_rate: number;
+  calibration_factor: number;
+};
+
+export type CalibrationReport = {
+  status: string;
+  calibration_version: string;
+  model_version: string;
+  generated_at?: string;
+  sample_size: number;
+  global_calibration_factor: number;
+  buckets: CalibrationBucket[];
+  source_metrics?: {
+    accuracy?: number | null;
+    log_loss?: number | null;
+    brier_score?: number | null;
+  };
+};
+
+export type ModelVersionRegistryEntry = {
+  id?: string;
+  model_version: string;
+  feature_set_version?: string | null;
+  calibration_version?: string | null;
+  trained_at?: string | null;
+  rows_used: number;
+  metrics: Record<string, unknown>;
+  status: 'candidate' | 'production' | 'shadow' | string;
+  family?: string | null;
+  artifact_path?: string | null;
+};
+
+export type ModelVersionsResponse = {
+  status: string;
+  versions: ModelVersionRegistryEntry[];
+  note?: string;
+};
+
 export type PerformanceMetrics = {
   tracked: number;
   highConfidenceHitRate: string;
@@ -527,6 +598,9 @@ export type PerformanceMetrics = {
   best_model_by_accuracy?: string | null;
   model_comparison_note?: string;
   model_governance?: ModelGovernanceReport;
+  learning_feedback?: LearningFeedbackReport;
+  calibration_report?: CalibrationReport;
+  model_version_registry?: ModelVersionsResponse;
   predictions_tracked?: number;
   evaluated_matches?: number;
   result_accuracy?: number;
@@ -1446,6 +1520,14 @@ export type ModelGovernanceReport = {
     trained_at: string | null;
   };
   governance_gates: Record<string, GovernanceGate>;
+  promotion_rules?: Record<string, GovernanceGate>;
+  production_feedback?: {
+    evaluated_matches: number;
+    accuracy: number;
+    log_loss: number | null;
+    brier_score: number | null;
+    theoretical_roi: number | null;
+  };
   promotion_readiness: {
     ready: boolean;
     level: string;
@@ -1495,6 +1577,22 @@ export const mockModelGovernance: ModelGovernanceReport = {
     monitoring: { passed: true, reason: 'Monitoring disponible.' },
     hybrid_review: { passed: false, reason: 'Revue hybride insuffisante.' },
   },
+  promotion_rules: {
+    minimum_rows: { passed: false, reason: 'Minimum de lignes non atteint.' },
+    accuracy: { passed: false, reason: 'Accuracy candidat insuffisante.' },
+    log_loss: { passed: false, reason: 'Log loss candidat non meilleur.' },
+    brier_score: { passed: false, reason: 'Brier candidat non validé.' },
+    roi: { passed: false, reason: 'ROI théorique non validé.' },
+    drift: { passed: false, reason: 'Dérive non mesurée.' },
+    tested_matches: { passed: false, reason: 'Matchs testés insuffisants.' },
+  },
+  production_feedback: {
+    evaluated_matches: 0,
+    accuracy: 0,
+    log_loss: null,
+    brier_score: null,
+    theoretical_roi: null,
+  },
   promotion_readiness: {
     ready: false,
     level: 'not_ready',
@@ -1514,6 +1612,43 @@ export const mockModelGovernance: ModelGovernanceReport = {
     production_model_locked: true,
     note: 'Le modèle ML ne peut pas remplacer automatiquement le modèle officiel.',
   },
+};
+
+export const mockLearningFeedbackReport: LearningFeedbackReport = {
+  status: 'empty',
+  model_version: 'all',
+  evaluated_matches: 0,
+  accuracy: 0,
+  log_loss: null,
+  brier_score: null,
+  theoretical_roi: null,
+  performance_by_market: {},
+  performance_by_competition: {},
+  performance_by_confidence: {},
+  frequent_errors: [],
+  note: 'Aucun retour réel évaluable pour le moment.',
+};
+
+export const mockCalibrationReport: CalibrationReport = {
+  status: 'empty',
+  calibration_version: 'calibration-buckets-v1',
+  model_version: 'all',
+  sample_size: 0,
+  global_calibration_factor: 1,
+  buckets: [
+    { bucket: '0-49', count: 0, predicted_probability: 0.245, observed_success_rate: 0, calibration_factor: 1 },
+    { bucket: '50-59', count: 0, predicted_probability: 0.545, observed_success_rate: 0, calibration_factor: 1 },
+    { bucket: '60-69', count: 0, predicted_probability: 0.645, observed_success_rate: 0, calibration_factor: 1 },
+    { bucket: '70-79', count: 0, predicted_probability: 0.745, observed_success_rate: 0, calibration_factor: 1 },
+    { bucket: '80-89', count: 0, predicted_probability: 0.845, observed_success_rate: 0, calibration_factor: 1 },
+    { bucket: '90-100', count: 0, predicted_probability: 0.95, observed_success_rate: 0, calibration_factor: 1 },
+  ],
+};
+
+export const mockModelVersionsResponse: ModelVersionsResponse = {
+  status: 'ok',
+  versions: [],
+  note: 'Aucune version candidate enregistrée.',
 };
 
 export const performanceMetrics: PerformanceMetrics = {
@@ -1559,6 +1694,9 @@ export const performanceMetrics: PerformanceMetrics = {
   lastUpdated: '2026-05-02T08:00:00Z',
   latest_refresh: null,
   model_governance: mockModelGovernance,
+  learning_feedback: mockLearningFeedbackReport,
+  calibration_report: mockCalibrationReport,
+  model_version_registry: mockModelVersionsResponse,
 };
 
 export function buildDashboardSummary(source = 'mock'): DashboardSummary {
@@ -1873,3 +2011,5 @@ export const mockHybridEngineSummary: HybridEngineSummary = {
   recommendation: 'insufficient_shadow_data',
   reason: 'Aucune donn?e shadow suffisante pour alimenter le moteur hybride.',
 };
+
+

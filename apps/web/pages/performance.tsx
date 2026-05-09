@@ -1,11 +1,13 @@
-import type { GetStaticProps } from 'next';
+﻿import type { GetStaticProps } from 'next';
 import Link from 'next/link';
 import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import {
   getBacktesting,
+  getCalibrationReport,
   getFeatureQualityReport,
   getFeatureSummary,
+  getLearningFeedback,
   getMlFeatureImportance,
   getHybridEngineSummary,
   getHybridSummary,
@@ -17,10 +19,12 @@ import {
   getModelComparison,
   getModels,
   getModelGovernance,
+  getModelVersionsRegistry,
   getPerformance,
 } from '~/lib/api';
 import type {
   BacktestingReport,
+  CalibrationReport,
   DatasetQualityReport,
   FeatureImportanceRow,
   FeatureSummary,
@@ -34,12 +38,15 @@ import type {
   MlShadowBacktesting,
   ModelGovernanceReport,
   ModelComparison,
+  ModelVersionsResponse,
+  LearningFeedbackReport,
   ModelsMetadata,
   PerformanceMetrics,
   TrainingReport,
 } from '~/lib/mock-data';
 import {
   mockBacktestingReport,
+  mockCalibrationReport,
   mockExplainabilitySummary,
   mockFeatureQualityReport,
   mockFeatureSummary,
@@ -52,6 +59,8 @@ import {
   mockMlStatus,
   mockModelComparison,
   mockModelGovernance,
+  mockModelVersionsResponse,
+  mockLearningFeedbackReport,
   mockModelsMetadata,
   performanceMetrics,
 } from '~/lib/mock-data';
@@ -73,6 +82,9 @@ type PerformanceProps = {
   hybridEngineSummary: HybridEngineSummary;
   explainabilitySummary: ExplainabilitySummary;
   featureImportance: FeatureImportanceRow[];
+  learningFeedback: LearningFeedbackReport;
+  calibrationReport: CalibrationReport;
+  modelVersions: ModelVersionsResponse;
 };
 
 export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
@@ -92,6 +104,9 @@ export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
     explainabilitySummary: mockExplainabilitySummary,
     featureImportance: mockMlFeatureImportance,
     modelGovernance: mockModelGovernance,
+    learningFeedback: mockLearningFeedbackReport,
+    calibrationReport: mockCalibrationReport,
+    modelVersions: mockModelVersionsResponse,
   };
 
   const load = async <T,>(label: string, promise: Promise<T>, fallbackValue: T): Promise<T> => {
@@ -119,6 +134,9 @@ export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
     explainabilitySummary,
     featureImportance,
     modelGovernance,
+    learningFeedback,
+    calibrationReport,
+    modelVersions,
   ] = await Promise.all([
     load('performance', getPerformance(), fallback.performance),
     load('backtesting', getBacktesting(), fallback.backtesting),
@@ -135,6 +153,9 @@ export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
     load('explainabilitySummary', getExplainabilitySummary(200, 'upcoming'), fallback.explainabilitySummary),
     load('featureImportance', getMlFeatureImportance(), fallback.featureImportance),
     load('modelGovernance', getModelGovernance(), fallback.modelGovernance),
+    load('learningFeedback', getLearningFeedback(), fallback.learningFeedback),
+    load('calibrationReport', getCalibrationReport(), fallback.calibrationReport),
+    load('modelVersions', getModelVersionsRegistry(), fallback.modelVersions),
   ]);
 
   return {
@@ -154,6 +175,9 @@ export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
       explainabilitySummary,
       featureImportance,
       modelGovernance,
+      learningFeedback,
+      calibrationReport,
+      modelVersions,
     },
     revalidate: 120,
   };
@@ -175,6 +199,9 @@ export default function PerformancePage({
   explainabilitySummary,
   featureImportance,
   modelGovernance,
+  learningFeedback,
+  calibrationReport,
+  modelVersions,
 }: PerformanceProps) {
   const report = {
     ...backtesting,
@@ -490,6 +517,86 @@ export default function PerformancePage({
 
   <div className="banner info">{governance.policy.note}</div>
 </section>
+
+        <section className="card sectionAnchor" id="learning-feedback">
+          <div className="cardTop">
+            <div>
+              <p className="eyebrow">Boucle d'apprentissage</p>
+              <h2>Feedback moteur et calibration</h2>
+            </div>
+            <span className="badge">{calibrationReport.calibration_version}</span>
+          </div>
+          <div className="compactDataGrid four">
+            <div className="metric"><span>Matchs feedback</span><strong>{learningFeedback.evaluated_matches}</strong></div>
+            <div className="metric"><span>Accuracy</span><strong>{learningFeedback.accuracy}%</strong></div>
+            <div className="metric"><span>Log loss</span><strong>{learningFeedback.log_loss ?? 'N/A'}</strong></div>
+            <div className="metric"><span>Brier</span><strong>{learningFeedback.brier_score ?? 'N/A'}</strong></div>
+            <div className="metric"><span>ROI théorique</span><strong>{learningFeedback.theoretical_roi ?? 'N/A'}</strong></div>
+            <div className="metric"><span>Facteur calibration</span><strong>{calibrationReport.global_calibration_factor}</strong></div>
+            <div className="metric"><span>Sample calibration</span><strong>{calibrationReport.sample_size}</strong></div>
+            <div className="metric"><span>Versions registre</span><strong>{modelVersions.versions.length}</strong></div>
+          </div>
+
+          <div className="sectionSplit">
+            <article className="explanationPanel">
+              <h3>Performance par marché</h3>
+              <div className="metricTable">
+                <div className="metricTableRow header">
+                  <span>Marché</span>
+                  <span>Volume</span>
+                  <span>Accuracy</span>
+                  <span>ROI</span>
+                </div>
+                {Object.entries(learningFeedback.performance_by_market).length === 0 ? (
+                  <div className="emptyState">Aucun marché évaluable pour le moment.</div>
+                ) : Object.entries(learningFeedback.performance_by_market).map(([market, row]) => (
+                  <div className="metricTableRow bucketRow" key={market}>
+                    <span>{market}</span>
+                    <strong>{row.count}</strong>
+                    <strong>{row.accuracy}%</strong>
+                    <strong>{row.theoretical_roi ?? 'N/A'}</strong>
+                  </div>
+                ))}
+              </div>
+            </article>
+
+            <article className="explanationPanel">
+              <h3>Erreurs fréquentes</h3>
+              {(learningFeedback.frequent_errors ?? []).length === 0 ? (
+                <div className="emptyState">Aucune erreur fréquente visible.</div>
+              ) : (
+                <div className="dataList">
+                  {learningFeedback.frequent_errors.slice(0, 8).map((item) => (
+                    <span key={item.error}>{item.error} <strong>{item.count}</strong></span>
+                  ))}
+                </div>
+              )}
+            </article>
+          </div>
+
+          <h3>Fiabilité par niveau de confiance</h3>
+          <div className="metricTable">
+            <div className="metricTableRow header">
+              <span>Bucket</span>
+              <span>Probabilité prédite</span>
+              <span>Réussite réelle</span>
+              <span>Facteur</span>
+            </div>
+            {calibrationReport.buckets.map((bucket) => (
+              <div className="metricTableRow bucketRow" key={bucket.bucket}>
+                <span>{bucket.bucket}</span>
+                <strong>{Math.round(bucket.predicted_probability * 100)}%</strong>
+                <strong>{Math.round(bucket.observed_success_rate * 100)}%</strong>
+                <strong>{bucket.calibration_factor}</strong>
+              </div>
+            ))}
+          </div>
+
+          <div className="banner info">
+            Recommandations IA : renforcer les marchés avec ROI stable, réduire l'exposition sur les buckets surconfiants,
+            et garder les candidats en shadow jusqu'à validation de gouvernance.
+          </div>
+        </section>
         <section className="sectionSplit" id="feature-store">
           <article className="card accent">
             <p className="eyebrow">Feature Store</p>
@@ -864,7 +971,7 @@ export default function PerformancePage({
 
   <div className="banner info">
     <strong>Recommandation : </strong>
-    {shadowBacktesting.activation_recommendation} — {shadowBacktesting.recommendation_reason}
+    {shadowBacktesting.activation_recommendation} - {shadowBacktesting.recommendation_reason}
   </div>
 
   {shadowBacktesting.recent_evaluations?.length > 0 && (
@@ -1114,3 +1221,5 @@ function DataBar({
     </div>
   );
 }
+
+
