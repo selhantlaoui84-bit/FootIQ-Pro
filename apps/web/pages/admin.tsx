@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import {
@@ -8,10 +8,13 @@ import {
   getAdminDiagnostics,
   getAdminWorkflowStatus,
   getBackendHealth,
+  getCalibrationReport,
   getDashboardSummary,
   getFeatureQualityReport,
   getFeatureSummary,
   getFeatureStoreJobStatus,
+  getLearningFeedback,
+  getModelVersionsRegistry,
   getShadowPredictionJobStatus,
   getModelGovernance,
   getRefreshJobStatus,
@@ -31,8 +34,11 @@ import type {
   FeatureSummary,
   GenerateShadowPredictionsResponse,
   HealthResponse,
+  CalibrationReport,
+  LearningFeedbackReport,
   MatchView,
   ModelGovernanceReport,
+  ModelVersionsResponse,
   RefreshJobStatus,
   RefreshResponse,
   TrainingReport,
@@ -149,6 +155,9 @@ export default function AdminPage() {
   const [featureQuality, setFeatureQuality] = useState<DatasetQualityReport | null>(null);
   const [isTraining, setIsTraining] = useState(false);
   const [modelGovernance, setModelGovernance] = useState<ModelGovernanceReport | null>(null);
+  const [learningFeedback, setLearningFeedback] = useState<LearningFeedbackReport | null>(null);
+  const [calibrationReport, setCalibrationReport] = useState<CalibrationReport | null>(null);
+  const [modelVersions, setModelVersions] = useState<ModelVersionsResponse | null>(null);
   const [adminAlerts, setAdminAlerts] = useState<AdminAlertsReport | null>(null);
   const [modelType, setModelType] = useState('random_forest');
   const [trainingLimit, setTrainingLimit] = useState(5000);
@@ -242,6 +251,9 @@ export default function AdminPage() {
       featureSummaryResult,
       qualityResult,
       governanceResult,
+      feedbackResult,
+      calibrationResult,
+      modelVersionsResult,
       alertsResult,
       dashboardResult,
     ] = await Promise.all([
@@ -251,6 +263,9 @@ export default function AdminPage() {
       captureAdminLoad(getFeatureSummary(), 'Impossible de charger /features/summary'),
       captureAdminLoad(getFeatureQualityReport(), 'Impossible de charger /features/quality-report'),
       captureAdminLoad(getModelGovernance(), 'Impossible de charger /models/governance'),
+      captureAdminLoad(getLearningFeedback(), 'Impossible de charger /learning/feedback'),
+      captureAdminLoad(getCalibrationReport(), 'Impossible de charger /learning/calibration'),
+      captureAdminLoad(getModelVersionsRegistry(), 'Impossible de charger /models/versions'),
       captureAdminLoad(getAdminAlerts(), 'Impossible de charger /admin/alerts'),
       captureAdminLoad(getDashboardSummary(), 'Impossible de charger /dashboard/summary'),
     ]);
@@ -283,6 +298,9 @@ export default function AdminPage() {
     }
     if (qualityResult.data) setFeatureQuality(qualityResult.data);
     if (governanceResult.data) setModelGovernance(governanceResult.data);
+    if (feedbackResult.data) setLearningFeedback(feedbackResult.data);
+    if (calibrationResult.data) setCalibrationReport(calibrationResult.data);
+    if (modelVersionsResult.data) setModelVersions(modelVersionsResult.data);
     if (alertsResult.data) setAdminAlerts(alertsResult.data);
     if (dashboardResult.data) setDashboardSummary(dashboardResult.data);
   }
@@ -868,6 +886,70 @@ export default function AdminPage() {
           </div>
         </section>
 
+        <section className="card sectionAnchor" id="learning-engine">
+          <div className="cardTop">
+            <div>
+              <p className="eyebrow">Auto-learning</p>
+              <h2>Feedback, calibration et versions</h2>
+            </div>
+            <span className="badge">{calibrationReport?.calibration_version ?? 'calibration-buckets-v1'}</span>
+          </div>
+          <div className="compactDataGrid four">
+            <div className="metric"><span>Matchs évalués</span><strong>{learningFeedback?.evaluated_matches ?? 0}</strong></div>
+            <div className="metric"><span>Accuracy feedback</span><strong>{learningFeedback?.accuracy ?? 0}%</strong></div>
+            <div className="metric"><span>Log loss</span><strong>{learningFeedback?.log_loss ?? 'N/A'}</strong></div>
+            <div className="metric"><span>Brier score</span><strong>{learningFeedback?.brier_score ?? 'N/A'}</strong></div>
+            <div className="metric"><span>ROI théorique</span><strong>{learningFeedback?.theoretical_roi ?? 'N/A'}</strong></div>
+            <div className="metric"><span>Facteur calibration</span><strong>{calibrationReport?.global_calibration_factor ?? 1}</strong></div>
+            <div className="metric"><span>Sample calibration</span><strong>{calibrationReport?.sample_size ?? 0}</strong></div>
+            <div className="metric"><span>Versions suivies</span><strong>{modelVersions?.versions.length ?? 0}</strong></div>
+          </div>
+
+          <div className="sectionSplit">
+            <article>
+              <h3>Performance par marché</h3>
+              <div className="dataList">
+                {Object.entries(learningFeedback?.performance_by_market ?? {}).length === 0 ? (
+                  <span>Aucune métrique marché disponible <strong>0</strong></span>
+                ) : Object.entries(learningFeedback?.performance_by_market ?? {}).map(([market, row]) => (
+                  <span key={market}>{market} <strong>{row.accuracy}% / ROI {row.theoretical_roi ?? 'N/A'}</strong></span>
+                ))}
+              </div>
+            </article>
+            <article>
+              <h3>Erreurs fréquentes</h3>
+              <div className="dataList">
+                {(learningFeedback?.frequent_errors ?? []).length === 0 ? (
+                  <span>Aucune erreur fréquente visible <strong>0</strong></span>
+                ) : learningFeedback?.frequent_errors.slice(0, 5).map((item) => (
+                  <span key={item.error}>{item.error} <strong>{item.count}</strong></span>
+                ))}
+              </div>
+            </article>
+          </div>
+
+          <div className="metricTable">
+            <div className="metricTableRow header">
+              <span>Bucket confiance</span>
+              <span>Prédit</span>
+              <span>Réel</span>
+              <span>Facteur</span>
+            </div>
+            {(calibrationReport?.buckets ?? []).map((bucket) => (
+              <div className="metricTableRow bucketRow" key={bucket.bucket}>
+                <span>{bucket.bucket}</span>
+                <strong>{Math.round(bucket.predicted_probability * 100)}%</strong>
+                <strong>{Math.round(bucket.observed_success_rate * 100)}%</strong>
+                <strong>{bucket.calibration_factor}</strong>
+              </div>
+            ))}
+          </div>
+
+          <div className="banner info">
+            Recommandations IA : garder le candidat en shadow tant que les règles de promotion ne sont pas toutes validées.
+          </div>
+        </section>
+
         <section className="card">
           <div className="cardTop">
             <div>
@@ -910,3 +992,5 @@ export default function AdminPage() {
     </ProtectedRoute>
   );
 }
+
+

@@ -1063,6 +1063,8 @@ def model_performance():
     monitoring_report = _model_monitoring_report(["7d", "30d", "90d", "all"], 2000) 
     model_governance = _model_governance_report()
     admin_alerts = _admin_alerts_compact()
+    learning_feedback = build_feedback_report(_available_matches(), predictions, model_version=MODEL_VERSION)
+    calibration_report = build_calibration_profile(_available_matches(), predictions, model_version=MODEL_VERSION)
 
 
     return {
@@ -1092,6 +1094,9 @@ def model_performance():
         "ml_shadow_backtesting": shadow_backtesting,
         "model_monitoring": monitoring_report,
         "model_governance": model_governance,
+        "learning_feedback": learning_feedback,
+        "calibration_report": calibration_report,
+        "model_version_registry": {"status": "ok", "versions": list_model_versions()},
         "admin_alerts": admin_alerts,
     }
 
