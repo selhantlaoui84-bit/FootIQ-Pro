@@ -246,7 +246,7 @@ async function run() {
   const layoutSource = await readFile(layoutSourceFile, 'utf8');
   assert.doesNotMatch(layoutSource, brokenEncoding);
   assert.match(layoutSource, /href="\/dashboard"[\s\S]*Tableau de bord[\s\S]*<\/Link>/);
-  assert.match(layoutSource, /\{ href: '\/matches', label: 'Matchs' \}/);
+  assert.match(layoutSource, /\{ href: '\/matches', label: 'Matchs'/);
 
   const stylesSource = await readFile(globalStyles, 'utf8');
   assert.match(stylesSource, /\.topbar \{[\s\S]*z-index: 1000/);
