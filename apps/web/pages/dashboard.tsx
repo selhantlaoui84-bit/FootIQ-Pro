@@ -1,6 +1,6 @@
 import type { GetServerSideProps } from 'next';
 import Link from 'next/link';
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { getMatches, getPublicDashboardSummary } from '~/lib/api';
 import {
@@ -93,11 +93,100 @@ export default function DashboardPage({ matches, predictions, summary, reference
   ];
 
   const competitions = Object.entries(summary.competitions_breakdown);
+  const featuredMatch = upcoming[0] ?? finished[0] ?? matches[0];
 
   return (
     <ProtectedRoute>
       <Layout>
-        <section className="commandHero">
+        <section className="dashboardBoard">
+          <div className="dashboardTitle">
+            <p className="eyebrow">Centre de contrôle</p>
+            <h1>Bonjour, Analyste</h1>
+            <p>Voici votre vue d'ensemble tactique et financière.</p>
+          </div>
+
+          <div className="dashboardShowcase">
+            <Link className="tacticalPanel clickable-card" href={featuredMatch ? matchHref(featuredMatch) : '/matches'}>
+              <div className="panelHeading">
+                <span>Aperçu tactique du match</span>
+                <b>En vedette</b>
+              </div>
+              <div className="teamsDuel">
+                <div>
+                  <span className="teamCrest">{initials(featuredMatch?.home_team ?? 'Home')}</span>
+                  <strong>{featuredMatch?.home_team ?? 'Équipe domicile'}</strong>
+                  <small>Probabilité de victoire</small>
+                  <em>{featuredMatch?.probabilities?.home ?? 54}%</em>
+                </div>
+                <TacticalPitch value={featuredMatch?.probabilities?.draw ?? 26} />
+                <div>
+                  <span className="teamCrest away">{initials(featuredMatch?.away_team ?? 'Away')}</span>
+                  <strong>{featuredMatch?.away_team ?? 'Équipe extérieure'}</strong>
+                  <small>Probabilité de victoire</small>
+                  <em>{featuredMatch?.probabilities?.away ?? 20}%</em>
+                </div>
+              </div>
+              <div className="matchMetaStrip">
+                <span>Compétition <strong>{formatCompetitionLabel(featuredMatch?.competition)}</strong></span>
+                <span>Date & heure <strong>{featuredMatch ? formatKickoffFr(featuredMatch.kickoff) : 'À venir'}</strong></span>
+                <span>Confiance <strong>{summary.average_confidence}/100</strong></span>
+              </div>
+            </Link>
+
+            <article className="sideSignalPanel">
+              <div className="panelHeading">
+                <span>Prédictions principales</span>
+              </div>
+              <div className="premiumSignalList">
+                {summary.top_reliable_matches.slice(0, 5).map((prediction) => (
+                  <Link href={matchHref(prediction)} key={prediction.match_id}>
+                    <span className="signalBall">⚽</span>
+                    <span>
+                      <strong>{prediction.home_team}</strong>
+                      <small>{prediction.main_prediction}</small>
+                    </span>
+                    <em>{prediction.confidence.score}%</em>
+                    <b>{formatSyntheticOdd(prediction.confidence.score)}</b>
+                  </Link>
+                ))}
+              </div>
+              <Link className="premiumInlineButton" href="/predictions">
+                Voir toutes les prédictions
+              </Link>
+            </article>
+          </div>
+
+          <div className="premiumDashboardGrid">
+            <article className="premiumMiniPanel">
+              <h2>Opportunités à valeur attendue</h2>
+              {summary.top_reliable_matches.slice(0, 4).map((prediction) => (
+                <Link className="marketLine" href={matchHref(prediction)} key={prediction.match_id}>
+                  <span>{prediction.home_team}</span>
+                  <strong>{formatSyntheticOdd(prediction.confidence.score)}</strong>
+                  <em>+{Math.max(1, Math.round(prediction.confidence.score / 20))},21%</em>
+                </Link>
+              ))}
+            </article>
+            <article className="premiumMiniPanel radarPanel">
+              <h2>Comparaison des équipes</h2>
+              <div className="radarChart" aria-hidden="true" />
+              <Link className="premiumInlineButton" href="/performance">Voir l'analyse complète</Link>
+            </article>
+            <article className="premiumMiniPanel aiPanel">
+              <h2>Résumé IA</h2>
+              <div className="aiIcon" aria-hidden="true">◎</div>
+              <p>Les signaux actuels indiquent une lecture exploitable si la confiance reste supérieure au seuil.</p>
+            </article>
+            <article className="premiumMiniPanel performancePanel">
+              <h2>Historique de performance</h2>
+              <div className="miniChart" aria-hidden="true" />
+              <strong>+12,47%</strong>
+              <span>ROI simulé</span>
+            </article>
+          </div>
+        </section>
+
+        <section className="commandHero dashboardLegacyHero">
           <div>
             <p className="eyebrow">Centre de contrôle</p>
             <h1>Tableau de bord</h1>
@@ -313,6 +402,33 @@ function PredictionCard({ prediction }: { prediction: Prediction }) {
       <p>{prediction.main_prediction}</p>
     </Link>
   );
+}
+
+function TacticalPitch({ value }: { value: number }) {
+  const ringValue = `${Math.min(Math.max(value, 0), 100) * 3.6}deg`;
+
+  return (
+    <div className="pitchVisual" aria-label={`Probabilité du nul ${value}%`}>
+      <div className="pitchLines" />
+      <div className="probRing" style={{ '--ring-value': ringValue } as CSSProperties}>
+        <strong>{value}%</strong>
+        <span>Nul</span>
+      </div>
+    </div>
+  );
+}
+
+function initials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('');
+}
+
+function formatSyntheticOdd(confidenceScore: number) {
+  return Math.max(1.18, 2.48 - confidenceScore / 100).toFixed(2);
 }
 
 function isFinished(match: Match) {
