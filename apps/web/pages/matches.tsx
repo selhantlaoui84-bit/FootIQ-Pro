@@ -1,4 +1,4 @@
-import type { GetStaticProps } from 'next';
+import type { GetServerSideProps } from 'next';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useEffect, useMemo, useState } from 'react';
@@ -20,15 +20,24 @@ type MatchesProps = {
   matches: Match[];
 };
 
-export const getStaticProps: GetStaticProps<MatchesProps> = async () => ({
-  props: { matches: await getMatches() },
-  revalidate: 120,
-});
-
 const viewLabels: Record<MatchView, string> = {
   upcoming: 'À venir',
   all: 'Tous',
   history: 'Historique',
+};
+
+export const getServerSideProps: GetServerSideProps<MatchesProps> = async () => {
+  const rawMatches = await getMatches({ includeFinished: true });
+  const hasOfficialMatches = rawMatches.some((match) => match.source === 'football-data.org');
+  const matches = hasOfficialMatches
+    ? rawMatches.filter((match) => match.source === 'football-data.org')
+    : rawMatches;
+
+  return {
+    props: {
+      matches: matches.map(compactMatch),
+    },
+  };
 };
 
 export default function MatchesPage({ matches }: MatchesProps) {
@@ -90,9 +99,10 @@ export default function MatchesPage({ matches }: MatchesProps) {
             Les matchs à venir sont affichés en priorité. L'historique reste consultable avec les scores et les chiffres clés.
           </p>
           <div className="sourceStrip">
-            <span>À venir: {upcomingCount}</span>
-            <span>Historique: {historyCount}</span>
+            <span>À venir : {upcomingCount}</span>
+            <span>Historique : {historyCount}</span>
             <span>Total : {matches.length}</span>
+            <span>Source : football-data.org</span>
           </div>
         </section>
 
@@ -146,7 +156,11 @@ export default function MatchesPage({ matches }: MatchesProps) {
 
 function MatchRow({ match }: { match: Match }) {
   const finished = isFinished(match);
-  const scoreAvailable = match.score_full_time_home !== undefined && match.score_full_time_home !== null && match.score_full_time_away !== undefined && match.score_full_time_away !== null;
+  const scoreAvailable =
+    match.score_full_time_home !== undefined &&
+    match.score_full_time_home !== null &&
+    match.score_full_time_away !== undefined &&
+    match.score_full_time_away !== null;
   const summary = formatFinishedMatchSummary(match);
 
   return (
@@ -186,13 +200,13 @@ function MatchRow({ match }: { match: Match }) {
       ) : (
         <div className="probGrid">
           <span>
-            1 <strong>{match.probabilities?.home ? `${match.probabilities.home}%` : 'N/A'}</strong>
+            1 <strong>{typeof match.probabilities?.home === 'number' ? `${match.probabilities.home}%` : 'N/A'}</strong>
           </span>
           <span>
-            N <strong>{match.probabilities?.draw ? `${match.probabilities.draw}%` : 'N/A'}</strong>
+            N <strong>{typeof match.probabilities?.draw === 'number' ? `${match.probabilities.draw}%` : 'N/A'}</strong>
           </span>
           <span>
-            2 <strong>{match.probabilities?.away ? `${match.probabilities.away}%` : 'N/A'}</strong>
+            2 <strong>{typeof match.probabilities?.away === 'number' ? `${match.probabilities.away}%` : 'N/A'}</strong>
           </span>
         </div>
       )}
@@ -210,6 +224,15 @@ function MatchRow({ match }: { match: Match }) {
       <span className="button secondary small">Voir analyse</span>
     </Link>
   );
+}
+
+function compactMatch(match: Match): Match {
+  const {
+    raw_json: _rawJson,
+    ...rest
+  } = match as Match & { raw_json?: unknown };
+
+  return rest;
 }
 
 function isFinished(match: Match) {
