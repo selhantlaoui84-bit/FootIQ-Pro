@@ -105,6 +105,7 @@ async function run() {
     '../pages/api/admin/feature-summary.ts',
     '../pages/api/admin/feature-quality-report.ts',
     '../pages/api/admin/learning-feedback.ts',
+    '../pages/api/admin/learning-monitoring.ts',
     '../pages/api/admin/calibration.ts',
     '../pages/api/admin/model-versions.ts',
     '../pages/api/admin/dashboard-summary.ts',
@@ -156,9 +157,14 @@ async function run() {
   assert.match(adminPageSource, /adminLoadErrors/);
   assert.match(adminPageSource, /Erreurs de chargement API admin/);
   assert.match(adminPageSource, /getLearningFeedback/);
+  assert.match(adminPageSource, /getLearningMonitoring/);
   assert.match(adminPageSource, /getCalibrationReport/);
   assert.match(adminPageSource, /getModelVersionsRegistry/);
   assert.match(adminPageSource, /Auto-learning/);
+  assert.match(adminPageSource, /Monitoring learning/);
+  assert.match(adminPageSource, /Storage versions/);
+  assert.match(adminPageSource, /modelVersions\?\.storage/);
+  assert.match(adminPageSource, /learningMonitoring\?\.alerts/);
   assert.match(adminPageSource, /Performance par marché/);
   assert.match(adminPageSource, /Erreurs fréquentes/);
   assert.match(adminPageSource, /Recommandations IA/);
@@ -227,6 +233,7 @@ async function run() {
   assert.match(apiClientSource, /fetchProxyJson<DatasetQualityReport>\(`\/api\/admin\/feature-quality-report\?limit=\$\{safeLimit\}`, undefined, 15000\)/);
   assert.match(apiClientSource, /fetchProxyJson<ModelGovernanceReport>\('\/api\/admin\/model-governance', undefined, 45000\)/);
   assert.match(apiClientSource, /fetchProxyJson<LearningFeedbackReport>\('\/api\/admin\/learning-feedback', undefined, 15000\)/);
+  assert.match(apiClientSource, /fetchProxyJson<LearningMonitoringReport>\('\/api\/admin\/learning-monitoring', undefined, 15000\)/);
   assert.match(apiClientSource, /fetchProxyJson<CalibrationReport>\('\/api\/admin\/calibration', undefined, 15000\)/);
   assert.match(apiClientSource, /fetchProxyJson<ModelVersionsResponse>\('\/api\/admin\/model-versions', undefined, 15000\)/);
   assert.match(apiClientSource, /fetchProxyJson<DashboardSummary>\('\/api\/admin\/dashboard-summary', undefined, 15000\)/);

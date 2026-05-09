@@ -32,7 +32,7 @@ from services.model_monitoring import build_monitoring_report
 from services.model_governance import build_model_governance_report
 from services.feedback_engine import build_feedback_report
 from services.calibration_engine import CALIBRATION_VERSION, build_calibration_profile
-from services.model_versioning import list_model_versions, record_model_version
+from services.model_versioning import get_versions_report, list_model_versions, record_model_version
 from services.user_learning_engine import analyze_user_bets
 from services.prediction_engine import generate_prediction_from_match
 from services.prediction_engine import MODEL_VERSION
@@ -447,16 +447,18 @@ def _ml_status_compact():
     if not latest_candidate:
         latest_candidate = load_latest_candidate_metadata()
 
-    latest_registered_candidate = None
+    versions_report = get_versions_report()
+    latest_registered_candidate = versions_report.get("latest_candidate_model")
     try:
-        latest_registered_candidate = next(
-            (
-                item
-                for item in list_model_versions()
-                if item.get("status") in {"candidate", "shadow"}
-            ),
-            None,
-        )
+        if not latest_registered_candidate:
+            latest_registered_candidate = next(
+                (
+                    item
+                    for item in versions_report.get("versions", [])
+                    if item.get("status") in {"candidate", "shadow"}
+                ),
+                None,
+            )
     except Exception:
         latest_registered_candidate = None
 
@@ -477,8 +479,11 @@ def _ml_status_compact():
         "latest_candidate": latest_candidate,
         "candidate_model_exists": latest_candidate.get("status") not in {"not_trained", None},
         "production_model_version": MODEL_VERSION,
+        "current_production_model": versions_report.get("current_production_model"),
+        "latest_candidate_model": latest_registered_candidate,
+        "model_version_storage": versions_report.get("storage"),
         "candidate_is_production": False,
-        "model_versions": list_model_versions(),
+        "model_versions": versions_report.get("versions", []),
     }
 
 
@@ -863,10 +868,10 @@ def models_governance():
 
 @app.get("/models/versions")
 def model_versions():
+    report = get_versions_report()
     return {
-        "status": "ok",
-        "versions": list_model_versions(),
-        "note": "Model versions are append-only candidate/production/shadow registry entries.",
+        **report,
+        "note": report.get("note") or "Model versions are append-only candidate/production/shadow registry entries.",
     }
 
 
@@ -888,6 +893,58 @@ def learning_calibration(model_version: str | None = None):
 @app.get("/learning/user-profile/{user_id}")
 def user_learning_profile(user_id: str):
     return analyze_user_bets(user_id, [])
+
+
+@app.get("/learning/monitoring")
+def learning_monitoring():
+    alerts: list[str] = []
+    versions_report = get_versions_report()
+    feedback_report = build_feedback_report(_available_matches(), _available_predictions(), model_version=MODEL_VERSION)
+    calibration_report = build_calibration_profile(_available_matches(), _available_predictions(), model_version=MODEL_VERSION)
+    governance_report = _model_governance_report()
+
+    try:
+        feature_summary = _feature_summary()
+        feature_store_status = "ok" if feature_summary.get("snapshots_count", 0) > 0 else "empty"
+        if feature_store_status == "empty":
+            alerts.append("Feature Store vide ou non disponible.")
+    except Exception as exc:
+        feature_summary = {"status": "error", "detail": str(exc)}
+        feature_store_status = "error"
+        alerts.append("Feature Store indisponible.")
+
+    production_model = versions_report.get("current_production_model") or {}
+    candidate_model = versions_report.get("latest_candidate_model") or {}
+    if versions_report.get("storage") != "postgresql":
+        alerts.append("Registre model_versions en fallback fichier.")
+    if not candidate_model:
+        alerts.append("Aucun modèle candidat enregistré.")
+
+    next_best_action = (
+        {"label": "Construire le Feature Store", "href": "/admin"}
+        if feature_store_status in {"empty", "error"}
+        else {"label": "Entraîner un modèle candidat", "href": "/admin"}
+        if not candidate_model
+        else {"label": "Comparer candidat et production", "href": "/admin#learning-engine"}
+    )
+
+    return {
+        "status": "ok" if not alerts else "warning",
+        "storage": versions_report.get("storage"),
+        "feedback_status": feedback_report.get("status"),
+        "calibration_status": calibration_report.get("status"),
+        "model_versions_status": versions_report.get("status"),
+        "governance_status": governance_report.get("status"),
+        "feature_store_status": feature_store_status,
+        "latest_feedback_at": feedback_report.get("generated_at"),
+        "latest_calibration_version": calibration_report.get("calibration_version"),
+        "model_versions_count": versions_report.get("versions_count", 0),
+        "production_model_version": production_model.get("model_version") or MODEL_VERSION,
+        "latest_candidate_model_version": candidate_model.get("model_version"),
+        "alerts": alerts,
+        "next_best_action": next_best_action,
+        "feature_store": feature_summary,
+    }
 
 
 @app.get("/debug/finished-matches")
@@ -1065,6 +1122,7 @@ def model_performance():
     admin_alerts = _admin_alerts_compact()
     learning_feedback = build_feedback_report(_available_matches(), predictions, model_version=MODEL_VERSION)
     calibration_report = build_calibration_profile(_available_matches(), predictions, model_version=MODEL_VERSION)
+    model_version_registry = get_versions_report()
 
 
     return {
@@ -1096,7 +1154,7 @@ def model_performance():
         "model_governance": model_governance,
         "learning_feedback": learning_feedback,
         "calibration_report": calibration_report,
-        "model_version_registry": {"status": "ok", "versions": list_model_versions()},
+        "model_version_registry": model_version_registry,
         "admin_alerts": admin_alerts,
     }
 
@@ -1554,10 +1612,15 @@ def train_candidate_model_admin(
                     "log_loss": report.get("log_loss"),
                     "brier_score": report.get("brier_score_1x2"),
                     "target_distribution": report.get("target_distribution", {}),
+                    "features_used": report.get("features_used") or report.get("feature_columns"),
+                    "rows_loaded": report.get("rows_loaded"),
+                    "invalid_rows": report.get("invalid_rows"),
                 },
                 status="candidate",
                 family=report.get("model_type"),
                 artifact_path=report.get("artifact_path"),
+                features_used=report.get("features_used") or report.get("feature_columns"),
+                target_distribution=report.get("target_distribution", {}),
             )
         except Exception as exc:
             report["registry_warning"] = f"Model version registry not updated: {exc}"

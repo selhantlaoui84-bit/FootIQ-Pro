@@ -2,11 +2,15 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from sqlalchemy import create_engine, text
+
+import main
+from data import database, repository
 from services.calibration_engine import build_calibration_profile, calibrate_prediction
 from services.feedback_engine import build_feedback_report
 from services.ml_training import prepare_training_rows
 from services.model_governance import build_model_governance_report
-from services.model_versioning import record_model_version, list_model_versions
+from services.model_versioning import get_versions_report, record_model_version, list_model_versions
 
 
 def finished_match(match_id, result="home", competition="Ligue 1"):
@@ -38,6 +42,29 @@ def prediction(match_id, home=70, draw=20, away=10, competition="Ligue 1"):
 
 
 class LearningEngineTests(unittest.TestCase):
+    def setUp(self):
+        self.engine = None
+        self.patches = []
+
+    def tearDown(self):
+        for item in reversed(self.patches):
+            item.stop()
+        if self.engine is not None:
+            self.engine.dispose()
+
+    def use_sqlite_registry(self):
+        self.engine = create_engine("sqlite:///:memory:", future=True)
+        database.metadata.create_all(self.engine)
+        self.patches.extend(
+            [
+                patch.object(database, "get_engine", return_value=self.engine),
+                patch.object(repository, "get_engine", return_value=self.engine),
+            ]
+        )
+        for item in self.patches:
+            item.start()
+        return self.engine
+
     def test_feedback_metrics_group_by_market_competition_and_confidence(self):
         report = build_feedback_report(
             [
@@ -104,6 +131,141 @@ class LearningEngineTests(unittest.TestCase):
 
         self.assertEqual(len(versions), 2)
         self.assertEqual({item["status"] for item in versions}, {"candidate", "shadow"})
+
+    def test_model_versions_schema_created(self):
+        engine = self.use_sqlite_registry()
+        repository.init_model_versions_schema()
+
+        with engine.connect() as connection:
+            columns = {row._mapping["name"] for row in connection.execute(text("PRAGMA table_info(model_versions)"))}
+
+        self.assertIn("model_version", columns)
+        self.assertIn("metrics_json", columns)
+        self.assertIn("governance_json", columns)
+
+    def test_save_and_list_model_version_postgresql(self):
+        self.use_sqlite_registry()
+
+        saved = repository.save_model_version(
+            {
+                "model_version": "ml-candidate-v2",
+                "model_type": "random_forest",
+                "status": "candidate",
+                "rows_used": 64,
+                "features_used": 12,
+                "accuracy": 48,
+                "log_loss": 0.92,
+                "brier_score": 0.42,
+                "metrics": {"accuracy": 48},
+                "governance": {"ready": False},
+            }
+        )
+        versions = repository.list_model_versions()
+
+        self.assertEqual(saved["model_version"], "ml-candidate-v2")
+        self.assertEqual(len(versions), 1)
+        self.assertEqual(versions[0]["source"], "postgresql")
+
+    def test_unique_model_version_upsert_controlled(self):
+        self.use_sqlite_registry()
+
+        repository.save_model_version({"model_version": "ml-candidate-v3", "status": "candidate", "rows_used": 40, "metrics": {"accuracy": 41}})
+        repository.save_model_version(
+            {
+                "model_version": "ml-candidate-v3",
+                "status": "shadow",
+                "rows_used": 45,
+                "metrics": {"shadow_predictions_saved": 9},
+            }
+        )
+        versions = repository.list_model_versions()
+
+        self.assertEqual(len(versions), 1)
+        self.assertEqual(versions[0]["status"], "candidate")
+        self.assertEqual(versions[0]["metrics"]["shadow_predictions_saved"], 9)
+
+    def test_import_model_versions_from_file_if_needed(self):
+        self.use_sqlite_registry()
+        registry_path = Path(__file__).with_name("_tmp_model_versions_import.json")
+        registry_path.write_text(
+            '[{"model_version":"ml-imported-v1","status":"candidate","rows_used":50,"metrics":{"accuracy":45}}]',
+            encoding="utf-8",
+        )
+        try:
+            report = repository.import_model_versions_from_file_if_needed(registry_path)
+            versions = repository.list_model_versions()
+        finally:
+            registry_path.unlink(missing_ok=True)
+
+        self.assertEqual(report["status"], "ok")
+        self.assertEqual(report["imported_count"], 1)
+        self.assertEqual(versions[0]["source"], "file")
+
+    def test_models_versions_endpoint_uses_postgresql(self):
+        self.use_sqlite_registry()
+        repository.save_model_version({"model_version": "ml-endpoint-v1", "status": "candidate", "rows_used": 55, "metrics": {"accuracy": 46}})
+
+        report = main.model_versions()
+
+        self.assertEqual(report["storage"], "postgresql")
+        self.assertEqual(report["versions_count"], 1)
+        self.assertEqual(report["latest_candidate_model"]["model_version"], "ml-endpoint-v1")
+
+    def test_model_governance_uses_postgresql_versions(self):
+        self.use_sqlite_registry()
+        repository.save_model_version(
+            {
+                "model_version": "ml-governance-v1",
+                "status": "candidate",
+                "rows_used": 60,
+                "accuracy": 46,
+                "brier_score": 0.4,
+                "log_loss": 0.85,
+                "metrics": {"accuracy": 46, "brier_score": 0.4, "log_loss": 0.85},
+            }
+        )
+
+        report = main._model_governance_report()
+
+        self.assertEqual(report["candidate_model"]["version"], "ml-governance-v1")
+
+    def test_training_registers_candidate_model_version(self):
+        self.use_sqlite_registry()
+        training_report = {
+            "status": "ok",
+            "model_type": "random_forest",
+            "model_version": "ml-trained-v1",
+            "feature_set_version": "pre-match-advanced-v1",
+            "trained_at": "2026-05-10T10:00:00Z",
+            "rows_used": 80,
+            "features_used": ["elo_delta", "form_delta"],
+            "accuracy": 49,
+            "log_loss": 0.82,
+            "brier_score_1x2": 0.39,
+            "target_distribution": {"home": 40, "draw": 20, "away": 20},
+        }
+        with patch.object(main, "_require_admin_key", return_value=None), patch.object(main, "_training_dataset", return_value=[{"features": {}, "target": {}}] * 80), patch.object(
+            main,
+            "build_dataset_quality_report",
+            return_value={"safe_for_training": True, "recommendation": "safe_to_train"},
+        ), patch.object(main, "train_candidate_model", return_value=training_report):
+            result = main.train_candidate_model_admin(x_admin_key="test")
+
+        saved = repository.get_latest_candidate_model()
+        self.assertEqual(result["registry_entry"]["storage"], "postgresql")
+        self.assertEqual(saved["model_version"], "ml-trained-v1")
+        self.assertEqual(saved["features_used"], 2)
+
+    def test_learning_monitoring_endpoint(self):
+        self.use_sqlite_registry()
+        repository.save_model_version({"model_version": "ml-monitor-v1", "status": "candidate", "rows_used": 55, "metrics": {"accuracy": 46}})
+
+        report = main.learning_monitoring()
+
+        self.assertIn(report["status"], {"ok", "warning"})
+        self.assertEqual(report["storage"], "postgresql")
+        self.assertEqual(report["latest_candidate_model_version"], "ml-monitor-v1")
+        self.assertIn("next_best_action", report)
 
     def test_governance_blocks_promotion_when_strict_rules_fail(self):
         report = build_model_governance_report(

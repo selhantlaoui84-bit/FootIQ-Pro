@@ -2,10 +2,11 @@
 import logging
 import uuid
 from datetime import datetime
+from pathlib import Path
 
 from sqlalchemy import text
 
-from data.database import db_available, execute_safe, fetch_all_safe, fetch_one_safe, get_engine
+from data.database import db_available, execute_safe, fetch_all_safe, fetch_one_safe, get_engine, init_db
 from services.advanced_features import ADVANCED_FEATURE_COLUMNS, FEATURE_SET_VERSION
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,56 @@ def _match_payload_from_row(row: dict | None):
 
 def _now() -> datetime:
     return datetime.utcnow()
+
+
+def _iso(value):
+    return value.isoformat() if hasattr(value, "isoformat") else value
+
+
+def _parse_datetime(value):
+    if not value:
+        return None
+    if hasattr(value, "isoformat"):
+        return value
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def _num_or_none(value):
+    try:
+        if value is None or value == "":
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
+def _int_or_zero(value):
+    try:
+        return int(value or 0)
+    except Exception:
+        return 0
+
+
+def _feature_count(value, metrics: dict | None = None) -> int:
+    if isinstance(value, list):
+        return len(value)
+    if isinstance(value, dict):
+        return len(value)
+    count = _int_or_zero(value)
+    if count:
+        return count
+    metrics = metrics or {}
+    for key in ("features_used", "feature_columns_count"):
+        candidate = metrics.get(key)
+        if isinstance(candidate, list):
+            return len(candidate)
+        count = _int_or_zero(candidate)
+        if count:
+            return count
+    return 0
 
 
 def _winner_from_score(winner, home_score, away_score):
@@ -596,6 +647,307 @@ def get_model_versions() -> list[str]:
         )
     )
     return [row.get("model_version") for row in rows if row.get("model_version")]
+
+
+def init_model_versions_schema() -> bool:
+    return init_db()
+
+
+def _model_version_from_row(row: dict | None) -> dict | None:
+    if not row:
+        return None
+
+    metrics = _loads(row.get("metrics_json")) or {}
+    governance = _loads(row.get("governance_json")) or {}
+    target_distribution = _loads(row.get("target_distribution_json")) or metrics.get("target_distribution") or {}
+
+    return {
+        "id": row.get("id"),
+        "model_version": row.get("model_version"),
+        "model_type": row.get("model_type"),
+        "family": row.get("model_type"),
+        "status": row.get("status"),
+        "feature_set_version": row.get("feature_set_version"),
+        "calibration_version": row.get("calibration_version"),
+        "trained_at": _iso(row.get("trained_at")),
+        "promoted_at": _iso(row.get("promoted_at")),
+        "created_at": _iso(row.get("created_at")),
+        "updated_at": _iso(row.get("updated_at")),
+        "rows_used": row.get("rows_used") or 0,
+        "features_used": row.get("features_used") or 0,
+        "accuracy": row.get("accuracy"),
+        "log_loss": row.get("log_loss"),
+        "brier_score": row.get("brier_score"),
+        "brier_score_1x2": row.get("brier_score"),
+        "roi_theoretical": row.get("roi_theoretical"),
+        "theoretical_roi": row.get("roi_theoretical"),
+        "target_distribution": target_distribution,
+        "metrics": metrics,
+        "governance": governance,
+        "notes": row.get("notes"),
+        "source": row.get("source") or "postgresql",
+        "artifact_path": metrics.get("artifact_path"),
+    }
+
+
+def _normalize_model_version(version: dict) -> dict:
+    metrics = dict(version.get("metrics") or {})
+    if version.get("artifact_path") and not metrics.get("artifact_path"):
+        metrics["artifact_path"] = version.get("artifact_path")
+    if version.get("feature_columns") and not metrics.get("feature_columns"):
+        metrics["feature_columns"] = version.get("feature_columns")
+
+    target_distribution = (
+        version.get("target_distribution")
+        or version.get("target_distribution_json")
+        or metrics.get("target_distribution")
+        or {}
+    )
+    governance = version.get("governance") or version.get("governance_json") or {}
+    created_at = _parse_datetime(version.get("created_at")) or _now()
+    updated_at = _now()
+
+    return {
+        "id": version.get("id") or str(uuid.uuid4()),
+        "model_version": version.get("model_version"),
+        "model_type": version.get("model_type") or version.get("family"),
+        "status": version.get("status") or "candidate",
+        "feature_set_version": version.get("feature_set_version"),
+        "calibration_version": version.get("calibration_version"),
+        "trained_at": _parse_datetime(version.get("trained_at")),
+        "promoted_at": _parse_datetime(version.get("promoted_at")),
+        "created_at": created_at,
+        "updated_at": updated_at,
+        "rows_used": _int_or_zero(version.get("rows_used")),
+        "features_used": _feature_count(version.get("features_used"), metrics),
+        "accuracy": _num_or_none(version.get("accuracy", metrics.get("accuracy"))),
+        "log_loss": _num_or_none(version.get("log_loss", metrics.get("log_loss"))),
+        "brier_score": _num_or_none(version.get("brier_score", metrics.get("brier_score") or metrics.get("brier_score_1x2"))),
+        "roi_theoretical": _num_or_none(version.get("roi_theoretical", version.get("theoretical_roi", metrics.get("theoretical_roi")))),
+        "target_distribution_json": _json(target_distribution),
+        "metrics_json": _json(metrics),
+        "governance_json": _json(governance),
+        "notes": version.get("notes"),
+        "source": version.get("source") or "postgresql",
+    }
+
+
+def save_model_version(version: dict) -> dict | None:
+    if not version or not version.get("model_version") or not db_available():
+        return None
+
+    row = _normalize_model_version(version)
+    existing = get_model_version(row["model_version"])
+    if existing:
+        merged_metrics = {**(existing.get("metrics") or {}), **(_loads(row["metrics_json"]) or {})}
+        merged_governance = {**(existing.get("governance") or {}), **(_loads(row["governance_json"]) or {})}
+        incoming_status = row["status"]
+        current_status = existing.get("status") or "candidate"
+        next_status = current_status
+        if current_status != "production" and incoming_status not in {"shadow"}:
+            next_status = incoming_status
+        if incoming_status == "shadow":
+            merged_metrics["shadow_registry_update"] = True
+
+        execute_safe(
+            text(
+                """
+                UPDATE model_versions
+                SET model_type = COALESCE(:model_type, model_type),
+                    status = :status,
+                    feature_set_version = COALESCE(:feature_set_version, feature_set_version),
+                    calibration_version = COALESCE(:calibration_version, calibration_version),
+                    trained_at = COALESCE(:trained_at, trained_at),
+                    promoted_at = COALESCE(:promoted_at, promoted_at),
+                    updated_at = :updated_at,
+                    rows_used = CASE WHEN :rows_used > rows_used THEN :rows_used ELSE rows_used END,
+                    features_used = CASE WHEN :features_used > features_used THEN :features_used ELSE features_used END,
+                    accuracy = COALESCE(:accuracy, accuracy),
+                    log_loss = COALESCE(:log_loss, log_loss),
+                    brier_score = COALESCE(:brier_score, brier_score),
+                    roi_theoretical = COALESCE(:roi_theoretical, roi_theoretical),
+                    target_distribution_json = COALESCE(:target_distribution_json, target_distribution_json),
+                    metrics_json = :metrics_json,
+                    governance_json = :governance_json,
+                    notes = COALESCE(:notes, notes),
+                    source = CASE WHEN source = 'postgresql' THEN source ELSE :source END
+                WHERE model_version = :model_version
+                """
+            ),
+            {
+                **row,
+                "status": next_status,
+                "metrics_json": _json(merged_metrics),
+                "governance_json": _json(merged_governance),
+            },
+        )
+        return get_model_version(row["model_version"])
+
+    ok = execute_safe(
+        text(
+            """
+            INSERT INTO model_versions (
+                id, model_version, model_type, status, feature_set_version, calibration_version,
+                trained_at, promoted_at, created_at, updated_at, rows_used, features_used,
+                accuracy, log_loss, brier_score, roi_theoretical, target_distribution_json,
+                metrics_json, governance_json, notes, source
+            )
+            VALUES (
+                :id, :model_version, :model_type, :status, :feature_set_version, :calibration_version,
+                :trained_at, :promoted_at, :created_at, :updated_at, :rows_used, :features_used,
+                :accuracy, :log_loss, :brier_score, :roi_theoretical, :target_distribution_json,
+                :metrics_json, :governance_json, :notes, :source
+            )
+            """
+        ),
+        row,
+    )
+    return get_model_version(row["model_version"]) if ok else None
+
+
+def list_model_versions(limit: int = 100) -> list[dict]:
+    if not db_available():
+        return []
+    safe_limit = max(1, min(int(limit or 100), 500))
+    rows = fetch_all_safe(
+        text(
+            """
+            SELECT *
+            FROM model_versions
+            ORDER BY COALESCE(trained_at, created_at) DESC, created_at DESC
+            LIMIT :limit
+            """
+        ),
+        {"limit": safe_limit},
+    )
+    return [item for item in (_model_version_from_row(row) for row in rows) if item]
+
+
+def get_model_version(model_version: str) -> dict | None:
+    if not model_version or not db_available():
+        return None
+    row = fetch_one_safe(text("SELECT * FROM model_versions WHERE model_version = :model_version LIMIT 1"), {"model_version": model_version})
+    return _model_version_from_row(row)
+
+
+def get_current_production_model() -> dict | None:
+    row = fetch_one_safe(
+        text(
+            """
+            SELECT *
+            FROM model_versions
+            WHERE status = 'production'
+            ORDER BY COALESCE(promoted_at, trained_at, created_at) DESC
+            LIMIT 1
+            """
+        )
+    )
+    return _model_version_from_row(row)
+
+
+def get_latest_candidate_model() -> dict | None:
+    row = fetch_one_safe(
+        text(
+            """
+            SELECT *
+            FROM model_versions
+            WHERE status = 'candidate'
+            ORDER BY COALESCE(trained_at, created_at) DESC
+            LIMIT 1
+            """
+        )
+    )
+    if not row:
+        row = fetch_one_safe(
+            text(
+                """
+                SELECT *
+                FROM model_versions
+                WHERE status = 'shadow'
+                ORDER BY COALESCE(trained_at, created_at) DESC
+                LIMIT 1
+                """
+            )
+        )
+    return _model_version_from_row(row)
+
+
+def update_model_version_status(model_version: str, status: str) -> dict | None:
+    allowed = {"candidate", "production", "shadow", "archived", "rejected"}
+    if not model_version or status not in allowed or not db_available():
+        return None
+    execute_safe(
+        text(
+            """
+            UPDATE model_versions
+            SET status = :status, updated_at = :updated_at
+            WHERE model_version = :model_version
+            """
+        ),
+        {"model_version": model_version, "status": status, "updated_at": _now()},
+    )
+    return get_model_version(model_version)
+
+
+def promote_model_version(model_version: str) -> dict | None:
+    if not model_version or not db_available():
+        return None
+    execute_safe(
+        text(
+            """
+            UPDATE model_versions
+            SET status = 'archived', updated_at = :updated_at
+            WHERE status = 'production' AND model_version <> :model_version
+            """
+        ),
+        {"model_version": model_version, "updated_at": _now()},
+    )
+    execute_safe(
+        text(
+            """
+            UPDATE model_versions
+            SET status = 'production', promoted_at = :promoted_at, updated_at = :updated_at
+            WHERE model_version = :model_version
+            """
+        ),
+        {"model_version": model_version, "promoted_at": _now(), "updated_at": _now()},
+    )
+    return get_model_version(model_version)
+
+
+def archive_model_version(model_version: str) -> dict | None:
+    return update_model_version_status(model_version, "archived")
+
+
+def import_model_versions_from_file_if_needed(file_path: str | Path | None = None) -> dict:
+    if not db_available():
+        return {"status": "skipped", "storage": "file_fallback", "imported_count": 0, "reason": "database_unavailable"}
+    if list_model_versions(limit=1):
+        return {"status": "skipped", "storage": "postgresql", "imported_count": 0, "reason": "postgresql_already_seeded"}
+
+    registry_path = Path(file_path) if file_path else Path(__file__).resolve().parents[1] / "ml_models" / "model_versions.json"
+    if not registry_path.exists():
+        return {"status": "skipped", "storage": "postgresql", "imported_count": 0, "reason": "file_missing"}
+
+    try:
+        payload = json.loads(registry_path.read_text(encoding="utf-8"))
+        rows = payload if isinstance(payload, list) else []
+    except Exception as exc:
+        return {"status": "error", "storage": "postgresql", "imported_count": 0, "detail": str(exc)}
+
+    imported = 0
+    for item in rows:
+        if not isinstance(item, dict) or not item.get("model_version"):
+            continue
+        imported_item = dict(item)
+        metrics = dict(imported_item.get("metrics") or {})
+        metrics["source_imported_from"] = "file"
+        imported_item["metrics"] = metrics
+        imported_item["source"] = "file"
+        if save_model_version(imported_item):
+            imported += 1
+
+    return {"status": "ok", "storage": "postgresql", "imported_count": imported, "source_file": str(registry_path)}
 
 
 

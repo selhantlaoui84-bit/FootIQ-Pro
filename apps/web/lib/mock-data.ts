@@ -548,20 +548,58 @@ export type CalibrationReport = {
 export type ModelVersionRegistryEntry = {
   id?: string;
   model_version: string;
+  model_type?: string | null;
   feature_set_version?: string | null;
   calibration_version?: string | null;
   trained_at?: string | null;
+  promoted_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
   rows_used: number;
+  features_used?: number;
+  accuracy?: number | null;
+  log_loss?: number | null;
+  brier_score?: number | null;
+  roi_theoretical?: number | null;
+  target_distribution?: Record<string, unknown>;
   metrics: Record<string, unknown>;
+  governance?: Record<string, unknown>;
   status: 'candidate' | 'production' | 'shadow' | string;
   family?: string | null;
   artifact_path?: string | null;
+  source?: string | null;
 };
 
 export type ModelVersionsResponse = {
   status: string;
+  storage?: string;
+  versions_count?: number;
+  current_production_model?: ModelVersionRegistryEntry | null;
+  latest_candidate_model?: ModelVersionRegistryEntry | null;
   versions: ModelVersionRegistryEntry[];
+  fallback_used?: boolean;
+  detail?: string;
   note?: string;
+};
+
+export type LearningMonitoringReport = {
+  status: string;
+  storage?: string;
+  feedback_status?: string;
+  calibration_status?: string;
+  model_versions_status?: string;
+  governance_status?: string;
+  feature_store_status?: string;
+  latest_feedback_at?: string | null;
+  latest_calibration_version?: string | null;
+  model_versions_count?: number;
+  production_model_version?: string | null;
+  latest_candidate_model_version?: string | null;
+  alerts: string[];
+  next_best_action?: {
+    label: string;
+    href: string;
+  };
 };
 
 export type PerformanceMetrics = {
@@ -1647,8 +1685,29 @@ export const mockCalibrationReport: CalibrationReport = {
 
 export const mockModelVersionsResponse: ModelVersionsResponse = {
   status: 'ok',
+  storage: 'postgresql',
+  versions_count: 0,
+  current_production_model: null,
+  latest_candidate_model: null,
   versions: [],
   note: 'Aucune version candidate enregistrée.',
+};
+
+export const mockLearningMonitoringReport: LearningMonitoringReport = {
+  status: 'warning',
+  storage: 'postgresql',
+  feedback_status: 'empty',
+  calibration_status: 'empty',
+  model_versions_status: 'ok',
+  governance_status: 'ok',
+  feature_store_status: 'empty',
+  latest_feedback_at: null,
+  latest_calibration_version: 'calibration-buckets-v1',
+  model_versions_count: 0,
+  production_model_version: 'elo-poisson-calibrated-v1',
+  latest_candidate_model_version: null,
+  alerts: ['Aucun modèle candidat enregistré.'],
+  next_best_action: { label: 'Entraîner un modèle candidat', href: '/admin' },
 };
 
 export const performanceMetrics: PerformanceMetrics = {
