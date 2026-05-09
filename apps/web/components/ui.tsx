@@ -167,6 +167,52 @@ export function MiniLineChart({ points = [18, 24, 21, 34, 31, 44, 40, 58, 65] }:
   );
 }
 
+export function TeamComparisonCurve({
+  homeLabel = 'Domicile',
+  awayLabel = 'Extérieur',
+  homePoints = [54, 58, 62, 59, 66, 71, 68],
+  awayPoints = [42, 40, 38, 44, 41, 36, 39],
+}: {
+  homeLabel?: string;
+  awayLabel?: string;
+  homePoints?: number[];
+  awayPoints?: number[];
+}) {
+  return (
+    <div className="teamComparisonCurve">
+      <div className="curveLegend">
+        <span><i className="homeLine" />{homeLabel}</span>
+        <span><i className="awayLine" />{awayLabel}</span>
+      </div>
+      <DualLineChart homePoints={homePoints} awayPoints={awayPoints} />
+    </div>
+  );
+}
+
+function DualLineChart({ homePoints, awayPoints }: { homePoints: number[]; awayPoints: number[] }) {
+  const safeHome = homePoints.length > 1 ? homePoints : [50, 52, 54];
+  const safeAway = awayPoints.length > 1 ? awayPoints : [48, 46, 44];
+  const max = Math.max(...safeHome, ...safeAway, 1);
+  const min = Math.min(...safeHome, ...safeAway, 0);
+  const range = Math.max(max - min, 1);
+  const buildPath = (points: number[]) =>
+    points
+      .map((point, index) => {
+        const x = (index / (points.length - 1)) * 100;
+        const y = 88 - ((point - min) / range) * 76;
+        return `${index === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`;
+      })
+      .join(' ');
+
+  return (
+    <svg className="dualLineChart" viewBox="0 0 100 100" role="img" aria-label="Comparaison des équipes">
+      <path className="chartGridLine" d="M 0 82 H 100 M 0 58 H 100 M 0 34 H 100 M 0 10 H 100" />
+      <path className="chartLine home" d={buildPath(safeHome)} pathLength={1} />
+      <path className="chartLine away" d={buildPath(safeAway)} pathLength={1} />
+    </svg>
+  );
+}
+
 export function MiniBarChart({ values = [28, 44, 38, 62, 55, 76, 88] }: { values?: number[] }) {
   const max = Math.max(...values, 1);
 

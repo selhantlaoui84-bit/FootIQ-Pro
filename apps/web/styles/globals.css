@@ -2237,6 +2237,12 @@ input::placeholder {
   border-bottom: 1px solid rgba(216, 182, 106, 0.13);
 }
 
+.emptyState.compact {
+  min-height: auto;
+  padding: 16px;
+  color: var(--reference-muted);
+}
+
 .signalBall {
   display: grid;
   width: 32px;
@@ -2291,6 +2297,11 @@ input::placeholder {
   font-family: Georgia, 'Times New Roman', serif;
   font-size: 16px;
   text-transform: uppercase;
+}
+
+.premiumMiniPanel {
+  min-height: 0;
+  align-content: start;
 }
 
 .marketLine {
@@ -2587,10 +2598,36 @@ body::before {
 .premiumMatchTable .rowCard,
 .premiumPredictionTable .matchCard {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(210px, 0.8fr) minmax(120px, 0.35fr) auto;
+  grid-template-columns: minmax(190px, 1fr) minmax(180px, 0.9fr) minmax(150px, 0.7fr);
   align-items: center;
   padding: 12px;
   border-radius: 9px;
+  overflow: hidden;
+}
+
+.premiumPredictionTable .matchCard {
+  grid-template-columns: minmax(220px, 1fr) minmax(190px, 0.8fr) minmax(220px, 1fr);
+}
+
+.premiumPredictionTable .matchCard > p,
+.premiumPredictionTable .matchCard > strong {
+  overflow-wrap: anywhere;
+}
+
+.premiumPredictionTable .probGrid {
+  grid-template-columns: repeat(3, minmax(58px, 1fr));
+}
+
+.premiumPredictionTable .dataList.compact {
+  min-width: 0;
+}
+
+.premiumPredictionTable .explainabilityPreview {
+  grid-column: 1 / -1;
+}
+
+.premiumPredictionTable .confidenceLine {
+  grid-column: 1 / -1;
 }
 
 .featuredPitchLink {
@@ -2651,8 +2688,16 @@ body::before {
 .teamPremiumCard {
   display: grid;
   gap: 14px;
-  min-height: 360px;
+  min-height: 0;
   padding: 18px;
+}
+
+.teamPremiumCard .radarChart {
+  width: min(150px, 100%);
+}
+
+.teamPremiumCard .radarLabels {
+  font-size: 11px;
 }
 
 .teamDetailHero {
@@ -2763,8 +2808,14 @@ body::before {
 
 .miniLineChart {
   width: 100%;
-  min-height: 96px;
+  height: 120px;
+  min-height: 0;
   overflow: visible;
+}
+
+.metricShowcase .miniLineChart,
+.teamPremiumCard .miniLineChart {
+  height: 104px;
 }
 
 .chartGridLine {
@@ -2793,6 +2844,54 @@ body::before {
   align-items: flex-end;
   gap: 7px;
   padding-top: 20px;
+}
+
+.teamComparisonCurve {
+  display: grid;
+  gap: 10px;
+  min-height: 180px;
+}
+
+.curveLegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  color: var(--reference-muted);
+  font-size: 12px;
+}
+
+.curveLegend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.curveLegend i {
+  display: inline-block;
+  width: 18px;
+  height: 3px;
+  border-radius: 999px;
+}
+
+.homeLine {
+  background: var(--reference-green-2);
+}
+
+.awayLine {
+  background: var(--reference-gold-soft);
+}
+
+.dualLineChart {
+  width: 100%;
+  height: 150px;
+}
+
+.dualLineChart .chartLine.away {
+  stroke: var(--reference-gold-soft);
+}
+
+.dualLineChart .chartLine.home {
+  stroke: var(--reference-green-2);
 }
 
 .miniBarChart span {

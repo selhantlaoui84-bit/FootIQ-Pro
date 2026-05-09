@@ -2,7 +2,8 @@ import type { GetServerSideProps } from 'next';
 import Link from 'next/link';
 import type { CSSProperties, ReactNode } from 'react';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
-import { getMatches, getPublicDashboardSummary } from '~/lib/api';
+import { MiniLineChart, TeamComparisonCurve } from '~/components/ui';
+import { getMatches, getPredictions, getPublicDashboardSummary } from '~/lib/api';
 import {
   matchHref,
   buildDashboardSummary,
@@ -28,16 +29,26 @@ type DashboardProps = {
 
 export const getServerSideProps: GetServerSideProps<DashboardProps> = async () => {
   let rawMatches: Match[] = [];
+  let predictions: Prediction[] = [];
   let summary: DashboardSummary = buildDashboardSummary();
 
   try {
-    [rawMatches, summary] = await Promise.all([
-      getMatches({ includeFinished: true }),
-      getPublicDashboardSummary(),
-    ]);
+    rawMatches = await getMatches({ includeFinished: true });
   } catch (error) {
-    console.error('Dashboard SSR fallback:', error);
+    console.error('Dashboard matches SSR fallback:', error);
     rawMatches = mockMatches;
+  }
+
+  try {
+    summary = await getPublicDashboardSummary();
+  } catch (error) {
+    console.error('Dashboard summary SSR fallback:', error);
+  }
+
+  try {
+    predictions = await getPredictions({ limit: 80, view: 'upcoming', includeHybridEngine: true });
+  } catch (error) {
+    console.error('Dashboard predictions SSR unavailable:', error);
   }
   const hasOfficialMatches = rawMatches.some((match) => match.source === 'football-data.org');
   const allMatches = hasOfficialMatches
@@ -67,7 +78,7 @@ export const getServerSideProps: GetServerSideProps<DashboardProps> = async () =
   return {
     props: {
       matches: [...upcoming.slice(0, 5), ...finished.slice(0, 5)],
-      predictions: [],
+      predictions,
       summary: dashboardSummary,
       referenceTime,
     },
@@ -94,6 +105,26 @@ export default function DashboardPage({ matches, predictions, summary, reference
 
   const competitions = Object.entries(summary.competitions_breakdown);
   const featuredMatch = upcoming[0] ?? finished[0] ?? matches[0];
+  const signalPredictions = (summary.top_reliable_matches.length > 0 ? summary.top_reliable_matches : predictions)
+    .filter((prediction) => typeof prediction.confidence?.score === 'number')
+    .sort((a, b) => b.confidence.score - a.confidence.score);
+  const averageConfidence =
+    signalPredictions.length > 0
+      ? Math.round(signalPredictions.reduce((total, prediction) => total + prediction.confidence.score, 0) / signalPredictions.length)
+      : summary.average_confidence;
+  const confidenceCurve = signalPredictions.slice(0, 10).map((prediction) => prediction.confidence.score);
+  const homeComparisonCurve = [
+    featuredMatch?.probabilities?.home ?? 50,
+    featuredMatch?.confidence?.score ?? averageConfidence,
+    summary.upcoming_matches_count,
+    summary.total_matches,
+  ].map((value) => Math.max(10, Math.min(95, Number(value) || 50)));
+  const awayComparisonCurve = [
+    featuredMatch?.probabilities?.away ?? 35,
+    featuredMatch?.probabilities?.draw ?? 28,
+    summary.avoid_matches_count + summary.trap_matches_count,
+    summary.historical_matches_count ?? finished.length,
+  ].map((value) => Math.max(10, Math.min(95, Number(value) || 35)));
 
   return (
     <ProtectedRoute>
@@ -129,7 +160,7 @@ export default function DashboardPage({ matches, predictions, summary, reference
               <div className="matchMetaStrip">
                 <span>Compétition <strong>{formatCompetitionLabel(featuredMatch?.competition)}</strong></span>
                 <span>Date & heure <strong>{featuredMatch ? formatKickoffFr(featuredMatch.kickoff) : 'À venir'}</strong></span>
-                <span>Confiance <strong>{summary.average_confidence}/100</strong></span>
+                <span>Confiance <strong>{averageConfidence}/100</strong></span>
               </div>
             </Link>
 
@@ -138,7 +169,7 @@ export default function DashboardPage({ matches, predictions, summary, reference
                 <span>Prédictions principales</span>
               </div>
               <div className="premiumSignalList">
-                {summary.top_reliable_matches.slice(0, 5).map((prediction) => (
+                {signalPredictions.slice(0, 5).map((prediction) => (
                   <Link href={matchHref(prediction)} key={prediction.match_id}>
                     <span className="signalBall">⚽</span>
                     <span>
@@ -150,6 +181,7 @@ export default function DashboardPage({ matches, predictions, summary, reference
                   </Link>
                 ))}
               </div>
+              {signalPredictions.length === 0 && <div className="emptyState compact">Aucune prédiction exploitable pour le moment.</div>}
               <Link className="premiumInlineButton" href="/predictions">
                 Voir toutes les prédictions
               </Link>
@@ -159,17 +191,23 @@ export default function DashboardPage({ matches, predictions, summary, reference
           <div className="premiumDashboardGrid">
             <article className="premiumMiniPanel">
               <h2>Opportunités à valeur attendue</h2>
-              {summary.top_reliable_matches.slice(0, 4).map((prediction) => (
+              {signalPredictions.slice(0, 4).map((prediction) => (
                 <Link className="marketLine" href={matchHref(prediction)} key={prediction.match_id}>
                   <span>{prediction.home_team}</span>
                   <strong>{formatSyntheticOdd(prediction.confidence.score)}</strong>
                   <em>+{Math.max(1, Math.round(prediction.confidence.score / 20))},21%</em>
                 </Link>
               ))}
+              {signalPredictions.length === 0 && <p className="muted">Aucune opportunité classée. Consultez toutes les prédictions.</p>}
             </article>
             <article className="premiumMiniPanel radarPanel">
               <h2>Comparaison des équipes</h2>
-              <div className="radarChart" aria-hidden="true" />
+              <TeamComparisonCurve
+                homeLabel={featuredMatch?.home_team ?? 'Domicile'}
+                awayLabel={featuredMatch?.away_team ?? 'Extérieur'}
+                homePoints={homeComparisonCurve}
+                awayPoints={awayComparisonCurve}
+              />
               <Link className="premiumInlineButton" href="/performance">Voir l'analyse complète</Link>
             </article>
             <article className="premiumMiniPanel aiPanel">
@@ -179,9 +217,9 @@ export default function DashboardPage({ matches, predictions, summary, reference
             </article>
             <article className="premiumMiniPanel performancePanel">
               <h2>Historique de performance</h2>
-              <div className="miniChart" aria-hidden="true" />
-              <strong>+12,47%</strong>
-              <span>ROI simulé</span>
+              <MiniLineChart points={confidenceCurve.length > 1 ? confidenceCurve : [45, 52, 58, averageConfidence || 60]} />
+              <strong>{averageConfidence}/100</strong>
+              <span>Confiance moyenne exploitable</span>
             </article>
           </div>
         </section>
