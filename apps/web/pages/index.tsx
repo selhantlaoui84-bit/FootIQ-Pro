@@ -1,6 +1,6 @@
 import type { GetStaticProps } from 'next';
 import Link from 'next/link';
-import { Card, StatusBanner } from '~/components/ui';
+import { Card, MiniLineChart, RadarChart, StatusBanner, TacticalPitch } from '~/components/ui';
 import { getPublicDashboardSummary } from '~/lib/api';
 import { buildDashboardSummary, matchHref, type DashboardSummary } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
@@ -52,7 +52,7 @@ export default function HomePage({ summary }: HomeProps) {
 
   return (
     <Layout>
-      <section className="hero">
+      <section className="hero premiumLandingHero">
         <div className="heroCopy">
           <p className="eyebrow">Football analytics premium</p>
           <h1>FootIQ Pro</h1>
@@ -81,6 +81,35 @@ export default function HomePage({ summary }: HomeProps) {
             <span>Risque {summary.average_risk_score ?? 0}/100</span>
           </div>
         </Link>
+      </section>
+
+      <section className="landingPreviewGrid">
+        <article className="premiumPanel">
+          <div className="panelHeading">
+            <span>Aperçu tactique</span>
+          </div>
+          <TacticalPitch
+            compact
+            home={featured?.home_team ?? 'Paris SG'}
+            away={featured?.away_team ?? 'Inter Milan'}
+            homeValue={featured?.probabilities.home ?? 54}
+            drawValue={featured?.probabilities.draw ?? 26}
+            awayValue={featured?.probabilities.away ?? 20}
+          />
+        </article>
+        <article className="premiumPanel">
+          <div className="panelHeading">
+            <span>Performance</span>
+          </div>
+          <MiniLineChart />
+          <strong className="landingMetric">+12,47%</strong>
+        </article>
+        <article className="premiumPanel">
+          <div className="panelHeading">
+            <span>Lecture modèle</span>
+          </div>
+          <RadarChart />
+        </article>
       </section>
 
       <section className="grid five">

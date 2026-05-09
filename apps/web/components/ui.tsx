@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 
 type Tone = 'default' | 'success' | 'warning' | 'danger' | 'info' | 'premium';
 
@@ -79,4 +79,135 @@ export function LoadingState({ label = 'Chargement...' }: { label?: string }) {
 
 export function ErrorState({ children }: { children: ReactNode }) {
   return <section className="banner error">{children}</section>;
+}
+
+export function ActionButton({
+  children,
+  href,
+}: {
+  children: ReactNode;
+  href?: string;
+}) {
+  if (href) {
+    return (
+      <a className="premiumInlineButton" href={href}>
+        {children}
+      </a>
+    );
+  }
+
+  return <span className="premiumInlineButton">{children}</span>;
+}
+
+export function TeamCrest({ name, tone = 'home' }: { name: string; tone?: 'home' | 'away' }) {
+  return <span className={`teamCrest ${tone === 'away' ? 'away' : ''}`}>{initials(name)}</span>;
+}
+
+export function TacticalPitch({
+  home = 'Paris SG',
+  away = 'Inter Milan',
+  homeValue = 54,
+  drawValue = 26,
+  awayValue = 20,
+  compact = false,
+}: {
+  home?: string;
+  away?: string;
+  homeValue?: number;
+  drawValue?: number;
+  awayValue?: number;
+  compact?: boolean;
+}) {
+  const ringValue = `${Math.min(Math.max(drawValue, 0), 100) * 3.6}deg`;
+
+  return (
+    <div className={`tacticalPitch ${compact ? 'compact' : ''}`}>
+      <div className="pitchTeam home">
+        <TeamCrest name={home} />
+        <strong>{home}</strong>
+        <em>{homeValue}%</em>
+        <span>Victoire</span>
+      </div>
+      <div className="pitchVisual" aria-label={`Probabilité du nul ${drawValue}%`}>
+        <div className="pitchLines" />
+        <div className="pitchZone zoneLeft" />
+        <div className="pitchZone zoneRight" />
+        <div className="probRing" style={{ '--ring-value': ringValue } as CSSProperties}>
+          <strong>{drawValue}%</strong>
+          <span>Nul</span>
+        </div>
+      </div>
+      <div className="pitchTeam away">
+        <TeamCrest name={away} tone="away" />
+        <strong>{away}</strong>
+        <em>{awayValue}%</em>
+        <span>Victoire</span>
+      </div>
+    </div>
+  );
+}
+
+export function MiniLineChart({ points = [18, 24, 21, 34, 31, 44, 40, 58, 65] }: { points?: number[] }) {
+  const safePoints = points.length > 1 ? points : [20, 48, 34, 64];
+  const max = Math.max(...safePoints, 1);
+  const path = safePoints
+    .map((point, index) => {
+      const x = (index / (safePoints.length - 1)) * 100;
+      const y = 100 - (point / max) * 82 - 8;
+      return `${index === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`;
+    })
+    .join(' ');
+
+  return (
+    <svg className="miniLineChart" viewBox="0 0 100 100" role="img" aria-label="Courbe statistique">
+      <path className="chartGridLine" d="M 0 78 H 100 M 0 52 H 100 M 0 26 H 100" />
+      <path className="chartArea" d={`${path} L 100 100 L 0 100 Z`} />
+      <path className="chartLine" d={path} pathLength={1} />
+    </svg>
+  );
+}
+
+export function MiniBarChart({ values = [28, 44, 38, 62, 55, 76, 88] }: { values?: number[] }) {
+  const max = Math.max(...values, 1);
+
+  return (
+    <div className="miniBarChart" aria-label="Histogramme statistique">
+      {values.map((value, index) => (
+        <span key={`${value}-${index}`} style={{ height: `${Math.max(12, (value / max) * 100)}%` }} />
+      ))}
+    </div>
+  );
+}
+
+export function RadarChart({ labels = ['Attaque', 'Création', 'Défense', 'Solidité', 'Transition'] }: { labels?: string[] }) {
+  return (
+    <div className="radarWidget">
+      <div className="radarChart" aria-hidden="true" />
+      <div className="radarLabels">
+        {labels.map((label) => (
+          <span key={label}>{label}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function ProbabilityRing({ value, label }: { value: number; label: string }) {
+  const ringValue = `${Math.min(Math.max(value, 0), 100) * 3.6}deg`;
+
+  return (
+    <div className="probabilityRing" style={{ '--ring-value': ringValue } as CSSProperties}>
+      <strong>{value}%</strong>
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function initials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('');
 }

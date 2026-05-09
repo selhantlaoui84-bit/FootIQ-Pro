@@ -2,6 +2,7 @@ import type { GetStaticPaths, GetStaticProps } from 'next';
 import Link from 'next/link';
 import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
+import { MiniLineChart, RadarChart, TacticalPitch } from '~/components/ui';
 import { getMatch, getPrediction } from '~/lib/api';
 import { getMockMatch, getMockPrediction, matches, statusClass, teamNameHref, type Match, type Prediction } from '~/lib/mock-data';
 import { formatCompetitionLabel, formatFinishedMatchSummary, formatKickoffFr, formatMatchStatusLabel, formatScore, formatWinnerLabel } from '~/lib/ui-text';
@@ -68,6 +69,25 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
           )}
         </section>
 
+        <section className="premiumPanel matchDetailTactical">
+          <div className="panelHeading">
+            <span>Analyse détaillée du match</span>
+            <b>{formatCompetitionLabel(prediction.competition || match.competition)}</b>
+          </div>
+          <TacticalPitch
+            home={prediction.home_team}
+            away={prediction.away_team}
+            homeValue={prediction.probabilities.home}
+            drawValue={prediction.probabilities.draw}
+            awayValue={prediction.probabilities.away}
+          />
+          <div className="matchMetaStrip">
+            <span>Momentum <strong>{prediction.confidence.score}/100</strong></span>
+            <span>Risque <strong>{prediction.risk_score ?? 'N/A'}</strong></span>
+            <span>Score probable <strong>{prediction.goals.most_likely_score ?? 'N/A'}</strong></span>
+          </div>
+        </section>
+
         {finished && (
           <section className="card accent">
             <h2 className="metricHelp">
@@ -95,9 +115,10 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
           <Probability label={prediction.away_team} value={prediction.probabilities.away} />
         </section>
 
-        <section className="sectionSplit">
+        <section className="sectionSplit premiumSectionSplit">
           <article className="card">
             <h2>Lecture offensive</h2>
+            <MiniLineChart />
             <div className="dataList">
               <span>Score attendu <strong>{prediction.goals.expected_home} - {prediction.goals.expected_away}</strong></span>
               <span>Score probable <strong>{prediction.goals.most_likely_score ?? 'N/A'}</strong></span>
@@ -141,6 +162,7 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
           </article>
           <article className="card">
             <h2>Attaque / Défense</h2>
+            <RadarChart />
             <div className="dataList">
               <span>Écart attaque <strong>{prediction.features?.attack_delta ?? 'N/A'}</strong></span>
               <span>Écart défense <strong>{prediction.features?.defense_delta ?? 'N/A'}</strong></span>

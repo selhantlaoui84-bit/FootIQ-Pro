@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useEffect, useMemo, useState } from 'react';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
+import { MiniLineChart, TacticalPitch } from '~/components/ui';
 import { getMatches } from '~/lib/api';
 import { matchHref, matches as mockMatches, statusClass, type Match, type MatchView } from '~/lib/mock-data';
 import {
@@ -99,16 +100,15 @@ export default function MatchesPage({ matches, referenceTime }: MatchesProps) {
 
   const upcomingCount = matches.filter((match) => isUpcoming(match, referenceTimestamp)).length;
   const historyCount = matches.filter((match) => isFinished(match) || isPastKickoff(match, referenceTimestamp)).length;
+  const featuredMatch = filteredMatches[0] ?? matches[0];
+  const recentFinished = matches.filter((match) => isFinished(match)).slice(0, 4);
 
   return (
     <ProtectedRoute>
       <Layout>
-        <section className="pageHeader">
-          <p className="eyebrow">Calendrier dynamique</p>
+        <section className="pageHeader premiumPageIntro">
           <h1>Matchs</h1>
-          <p>
-            Les matchs à venir sont affichés en priorité. L'historique reste consultable avec les scores et les chiffres clés.
-          </p>
+          <p>Suivez les rencontres, les signaux clés et les opportunités à venir.</p>
           <div className="sourceStrip">
             <span>À venir : {upcomingCount}</span>
             <span>Historique : {historyCount}</span>
@@ -151,14 +151,70 @@ export default function MatchesPage({ matches, referenceTime }: MatchesProps) {
           </select>
         </section>
 
-        <section className="stack">
-          {filteredMatches.length > 0 ? (
-            filteredMatches.map((match) => <MatchRow match={match} key={match.id} />)
-          ) : view === 'upcoming' ? (
-            <div className="emptyState">Aucun match à venir disponible. Utilisez l'historique pour consulter les matchs terminés.</div>
-          ) : (
-            <div className="emptyState">Aucun match ne correspond aux filtres.</div>
+        <section className="matchesPremiumLayout">
+          <div className="premiumPanel matchTablePanel">
+            <div className="panelHeading">
+              <span>Aujourd'hui - sélection FootIQ</span>
+              <b>{filteredMatches.length} matchs</b>
+            </div>
+            <div className="premiumMatchTable">
+              {filteredMatches.length > 0 ? (
+                filteredMatches.slice(0, 10).map((match) => <MatchRow match={match} key={match.id} />)
+              ) : view === 'upcoming' ? (
+                <div className="emptyState">Aucun match à venir disponible. Utilisez l'historique pour consulter les matchs terminés.</div>
+              ) : (
+                <div className="emptyState">Aucun match ne correspond aux filtres.</div>
+              )}
+            </div>
+          </div>
+
+          {featuredMatch && (
+            <aside className="premiumPanel featuredMatchPanel">
+              <div className="panelHeading">
+                <span>Match en vedette</span>
+                <b>{formatCompetitionLabel(featuredMatch.competition)}</b>
+              </div>
+              <Link className="featuredPitchLink" href={matchHref(featuredMatch)}>
+                <TacticalPitch
+                  compact
+                  home={featuredMatch.home_team}
+                  away={featuredMatch.away_team}
+                  homeValue={featuredMatch.probabilities?.home ?? 54}
+                  drawValue={featuredMatch.probabilities?.draw ?? 26}
+                  awayValue={featuredMatch.probabilities?.away ?? 20}
+                />
+                <span className="premiumInlineButton">Voir l'analyse complète</span>
+              </Link>
+            </aside>
           )}
+
+          <article className="premiumPanel calendarPanel">
+            <div className="panelHeading">
+              <span>Calendrier tactique</span>
+            </div>
+            {filteredMatches.slice(0, 4).map((match) => (
+              <Link className="compactFixture" href={matchHref(match)} key={`calendar-${match.id}`}>
+                <span>{formatKickoffFr(match.kickoff)}</span>
+                <strong>{match.home_team} vs {match.away_team}</strong>
+              </Link>
+            ))}
+          </article>
+
+          <article className="premiumPanel alertsPanel">
+            <div className="panelHeading">
+              <span>Résultats récents</span>
+            </div>
+            {recentFinished.length > 0 ? (
+              recentFinished.map((match) => (
+                <Link className="compactFixture" href={matchHref(match)} key={`recent-${match.id}`}>
+                  <strong>{match.home_team} vs {match.away_team}</strong>
+                  <span>{formatScore(match)}</span>
+                </Link>
+              ))
+            ) : (
+              <MiniLineChart />
+            )}
+          </article>
         </section>
       </Layout>
     </ProtectedRoute>

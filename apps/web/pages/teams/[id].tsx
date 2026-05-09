@@ -1,6 +1,7 @@
 import type { GetStaticPaths, GetStaticProps } from 'next';
 import Link from 'next/link';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
+import { MiniLineChart, RadarChart, TeamCrest } from '~/components/ui';
 import { getMatches, getPredictions, getTeam } from '~/lib/api';
 import { getMockTeam, matchHref, matches as mockMatches, predictions as mockPredictions, teams, type Match, type Prediction, type Team } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
@@ -50,10 +51,11 @@ export default function TeamDetailPage({ team, relatedMatches, relatedPrediction
   return (
     <ProtectedRoute>
       <Layout>
-        <section className="pageHeader">
+        <section className="pageHeader teamDetailHero">
           <p className="eyebrow">{team.competition}</p>
+          <TeamCrest name={team.name} />
           <h1>{team.name}</h1>
-          <p>Vue équipe construite à partir des matchs et prédictions disponibles.</p>
+          <p>Profil équipe, forme récente, prédictions associées et lecture tactique.</p>
         </section>
 
         <section className="metrics">
@@ -91,8 +93,15 @@ export default function TeamDetailPage({ team, relatedMatches, relatedPrediction
           </Link>
         </section>
 
-        <section className="sectionSplit">
+        <section className="sectionSplit premiumSectionSplit">
           <div>
+            <article className="premiumPanel">
+              <div className="panelHeading">
+                <span>Radar équipe</span>
+              </div>
+              <RadarChart />
+              <MiniLineChart />
+            </article>
             <h2>Matchs à venir</h2>
             <div className="stack">
               {relatedMatches.length > 0 ? (

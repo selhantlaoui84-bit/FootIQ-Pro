@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
+import { MiniLineChart } from '~/components/ui';
 import { useAuth } from '~/lib/auth';
 import { Layout } from '~/src-layout';
 
@@ -16,13 +17,13 @@ export default function ProfilePage() {
   return (
     <ProtectedRoute>
       <Layout>
-        <section className="pageHeader">
+        <section className="pageHeader premiumPageIntro">
           <p className="eyebrow">Compte</p>
           <h1>Profil</h1>
-          <p>Votre espace utilisateur FootIQ Pro, prêt pour les futures options SaaS.</p>
+          <p>Votre espace utilisateur FootIQ Pro, portefeuille et préférences de suivi.</p>
         </section>
 
-        <section className="sectionSplit">
+        <section className="sectionSplit premiumSectionSplit">
           <article className="card">
             <h2>Compte</h2>
             <div className="dataList">
@@ -48,6 +49,7 @@ export default function ProfilePage() {
           </article>
 
           <article className="card accent">
+            <MiniLineChart />
             <h2>Accès rapides</h2>
             <div className="quickActions">
               <Link className="button secondary" href="/dashboard">

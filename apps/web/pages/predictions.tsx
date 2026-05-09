@@ -4,6 +4,7 @@ import { useRouter } from 'next/router';
 import { useEffect, useMemo, useState } from 'react';
 import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
+import { MiniBarChart, MiniLineChart, ProbabilityRing } from '~/components/ui';
 import { getPredictions } from '~/lib/api';
 import { isAvoidStatus, matchHref, predictions as mockPredictions, statusClass, type ConfidenceStatus, type Prediction } from '~/lib/mock-data';
 import { formatCompetitionLabel, formatKickoffFr, formatRecommendationLabel, formatStatusLabel } from '~/lib/ui-text';
@@ -70,14 +71,18 @@ export default function PredictionsPage({ predictions }: PredictionsProps) {
         .sort((a, b) => b.confidence.score - a.confidence.score),
     [highConfidence, predictions, query, riskOnly, status, trapOnly],
   );
+  const averageConfidence =
+    filtered.length > 0
+      ? Math.round(filtered.reduce((total, prediction) => total + prediction.confidence.score, 0) / filtered.length)
+      : 0;
+  const selectionOfDay = filtered.slice(0, 5);
 
   return (
     <ProtectedRoute>
       <Layout>
-      <section className="pageHeader">
-        <p className="eyebrow">Catalogue FootIQ</p>
+      <section className="pageHeader premiumPageIntro">
         <h1>Prédictions</h1>
-        <p>{predictions.length} analyses probabilistes disponibles.</p>
+        <p>Découvrez les opportunités de paris à forte valeur identifiées par nos modèles quantitatifs.</p>
       </section>
 
       <section className="filters">
@@ -113,12 +118,55 @@ export default function PredictionsPage({ predictions }: PredictionsProps) {
         </label>
       </section>
 
-      <section className="grid three">
-        {filtered.length > 0 ? (
-          filtered.map((prediction) => <PredictionCard prediction={prediction} key={prediction.match_id} />)
-        ) : (
-          <div className="emptyState">Aucune prédiction ne correspond aux filtres.</div>
-        )}
+      <section className="predictionsPremiumLayout">
+        <div className="predictionMetrics">
+          <article className="premiumPanel metricShowcase">
+            <h2>Top value picks</h2>
+            <strong>+{Math.max(1, Math.round(averageConfidence / 20))},42%</strong>
+            <span>Valeur attendue moyenne</span>
+            <MiniLineChart />
+          </article>
+          <article className="premiumPanel metricShowcase">
+            <h2>Confiance moyenne</h2>
+            <ProbabilityRing value={averageConfidence} label="Confiance" />
+          </article>
+          <article className="premiumPanel metricShowcase">
+            <h2>Suivi live</h2>
+            <strong>{filtered.length}</strong>
+            <span>Prédictions actives</span>
+            <MiniBarChart />
+          </article>
+        </div>
+
+        <aside className="premiumPanel dailySelectionPanel">
+          <div className="panelHeading">
+            <span>Sélection du jour</span>
+            <b>{selectionOfDay.length} sélections</b>
+          </div>
+          {selectionOfDay.map((prediction) => (
+            <Link className="dailyPick" href={matchHref(prediction)} key={`daily-${prediction.match_id}`}>
+              <span className="signalBall">1N2</span>
+              <span>
+                <strong>{prediction.home_team} vs {prediction.away_team}</strong>
+                <small>{formatRecommendationLabel(prediction.recommendation)}</small>
+              </span>
+              <em>{prediction.confidence.score}%</em>
+            </Link>
+          ))}
+        </aside>
+
+        <div className="premiumPanel predictionTablePanel">
+          <div className="panelHeading">
+            <span>Toutes les prédictions ({filtered.length})</span>
+          </div>
+          <div className="premiumPredictionTable">
+            {filtered.length > 0 ? (
+              filtered.map((prediction) => <PredictionCard prediction={prediction} key={prediction.match_id} />)
+            ) : (
+              <div className="emptyState">Aucune prédiction ne correspond aux filtres.</div>
+            )}
+          </div>
+        </div>
       </section>
       </Layout>
     </ProtectedRoute>

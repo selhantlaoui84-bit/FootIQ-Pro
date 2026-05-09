@@ -2366,3 +2366,515 @@ input::placeholder {
     grid-template-columns: 1fr;
   }
 }
+
+/* Reference-grade premium system */
+:root {
+  --reference-bg: #020b08;
+  --reference-bg-2: #03140f;
+  --reference-panel: rgba(7, 35, 24, 0.74);
+  --reference-panel-deep: rgba(3, 20, 14, 0.88);
+  --reference-gold: #c99b4f;
+  --reference-gold-soft: #f4d9a2;
+  --reference-green: #63d84e;
+  --reference-green-2: #77e35c;
+  --reference-muted: #aebaa5;
+}
+
+body {
+  background:
+    radial-gradient(circle at 82% 6%, rgba(52, 175, 86, 0.16), transparent 31%),
+    radial-gradient(circle at 2% 56%, rgba(15, 98, 68, 0.32), transparent 34%),
+    linear-gradient(135deg, #020805, #03140f 42%, #020b08);
+}
+
+body::before {
+  position: fixed;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  content: '';
+  background:
+    linear-gradient(142deg, transparent 0 43%, rgba(197, 156, 83, 0.16) 43.1% 43.25%, transparent 43.35%),
+    linear-gradient(151deg, transparent 0 61%, rgba(74, 214, 95, 0.11) 61.1% 61.2%, transparent 61.35%),
+    radial-gradient(circle at 52% 10%, rgba(197, 156, 83, 0.08), transparent 20%);
+}
+
+.pageFrame {
+  animation: pageEnter 560ms ease both;
+}
+
+.premiumPanel,
+.card,
+.metric,
+.authCard,
+.pageHeader,
+.matchHeader,
+.filters,
+.rowCard {
+  background:
+    linear-gradient(145deg, rgba(7, 44, 30, 0.82), rgba(2, 15, 10, 0.9)),
+    var(--reference-panel);
+  border: 1px solid rgba(197, 156, 83, 0.24);
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+.premiumPanel,
+.card,
+.metric,
+.rowCard {
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.premiumPanel:hover,
+.card:hover,
+.rowCard:hover,
+.metric:hover {
+  border-color: rgba(197, 156, 83, 0.44);
+  box-shadow:
+    0 28px 82px rgba(0, 0, 0, 0.42),
+    0 0 26px rgba(74, 214, 95, 0.08);
+  transform: translateY(-2px);
+}
+
+.premiumPageIntro {
+  min-height: auto;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.premiumPageIntro h1,
+.hero h1,
+.authCard h1 {
+  color: var(--reference-gold-soft);
+  font-family: Georgia, 'Times New Roman', serif;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.premiumPageIntro p,
+.pageHeader p,
+.hero p,
+.authCard p {
+  color: var(--reference-muted);
+}
+
+.sourceStrip,
+.filters {
+  border-color: rgba(197, 156, 83, 0.24);
+}
+
+.filters input,
+.filters select,
+.field input,
+.authCard input,
+.authCard select,
+.searchFilterBar input,
+.searchFilterBar select {
+  color: #f5ead1;
+  background: rgba(2, 17, 12, 0.78);
+  border: 1px solid rgba(197, 156, 83, 0.3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.filters input:focus,
+.filters select:focus,
+.field input:focus {
+  outline: 2px solid rgba(99, 216, 78, 0.34);
+  border-color: rgba(99, 216, 78, 0.56);
+}
+
+.button,
+.premiumInlineButton,
+.toolbarButton,
+.toolbarDate,
+.navButton {
+  border-color: rgba(197, 156, 83, 0.38);
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease, background 180ms ease;
+}
+
+.button:hover,
+.premiumInlineButton:hover,
+.toolbarButton:hover,
+.navButton:hover {
+  border-color: rgba(244, 217, 162, 0.58);
+  box-shadow: 0 0 26px rgba(99, 216, 78, 0.12);
+  transform: translateY(-1px);
+}
+
+.appSidebar {
+  background:
+    radial-gradient(circle at 44% 0%, rgba(99, 216, 78, 0.11), transparent 24%),
+    linear-gradient(180deg, rgba(2, 16, 11, 0.98), rgba(1, 10, 7, 0.98));
+  border-right: 1px solid rgba(197, 156, 83, 0.22);
+}
+
+.mainNav a {
+  min-height: 52px;
+  border-radius: 8px;
+}
+
+.mainNav a.active {
+  color: #f5ead1;
+  background: linear-gradient(90deg, rgba(24, 137, 68, 0.74), rgba(12, 76, 43, 0.42));
+  border: 1px solid rgba(99, 216, 78, 0.38);
+  box-shadow: 0 0 28px rgba(99, 216, 78, 0.16);
+}
+
+.navIcon,
+.toolbarIcon {
+  position: relative;
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid rgba(197, 156, 83, 0.72);
+  border-radius: 6px;
+}
+
+.navIcon::before,
+.toolbarIcon::before {
+  color: var(--reference-gold-soft);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.navIcon-grid::before { content: '▦'; }
+.navIcon-calendar::before,
+.calendarIcon::before { content: '□'; }
+.navIcon-target::before { content: '◎'; }
+.navIcon-club::before { content: '◇'; }
+.navIcon-chart::before { content: '↗'; }
+.navIcon-wallet::before { content: '▱'; }
+.navIcon-shield::before { content: '♢'; }
+.bellIcon::before { content: '•'; }
+.filterIcon::before { content: '▽'; }
+
+.portfolioCard,
+.analystBadge {
+  border-color: rgba(197, 156, 83, 0.32);
+  background:
+    radial-gradient(circle at 70% 75%, rgba(99, 216, 78, 0.18), transparent 42%),
+    rgba(4, 28, 18, 0.76);
+}
+
+.matchesPremiumLayout,
+.predictionsPremiumLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(340px, 0.85fr);
+  gap: 16px;
+}
+
+.matchTablePanel,
+.predictionTablePanel {
+  grid-column: span 1;
+}
+
+.calendarPanel,
+.alertsPanel {
+  min-height: 220px;
+}
+
+.premiumMatchTable,
+.premiumPredictionTable {
+  display: grid;
+  gap: 8px;
+}
+
+.premiumMatchTable .rowCard,
+.premiumPredictionTable .matchCard {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(210px, 0.8fr) minmax(120px, 0.35fr) auto;
+  align-items: center;
+  padding: 12px;
+  border-radius: 9px;
+}
+
+.featuredPitchLink {
+  display: grid;
+  gap: 14px;
+}
+
+.compactFixture,
+.dailyPick {
+  display: grid;
+  grid-template-columns: minmax(110px, auto) 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(197, 156, 83, 0.14);
+}
+
+.compactFixture span,
+.dailyPick small,
+.marketLine span {
+  color: var(--reference-muted);
+}
+
+.predictionMetrics {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.dailySelectionPanel {
+  grid-row: span 2;
+}
+
+.metricShowcase strong,
+.landingMetric {
+  color: var(--reference-green);
+  font-size: clamp(26px, 3vw, 42px);
+  font-weight: 900;
+}
+
+.dailyPick {
+  grid-template-columns: 40px 1fr auto;
+}
+
+.dailyPick em {
+  color: var(--reference-green-2);
+  font-style: normal;
+  font-weight: 900;
+}
+
+.teamsPremiumLayout {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.teamPremiumCard {
+  display: grid;
+  gap: 14px;
+  min-height: 360px;
+  padding: 18px;
+}
+
+.teamDetailHero {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 18px;
+  align-items: center;
+}
+
+.teamDetailHero .eyebrow,
+.teamDetailHero p {
+  grid-column: 2;
+}
+
+.teamDetailHero h1 {
+  grid-column: 2;
+}
+
+.teamDetailHero .teamCrest {
+  grid-row: 1 / span 3;
+}
+
+.premiumSectionSplit {
+  align-items: stretch;
+}
+
+.analyticsShowcase,
+.landingPreviewGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.tacticalPitch {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.38fr) minmax(260px, 1fr) minmax(110px, 0.38fr);
+  gap: 14px;
+  align-items: center;
+}
+
+.tacticalPitch.compact {
+  grid-template-columns: 1fr;
+}
+
+.tacticalPitch.compact .pitchTeam {
+  grid-template-columns: auto 1fr auto;
+  justify-items: start;
+  text-align: left;
+}
+
+.pitchTeam {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.pitchTeam em {
+  color: var(--reference-green);
+  font-size: 32px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.pitchTeam span {
+  color: var(--reference-muted);
+}
+
+.pitchZone {
+  position: absolute;
+  top: 22%;
+  width: 22%;
+  height: 56%;
+  border: 1px dashed rgba(99, 216, 78, 0.24);
+}
+
+.zoneLeft {
+  left: 18%;
+}
+
+.zoneRight {
+  right: 18%;
+}
+
+.probabilityRing {
+  display: grid;
+  width: 148px;
+  height: 148px;
+  place-items: center;
+  margin: auto;
+  color: var(--reference-gold-soft);
+  background:
+    radial-gradient(circle, rgba(3, 16, 12, 0.96) 0 56%, transparent 57%),
+    conic-gradient(var(--reference-green) 0 var(--ring-value), #f7d99d var(--ring-value) 360deg);
+  border-radius: 999px;
+  box-shadow: 0 0 44px rgba(99, 216, 78, 0.18);
+}
+
+.probabilityRing strong {
+  align-self: end;
+  font-size: 34px;
+}
+
+.probabilityRing span {
+  align-self: start;
+  color: var(--reference-muted);
+}
+
+.miniLineChart {
+  width: 100%;
+  min-height: 96px;
+  overflow: visible;
+}
+
+.chartGridLine {
+  fill: none;
+  stroke: rgba(197, 156, 83, 0.13);
+  stroke-width: 0.8;
+}
+
+.chartArea {
+  fill: rgba(99, 216, 78, 0.18);
+}
+
+.chartLine {
+  fill: none;
+  stroke: var(--reference-green-2);
+  stroke-linecap: round;
+  stroke-width: 3;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: drawChart 1.2s ease forwards;
+}
+
+.miniBarChart {
+  display: flex;
+  height: 112px;
+  align-items: flex-end;
+  gap: 7px;
+  padding-top: 20px;
+}
+
+.miniBarChart span {
+  flex: 1;
+  min-width: 8px;
+  background: linear-gradient(180deg, var(--reference-green-2), rgba(99, 216, 78, 0.2));
+  border-radius: 4px 4px 0 0;
+  transform-origin: bottom;
+  animation: barRise 700ms ease both;
+}
+
+.radarWidget {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+}
+
+.radarLabels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  color: var(--reference-muted);
+  font-size: 12px;
+}
+
+.matchDetailTactical {
+  display: grid;
+  gap: 16px;
+}
+
+.authShell {
+  min-height: calc(100vh - 180px);
+  align-items: center;
+}
+
+.authCard {
+  max-width: 520px;
+  border-radius: 14px;
+}
+
+@keyframes pageEnter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+@keyframes drawChart {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes barRise {
+  from {
+    transform: scaleY(0.12);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+@media (max-width: 1280px) {
+  .matchesPremiumLayout,
+  .predictionsPremiumLayout,
+  .predictionMetrics,
+  .teamsPremiumLayout,
+  .analyticsShowcase,
+  .landingPreviewGrid,
+  .tacticalPitch {
+    grid-template-columns: 1fr;
+  }
+
+  .premiumMatchTable .rowCard,
+  .premiumPredictionTable .matchCard {
+    grid-template-columns: 1fr;
+  }
+}

@@ -2,6 +2,7 @@ import type { GetStaticProps } from 'next';
 import Link from 'next/link';
 import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
+import { MiniBarChart, MiniLineChart, RadarChart } from '~/components/ui';
 import {
   getBacktesting,
   getFeatureQualityReport,
@@ -234,10 +235,33 @@ export default function PerformancePage({
   return (
     <ProtectedRoute>
       <Layout>
-        <section className="pageHeader">
+        <section className="pageHeader premiumPageIntro">
           <p className="eyebrow">Analyse modèle</p>
-          <h1>Performance</h1>
-          <p>A good probabilistic model is not always right; it must be well calibrated.</p>
+          <h1>Analyse</h1>
+          <p>Insights tactiques, statistiques et IA pour prendre les meilleures décisions.</p>
+        </section>
+
+        <section className="analyticsShowcase">
+          <article className="premiumPanel">
+            <div className="panelHeading">
+              <span>Évolution ROI</span>
+            </div>
+            <MiniLineChart />
+            <strong className="landingMetric">{report.result_accuracy}%</strong>
+          </article>
+          <article className="premiumPanel">
+            <div className="panelHeading">
+              <span>Comparaison modèle</span>
+            </div>
+            <RadarChart />
+          </article>
+          <article className="premiumPanel">
+            <div className="panelHeading">
+              <span>Backtesting</span>
+            </div>
+            <MiniBarChart />
+            <span className="muted">Prédictions suivies : {performance.predictions_tracked ?? performance.tracked}</span>
+          </article>
         </section>
 
         <section className="metrics">
