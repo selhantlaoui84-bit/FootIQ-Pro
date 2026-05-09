@@ -51,12 +51,14 @@ def build_model_governance_report(
     monitoring_report: dict[str, Any] | None,
     shadow_backtesting: dict[str, Any] | None,
     hybrid_engine_summary: dict[str, Any] | None,
+    feedback_report: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     model_metadata = model_metadata or {}
     dataset_quality = dataset_quality or {}
     monitoring_report = monitoring_report or {}
     shadow_backtesting = shadow_backtesting or {}
     hybrid_engine_summary = hybrid_engine_summary or {}
+    feedback_report = feedback_report or {}
 
     production_version = (
         model_metadata.get("current_model_version")
@@ -85,14 +87,21 @@ def build_model_governance_report(
 
     candidate_status = str(candidate.get("status") or "not_trained")
     rows_used = int(candidate.get("rows_used") or 0)
+    candidate_accuracy = int(candidate.get("accuracy") or 0)
+    candidate_brier = candidate.get("brier_score_1x2")
+    candidate_log_loss = (ml_status.get("latest_candidate") or {}).get("log_loss") if ml_status else None
     trained = candidate_status in {"ok", "trained", "success"} or rows_used >= 30
 
-    if trained:
+    min_rows_ok = rows_used >= 30
+    accuracy_ok = candidate_accuracy >= 35
+    brier_ok = candidate_brier is not None and float(candidate_brier) <= 0.8
+
+    if trained and min_rows_ok and accuracy_ok and brier_ok:
         score += 20
         training_gate = _gate(True, "Modèle candidat entraîné avec un volume exploitable.")
     else:
-        training_gate = _gate(False, "Modèle candidat non entraîné ou données insuffisantes.")
-        blockers.append("Modèle candidat non entraîné.")
+        training_gate = _gate(False, "Modèle candidat non entraîné ou métriques insuffisantes.")
+        blockers.append("Modèle candidat non promouvable.")
         next_actions.append("Entraîner le modèle candidat après validation dataset.")
 
     shadow_evaluated = int(shadow_backtesting.get("evaluated_matches") or 0)
@@ -111,6 +120,32 @@ def build_model_governance_report(
         shadow_gate = _gate(False, "Échantillon shadow insuffisant pour une décision robuste.")
         warnings.append("Shadow backtesting insuffisant : moins de 50 matchs évalués.")
         next_actions.append("Générer davantage de prédictions shadow puis attendre plus de matchs terminés.")
+
+    production_log_loss = feedback_report.get("log_loss")
+    production_brier = feedback_report.get("brier_score")
+    production_roi = feedback_report.get("theoretical_roi")
+    enough_tested = shadow_evaluated >= 50
+    log_loss_improved = (
+        candidate_log_loss is not None
+        and production_log_loss is not None
+        and float(candidate_log_loss) < float(production_log_loss)
+    )
+    roi_non_negative = production_roi is not None and float(production_roi) >= 0
+    drift_delta = abs(shadow_accuracy - production_accuracy) if shadow_evaluated else None
+    drift_ok = drift_delta is not None and drift_delta <= 20
+
+    promotion_rules = {
+        "minimum_rows": _gate(min_rows_ok, f"{rows_used} lignes utilisées, minimum 30."),
+        "accuracy": _gate(accuracy_ok, f"Accuracy candidat {candidate_accuracy}%, seuil minimum 35%."),
+        "log_loss": _gate(log_loss_improved, "Log loss candidat inférieur au modèle production."),
+        "brier_score": _gate(brier_ok, f"Brier candidat {candidate_brier}."),
+        "roi": _gate(roi_non_negative, "ROI théorique production non négatif sur l'échantillon évalué."),
+        "drift": _gate(drift_ok, "Pas de dérive excessive entre shadow et production."),
+        "tested_matches": _gate(enough_tested, f"{shadow_evaluated} matchs shadow évalués, minimum 50."),
+    }
+
+    if not all(rule["passed"] for rule in promotion_rules.values()):
+        blockers.append("Critères stricts de promotion non satisfaits.")
 
     trend = monitoring_report.get("trend_summary") or {}
     monitoring_status = trend.get("monitoring_status") or "unknown"
@@ -181,6 +216,14 @@ def build_model_governance_report(
                 **hybrid_gate,
                 "recommendation": hybrid_reco,
             },
+        },
+        "promotion_rules": promotion_rules,
+        "production_feedback": {
+            "evaluated_matches": feedback_report.get("evaluated_matches", 0),
+            "accuracy": feedback_report.get("accuracy", 0),
+            "log_loss": production_log_loss,
+            "brier_score": production_brier,
+            "theoretical_roi": production_roi,
         },
         "promotion_readiness": {
             "ready": False,
