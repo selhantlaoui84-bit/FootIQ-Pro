@@ -104,7 +104,6 @@ async function run() {
     '../pages/api/admin/alerts.ts',
     '../pages/api/admin/feature-summary.ts',
     '../pages/api/admin/feature-quality-report.ts',
-    '../pages/api/admin/model-governance.ts',
     '../pages/api/admin/learning-feedback.ts',
     '../pages/api/admin/calibration.ts',
     '../pages/api/admin/model-versions.ts',
@@ -119,6 +118,13 @@ async function run() {
     assert.doesNotMatch(proxySource, /footiq-pro-production\.up\.railway\.app/);
     assert.doesNotMatch(proxySource, publicAdminKeyPattern);
   }
+
+  const modelGovernanceProxySource = await readFile(new URL('../pages/api/admin/model-governance.ts', import.meta.url), 'utf8');
+  assert.match(modelGovernanceProxySource, /method: 'GET'/);
+  assert.match(modelGovernanceProxySource, /requireAdminKey: true/);
+  assert.match(modelGovernanceProxySource, /timeoutMs: 45000/);
+  assert.doesNotMatch(modelGovernanceProxySource, /footiq-pro-production\.up\.railway\.app/);
+  assert.doesNotMatch(modelGovernanceProxySource, publicAdminKeyPattern);
 
   const workflowProxySource = await readFile(new URL('../pages/api/admin/workflow-status.ts', import.meta.url), 'utf8');
   assert.match(workflowProxySource, /\/admin\/workflow-status/);
@@ -219,7 +225,7 @@ async function run() {
   assert.match(apiClientSource, /fetchProxyJson<AdminAlertsReport>\('\/api\/admin\/alerts', undefined, 15000\)/);
   assert.match(apiClientSource, /fetchProxyJson<FeatureSummary>\('\/api\/admin\/feature-summary', undefined, 15000\)/);
   assert.match(apiClientSource, /fetchProxyJson<DatasetQualityReport>\(`\/api\/admin\/feature-quality-report\?limit=\$\{safeLimit\}`, undefined, 15000\)/);
-  assert.match(apiClientSource, /fetchProxyJson<ModelGovernanceReport>\('\/api\/admin\/model-governance', undefined, 15000\)/);
+  assert.match(apiClientSource, /fetchProxyJson<ModelGovernanceReport>\('\/api\/admin\/model-governance', undefined, 45000\)/);
   assert.match(apiClientSource, /fetchProxyJson<LearningFeedbackReport>\('\/api\/admin\/learning-feedback', undefined, 15000\)/);
   assert.match(apiClientSource, /fetchProxyJson<CalibrationReport>\('\/api\/admin\/calibration', undefined, 15000\)/);
   assert.match(apiClientSource, /fetchProxyJson<ModelVersionsResponse>\('\/api\/admin\/model-versions', undefined, 15000\)/);

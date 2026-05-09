@@ -628,5 +628,5 @@ export async function getMlShadowBacktesting(limit = 500) {
 export async function getModelGovernance(): Promise<ModelGovernanceReport> {
   if (IS_BUILD) return mockModelGovernance;
 
-  return fetchProxyJson<ModelGovernanceReport>('/api/admin/model-governance', undefined, 15000);
+  return fetchProxyJson<ModelGovernanceReport>('/api/admin/model-governance', undefined, 45000);
 }
