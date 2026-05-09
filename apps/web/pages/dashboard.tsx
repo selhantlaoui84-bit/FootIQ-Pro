@@ -21,6 +21,7 @@ type DashboardProps = {
   matches: Match[];
   predictions: Prediction[];
   summary: DashboardSummary;
+  referenceTime: string;
 };
 
 export const getServerSideProps: GetServerSideProps<DashboardProps> = async () => {
@@ -32,8 +33,10 @@ export const getServerSideProps: GetServerSideProps<DashboardProps> = async () =
   const allMatches = hasOfficialMatches
     ? rawMatches.filter((match) => match.source === 'football-data.org')
     : rawMatches;
+  const referenceTime = new Date().toISOString();
+  const referenceTimestamp = new Date(referenceTime).getTime();
   const upcoming = [...allMatches]
-    .filter((match) => String(match.status ?? '').toUpperCase() !== 'FINISHED')
+    .filter((match) => isUpcoming(match, referenceTimestamp))
     .sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime());
   const finished = [...allMatches]
     .filter((match) => String(match.status ?? '').toUpperCase() === 'FINISHED')
@@ -56,13 +59,15 @@ export const getServerSideProps: GetServerSideProps<DashboardProps> = async () =
       matches: [...upcoming.slice(0, 5), ...finished.slice(0, 5)],
       predictions: [],
       summary: dashboardSummary,
+      referenceTime,
     },
   };
 };
 
-export default function DashboardPage({ matches, predictions, summary }: DashboardProps) {
+export default function DashboardPage({ matches, predictions, summary, referenceTime }: DashboardProps) {
+  const referenceTimestamp = new Date(referenceTime).getTime();
   const upcoming = [...matches]
-    .filter((match) => String(match.status ?? '').toUpperCase() !== 'FINISHED')
+    .filter((match) => isUpcoming(match, referenceTimestamp))
     .sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime())
     .slice(0, 5);
 
@@ -298,6 +303,19 @@ function PredictionCard({ prediction }: { prediction: Prediction }) {
       <p>{prediction.main_prediction}</p>
     </Link>
   );
+}
+
+function isFinished(match: Match) {
+  return String(match.status ?? '').toUpperCase() === 'FINISHED';
+}
+
+function isPastKickoff(match: Match, referenceTimestamp: number) {
+  const kickoffTimestamp = new Date(match.kickoff).getTime();
+  return Number.isFinite(kickoffTimestamp) && kickoffTimestamp < referenceTimestamp;
+}
+
+function isUpcoming(match: Match, referenceTimestamp: number) {
+  return !isFinished(match) && !isPastKickoff(match, referenceTimestamp);
 }
 
 function Distribution({

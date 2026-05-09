@@ -18,6 +18,7 @@ import { Layout } from '~/src-layout';
 
 type MatchesProps = {
   matches: Match[];
+  referenceTime: string;
 };
 
 const viewLabels: Record<MatchView, string> = {
@@ -36,17 +37,19 @@ export const getServerSideProps: GetServerSideProps<MatchesProps> = async () => 
   return {
     props: {
       matches: matches.map(compactMatch),
+      referenceTime: new Date().toISOString(),
     },
   };
 };
 
-export default function MatchesPage({ matches }: MatchesProps) {
+export default function MatchesPage({ matches, referenceTime }: MatchesProps) {
   const router = useRouter();
   const [query, setQuery] = useState('');
   const [competition, setCompetition] = useState('');
   const [view, setView] = useState<MatchView>('upcoming');
   const [status, setStatus] = useState('');
   const [sort, setSort] = useState('date');
+  const referenceTimestamp = new Date(referenceTime).getTime();
   const competitions = [...new Set(matches.map((match) => match.competition).filter(Boolean))].sort();
 
   useEffect(() => {
@@ -62,11 +65,13 @@ export default function MatchesPage({ matches }: MatchesProps) {
     const normalizedQuery = query.trim().toLowerCase();
     const result = matches.filter((match) => {
       const finished = isFinished(match);
+      const upcoming = isUpcoming(match, referenceTimestamp);
+      const historical = finished || isPastKickoff(match, referenceTimestamp);
       const searchHaystack = `${match.home_team} ${match.away_team} ${match.competition} ${match.slug} ${match.match_id}`.toLowerCase();
       const matchesQuery = !normalizedQuery || searchHaystack.includes(normalizedQuery);
       const matchesCompetition = !competition || match.competition === competition;
-      const matchesView = view === 'all' || (view === 'history' ? finished : !finished);
-      const matchesStatus = !status || (status === 'upcoming' ? !finished : status === 'finished' ? finished : match.status === status);
+      const matchesView = view === 'all' || (view === 'history' ? historical : upcoming);
+      const matchesStatus = !status || (status === 'upcoming' ? upcoming : status === 'finished' ? finished : match.status === status);
 
       return matchesQuery && matchesCompetition && matchesView && matchesStatus;
     });
@@ -84,10 +89,10 @@ export default function MatchesPage({ matches }: MatchesProps) {
       const bDate = new Date(b.kickoff).getTime();
       return view === 'history' ? bDate - aDate : aDate - bDate;
     });
-  }, [competition, matches, query, sort, status, view]);
+  }, [competition, matches, query, referenceTimestamp, sort, status, view]);
 
-  const upcomingCount = matches.filter((match) => !isFinished(match)).length;
-  const historyCount = matches.filter(isFinished).length;
+  const upcomingCount = matches.filter((match) => isUpcoming(match, referenceTimestamp)).length;
+  const historyCount = matches.filter((match) => isFinished(match) || isPastKickoff(match, referenceTimestamp)).length;
 
   return (
     <ProtectedRoute>
@@ -237,4 +242,13 @@ function compactMatch(match: Match): Match {
 
 function isFinished(match: Match) {
   return String(match.status ?? '').toUpperCase() === 'FINISHED';
+}
+
+function isPastKickoff(match: Match, referenceTimestamp: number) {
+  const kickoffTimestamp = new Date(match.kickoff).getTime();
+  return Number.isFinite(kickoffTimestamp) && kickoffTimestamp < referenceTimestamp;
+}
+
+function isUpcoming(match: Match, referenceTimestamp: number) {
+  return !isFinished(match) && !isPastKickoff(match, referenceTimestamp);
 }

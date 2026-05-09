@@ -19,6 +19,10 @@ const protectedRoute = new URL('../components/ProtectedRoute.tsx', import.meta.u
 const authProvider = new URL('../lib/auth.tsx', import.meta.url);
 const middleware = new URL('../middleware.ts', import.meta.url);
 const apiClient = new URL('../lib/api.ts', import.meta.url);
+const dashboardPage = new URL('../pages/dashboard.tsx', import.meta.url);
+const matchesPage = new URL('../pages/matches.tsx', import.meta.url);
+const layoutSourceFile = new URL('../src-layout.tsx', import.meta.url);
+const globalStyles = new URL('../styles/globals.css', import.meta.url);
 const backendMain = new URL('../../api/main.py', import.meta.url);
 const runtimeStore = new URL('../../api/data/runtime_store.py', import.meta.url);
 
@@ -221,6 +225,33 @@ async function run() {
   assert.doesNotMatch(apiClientSource, /return data \?\? mockAdminAlertsReport/);
   assert.doesNotMatch(apiClientSource, /return data \?\? mockModelGovernance/);
   assert.doesNotMatch(apiClientSource, publicAdminKeyPattern);
+
+  const matchesPageSource = await readFile(matchesPage, 'utf8');
+  assert.doesNotMatch(matchesPageSource, brokenEncoding);
+  assert.match(matchesPageSource, /GetServerSideProps/);
+  assert.doesNotMatch(matchesPageSource, /getStaticProps/);
+  assert.match(matchesPageSource, /referenceTimestamp/);
+  assert.match(matchesPageSource, /isUpcoming\(match, referenceTimestamp\)/);
+  assert.match(matchesPageSource, /isPastKickoff\(match, referenceTimestamp\)/);
+  assert.doesNotMatch(matchesPageSource, /status === 'FINISHED'[\s\S]{0,120}: !finished/);
+
+  const dashboardPageSource = await readFile(dashboardPage, 'utf8');
+  assert.doesNotMatch(dashboardPageSource, brokenEncoding);
+  assert.match(dashboardPageSource, /GetServerSideProps/);
+  assert.match(dashboardPageSource, /referenceTime/);
+  assert.match(dashboardPageSource, /isUpcoming\(match, referenceTimestamp\)/);
+  assert.match(dashboardPageSource, /isPastKickoff\(match, referenceTimestamp\)/);
+  assert.doesNotMatch(dashboardPageSource, /\.filter\(\(match\) => String\(match\.status \?\? ''\)\.toUpperCase\(\) !== 'FINISHED'\)/);
+
+  const layoutSource = await readFile(layoutSourceFile, 'utf8');
+  assert.doesNotMatch(layoutSource, brokenEncoding);
+  assert.match(layoutSource, /<Link href="\/dashboard">Tableau de bord<\/Link>/);
+  assert.match(layoutSource, /\{ href: '\/matches', label: 'Matchs' \}/);
+
+  const stylesSource = await readFile(globalStyles, 'utf8');
+  assert.match(stylesSource, /\.topbar \{[\s\S]*z-index: 1000/);
+  assert.match(stylesSource, /nav a \{[\s\S]*display: inline-flex/);
+  assert.match(stylesSource, /\.navButton \{[\s\S]*z-index: 1/);
 
   const backendSource = await readFile(backendMain, 'utf8');
   assert.match(backendSource, /data_imported = refresh_matches_imported > 0 or repository_matches_count > 0/);
