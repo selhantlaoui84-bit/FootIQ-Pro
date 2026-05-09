@@ -21,6 +21,7 @@ const middleware = new URL('../middleware.ts', import.meta.url);
 const apiClient = new URL('../lib/api.ts', import.meta.url);
 const dashboardPage = new URL('../pages/dashboard.tsx', import.meta.url);
 const matchesPage = new URL('../pages/matches.tsx', import.meta.url);
+const performancePage = new URL('../pages/performance.tsx', import.meta.url);
 const layoutSourceFile = new URL('../src-layout.tsx', import.meta.url);
 const globalStyles = new URL('../styles/globals.css', import.meta.url);
 const backendMain = new URL('../../api/main.py', import.meta.url);
@@ -241,7 +242,17 @@ async function run() {
   assert.match(dashboardPageSource, /referenceTime/);
   assert.match(dashboardPageSource, /isUpcoming\(match, referenceTimestamp\)/);
   assert.match(dashboardPageSource, /isPastKickoff\(match, referenceTimestamp\)/);
+  assert.match(dashboardPageSource, /TeamCrest name=\{prediction\.home_team\}/);
+  assert.match(dashboardPageSource, /isUpcomingPrediction\(prediction, referenceTimestamp\)/);
+  assert.doesNotMatch(dashboardPageSource, /isUpcomingPrediction\(prediction, referenceDayStart\)/);
   assert.doesNotMatch(dashboardPageSource, /\.filter\(\(match\) => String\(match\.status \?\? ''\)\.toUpperCase\(\) !== 'FINISHED'\)/);
+
+  const performancePageSource = await readFile(performancePage, 'utf8');
+  assert.doesNotMatch(performancePageSource, brokenEncoding);
+  assert.match(performancePageSource, /buildEffectiveDatasetQuality/);
+  assert.match(performancePageSource, /buildEffectiveGovernanceGates/);
+  assert.match(performancePageSource, /rows_with_target/);
+  assert.match(performancePageSource, /safe_to_train/);
 
   const layoutSource = await readFile(layoutSourceFile, 'utf8');
   assert.doesNotMatch(layoutSource, brokenEncoding);

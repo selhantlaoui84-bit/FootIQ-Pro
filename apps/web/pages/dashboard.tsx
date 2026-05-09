@@ -2,7 +2,7 @@ import type { GetServerSideProps } from 'next';
 import Link from 'next/link';
 import type { CSSProperties, ReactNode } from 'react';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
-import { MiniLineChart, TeamComparisonCurve } from '~/components/ui';
+import { MiniLineChart, TeamComparisonCurve, TeamCrest } from '~/components/ui';
 import { getMatches, getPredictions, getPublicDashboardSummary } from '~/lib/api';
 import {
   matchHref,
@@ -28,28 +28,19 @@ type DashboardProps = {
 };
 
 export const getServerSideProps: GetServerSideProps<DashboardProps> = async () => {
-  let rawMatches: Match[] = [];
-  let predictions: Prediction[] = [];
-  let summary: DashboardSummary = buildDashboardSummary();
+  const [matchesResult, summaryResult, predictionsResult] = await Promise.allSettled([
+    getMatches({ includeFinished: true }),
+    getPublicDashboardSummary(),
+    getPredictions({ limit: 160, view: 'upcoming', includeHybridEngine: true }),
+  ]);
 
-  try {
-    rawMatches = await getMatches({ includeFinished: true });
-  } catch (error) {
-    console.error('Dashboard matches SSR fallback:', error);
-    rawMatches = mockMatches;
-  }
+  let rawMatches: Match[] = matchesResult.status === 'fulfilled' ? matchesResult.value : mockMatches;
+  let predictions: Prediction[] = predictionsResult.status === 'fulfilled' ? predictionsResult.value : [];
+  let summary: DashboardSummary = summaryResult.status === 'fulfilled' ? summaryResult.value : buildDashboardSummary();
 
-  try {
-    summary = await getPublicDashboardSummary();
-  } catch (error) {
-    console.error('Dashboard summary SSR fallback:', error);
-  }
-
-  try {
-    predictions = await getPredictions({ limit: 80, view: 'upcoming', includeHybridEngine: true });
-  } catch (error) {
-    console.error('Dashboard predictions SSR unavailable:', error);
-  }
+  if (matchesResult.status === 'rejected') console.error('Dashboard matches SSR fallback:', matchesResult.reason);
+  if (summaryResult.status === 'rejected') console.error('Dashboard summary SSR fallback:', summaryResult.reason);
+  if (predictionsResult.status === 'rejected') console.error('Dashboard predictions SSR unavailable:', predictionsResult.reason);
   const hasOfficialMatches = rawMatches.some((match) => match.source === 'football-data.org');
   const allMatches = hasOfficialMatches
     ? rawMatches.filter((match) => match.source === 'football-data.org')
@@ -105,8 +96,12 @@ export default function DashboardPage({ matches, predictions, summary, reference
 
   const competitions = Object.entries(summary.competitions_breakdown);
   const featuredMatch = upcoming[0] ?? finished[0] ?? matches[0];
-  const signalPredictions = (summary.top_reliable_matches.length > 0 ? summary.top_reliable_matches : predictions)
+  const signalPredictions = uniquePredictions([...predictions, ...summary.top_reliable_matches])
+    .filter((prediction) => isUpcomingPrediction(prediction, referenceTimestamp))
     .filter((prediction) => typeof prediction.confidence?.score === 'number')
+    .sort((a, b) => b.confidence.score - a.confidence.score);
+  const riskySignalPredictions = uniquePredictions(summary.top_risky_matches)
+    .filter((prediction) => isUpcomingPrediction(prediction, referenceTimestamp))
     .sort((a, b) => b.confidence.score - a.confidence.score);
   const averageConfidence =
     signalPredictions.length > 0
@@ -144,14 +139,14 @@ export default function DashboardPage({ matches, predictions, summary, reference
               </div>
               <div className="teamsDuel">
                 <div>
-                  <span className="teamCrest">{initials(featuredMatch?.home_team ?? 'Home')}</span>
+                  <TeamCrest name={featuredMatch?.home_team ?? 'Équipe domicile'} />
                   <strong>{featuredMatch?.home_team ?? 'Équipe domicile'}</strong>
                   <small>Probabilité de victoire</small>
                   <em>{featuredMatch?.probabilities?.home ?? 54}%</em>
                 </div>
                 <TacticalPitch value={featuredMatch?.probabilities?.draw ?? 26} />
                 <div>
-                  <span className="teamCrest away">{initials(featuredMatch?.away_team ?? 'Away')}</span>
+                  <TeamCrest name={featuredMatch?.away_team ?? 'Équipe extérieure'} tone="away" />
                   <strong>{featuredMatch?.away_team ?? 'Équipe extérieure'}</strong>
                   <small>Probabilité de victoire</small>
                   <em>{featuredMatch?.probabilities?.away ?? 20}%</em>
@@ -171,7 +166,7 @@ export default function DashboardPage({ matches, predictions, summary, reference
               <div className="premiumSignalList">
                 {signalPredictions.slice(0, 5).map((prediction) => (
                   <Link href={matchHref(prediction)} key={prediction.match_id}>
-                    <span className="signalBall">⚽</span>
+                    <TeamCrest name={prediction.home_team} />
                     <span>
                       <strong>{prediction.home_team}</strong>
                       <small>{prediction.main_prediction}</small>
@@ -280,14 +275,14 @@ export default function DashboardPage({ matches, predictions, summary, reference
         </section>
 
         <section className="sectionSplit">
-          <Panel title="Matchs les plus fiables" empty="Aucun match fiable disponible.">
-            {summary.top_reliable_matches.map((prediction) => (
+          <Panel title="Matchs les plus fiables" empty="Aucun match fiable futur disponible.">
+            {signalPredictions.map((prediction) => (
               <PredictionCard prediction={prediction} key={prediction.match_id} />
             ))}
           </Panel>
 
-          <Panel title="Matchs à surveiller" empty="Aucune alerte active.">
-            {summary.top_risky_matches.map((prediction) => (
+          <Panel title="Matchs à surveiller" empty="Aucune alerte future active.">
+            {riskySignalPredictions.map((prediction) => (
               <PredictionCard prediction={prediction} key={prediction.match_id} />
             ))}
           </Panel>
@@ -349,31 +344,42 @@ function Panel({ title, empty, children }: { title: string; empty: string; child
 }
 
 function UpcomingMatchCard({ match }: { match: Match }) {
+  const hasProbabilities =
+    typeof match.probabilities?.home === 'number' &&
+    typeof match.probabilities?.draw === 'number' &&
+    typeof match.probabilities?.away === 'number';
+
   return (
-    <Link className="card matchCard clickable-card" href={matchHref(match)}>
+    <Link className="card matchCard fixtureCard clickable-card" href={matchHref(match)}>
       <div className="cardTop">
         <span>{formatCompetitionLabel(match.competition)}</span>
         <span className="badge">{formatKickoffFr(match.kickoff)}</span>
       </div>
 
-      <h3>
-        {match.home_team} vs {match.away_team}
-      </h3>
-
-      <div className="compactDataGrid three">
-        <div className="miniStat">
-          <span>Domicile</span>
-          <strong>{typeof match.probabilities?.home === 'number' ? `${match.probabilities.home}%` : 'N/A'}</strong>
-        </div>
-        <div className="miniStat">
-          <span>Nul</span>
-          <strong>{typeof match.probabilities?.draw === 'number' ? `${match.probabilities.draw}%` : 'N/A'}</strong>
-        </div>
-        <div className="miniStat">
-          <span>Extérieur</span>
-          <strong>{typeof match.probabilities?.away === 'number' ? `${match.probabilities.away}%` : 'N/A'}</strong>
-        </div>
+      <div className="fixtureTeams">
+        <TeamLine name={match.home_team} />
+        <span className="versus">vs</span>
+        <TeamLine name={match.away_team} tone="away" />
       </div>
+
+      {hasProbabilities ? (
+        <div className="compactDataGrid three readableProbGrid">
+          <div className="miniStat">
+            <span>Domicile</span>
+            <strong>{match.probabilities?.home}%</strong>
+          </div>
+          <div className="miniStat">
+            <span>Nul</span>
+            <strong>{match.probabilities?.draw}%</strong>
+          </div>
+          <div className="miniStat">
+            <span>Extérieur</span>
+            <strong>{match.probabilities?.away}%</strong>
+          </div>
+        </div>
+      ) : (
+        <div className="dataUnavailable">Probabilités en attente de calcul exploitable</div>
+      )}
     </Link>
   );
 }
@@ -456,6 +462,33 @@ function TacticalPitch({ value }: { value: number }) {
   );
 }
 
+function TeamLine({ name, tone = 'home' }: { name: string; tone?: 'home' | 'away' }) {
+  return (
+    <span className="teamLine">
+      <TeamCrest name={name} tone={tone} />
+      <strong>{name}</strong>
+    </span>
+  );
+}
+
+function uniquePredictions(items: Prediction[]) {
+  const map = new Map<string, Prediction>();
+  for (const item of items) {
+    const key = item.match_id || item.slug || item.id;
+    if (!map.has(key)) map.set(key, item);
+  }
+  return [...map.values()];
+}
+
+function isUpcomingPrediction(prediction: Prediction, referenceTimestamp: number) {
+  const kickoffTime = new Date(prediction.kickoff).getTime();
+  return (
+    String(prediction.status ?? '').toUpperCase() !== 'FINISHED' &&
+    Number.isFinite(kickoffTime) &&
+    kickoffTime >= referenceTimestamp
+  );
+}
+
 function initials(name: string) {
   return name
     .split(/\s+/)
@@ -508,3 +541,4 @@ function Distribution({
     </article>
   );
 }
+

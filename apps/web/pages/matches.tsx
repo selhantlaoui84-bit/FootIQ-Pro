@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useEffect, useMemo, useState } from 'react';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
-import { MiniLineChart, TacticalPitch } from '~/components/ui';
+import { MiniLineChart, TacticalPitch, TeamCrest } from '~/components/ui';
 import { getMatches } from '~/lib/api';
 import { matchHref, matches as mockMatches, statusClass, type Match, type MatchView } from '~/lib/mock-data';
 import {
@@ -229,14 +229,20 @@ function MatchRow({ match }: { match: Match }) {
     match.score_full_time_away !== undefined &&
     match.score_full_time_away !== null;
   const summary = formatFinishedMatchSummary(match);
+  const hasProbabilities =
+    typeof match.probabilities?.home === 'number' &&
+    typeof match.probabilities?.draw === 'number' &&
+    typeof match.probabilities?.away === 'number';
 
   return (
-    <Link className="rowCard clickable-card fluidCard" href={matchHref(match)}>
+    <Link className="rowCard clickable-card fluidCard matchListRow" href={matchHref(match)}>
       <div>
         <span className="muted">{formatCompetitionLabel(match.competition)}</span>
-        <h2>
-          {match.home_team} vs {match.away_team}
-        </h2>
+        <div className="fixtureTeams">
+          <TeamLine name={match.home_team} />
+          <span className="versus">vs</span>
+          <TeamLine name={match.away_team} tone="away" />
+        </div>
         <p>{formatKickoffFr(match.kickoff)}</p>
         <div className="cardTop compact">
           <span className={`badge status-badge ${finished ? 'historicalBadge' : ''}`}>
@@ -264,18 +270,20 @@ function MatchRow({ match }: { match: Match }) {
             <strong className="scoreValue">Score non disponible</strong>
           )}
         </div>
-      ) : (
-        <div className="probGrid">
+      ) : hasProbabilities ? (
+        <div className="probGrid readableProbGrid">
           <span>
-            1 <strong>{typeof match.probabilities?.home === 'number' ? `${match.probabilities.home}%` : 'N/A'}</strong>
+            1 <strong>{match.probabilities?.home}%</strong>
           </span>
           <span>
-            N <strong>{typeof match.probabilities?.draw === 'number' ? `${match.probabilities.draw}%` : 'N/A'}</strong>
+            N <strong>{match.probabilities?.draw}%</strong>
           </span>
           <span>
-            2 <strong>{typeof match.probabilities?.away === 'number' ? `${match.probabilities.away}%` : 'N/A'}</strong>
+            2 <strong>{match.probabilities?.away}%</strong>
           </span>
         </div>
+      ) : (
+        <div className="dataUnavailable">Probabilités en attente</div>
       )}
 
       <div>
@@ -300,6 +308,15 @@ function compactMatch(match: Match): Match {
   } = match as Match & { raw_json?: unknown };
 
   return rest;
+}
+
+function TeamLine({ name, tone = 'home' }: { name: string; tone?: 'home' | 'away' }) {
+  return (
+    <span className="teamLine">
+      <TeamCrest name={name} tone={tone} />
+      <strong>{name}</strong>
+    </span>
+  );
 }
 
 function isFinished(match: Match) {

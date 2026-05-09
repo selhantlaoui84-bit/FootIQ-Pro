@@ -812,6 +812,58 @@ input::placeholder {
   color: var(--text);
 }
 
+.fixtureCard {
+  border-color: rgba(197, 156, 83, 0.28);
+  background:
+    linear-gradient(135deg, rgba(8, 48, 31, 0.86), rgba(2, 18, 12, 0.92)),
+    var(--card);
+}
+
+.fixtureTeams {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.teamLine {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 10px;
+}
+
+.teamLine strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.versus {
+  color: var(--gold);
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.readableProbGrid span,
+.readableProbGrid .miniStat {
+  border: 1px solid rgba(197, 156, 83, 0.2);
+  background: rgba(4, 23, 16, 0.72);
+}
+
+.dataUnavailable {
+  padding: 12px 14px;
+  border: 1px solid rgba(197, 156, 83, 0.28);
+  border-radius: 12px;
+  color: var(--muted);
+  background: rgba(4, 23, 16, 0.66);
+  font-weight: 700;
+}
+
+.matchListRow {
+  grid-template-columns: 1.35fr 1fr 0.55fr auto;
+}
+
 .textLink {
   color: var(--cyan);
   font-weight: 800;
