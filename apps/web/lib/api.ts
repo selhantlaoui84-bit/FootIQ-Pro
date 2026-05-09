@@ -31,6 +31,7 @@ import {
   mockLearningFeedbackReport,
   mockCalibrationReport,
   mockModelVersionsResponse,
+  mockLearningMonitoringReport,
   type AdminAlertsReport,
   type AdminDiagnosticsResponse,
   type ModelGovernanceReport,
@@ -65,6 +66,7 @@ import {
   type LearningFeedbackReport,
   type CalibrationReport,
   type ModelVersionsResponse,
+  type LearningMonitoringReport,
 } from '~/lib/mock-data';
 
 
@@ -435,6 +437,12 @@ export async function getModelVersionsRegistry(): Promise<ModelVersionsResponse>
   if (IS_BUILD) return mockModelVersionsResponse;
 
   return fetchProxyJson<ModelVersionsResponse>('/api/admin/model-versions', undefined, 15000);
+}
+
+export async function getLearningMonitoring(): Promise<LearningMonitoringReport> {
+  if (IS_BUILD) return mockLearningMonitoringReport;
+
+  return fetchProxyJson<LearningMonitoringReport>('/api/admin/learning-monitoring', undefined, 15000);
 }
 
 export async function getPublicDashboardSummary(): Promise<DashboardSummary> {

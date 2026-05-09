@@ -23,7 +23,7 @@ def _num(value: Any, default: int | float = 0):
 
 def _candidate_from_ml_status(ml_status: dict[str, Any] | None) -> dict[str, Any]:
     ml_status = ml_status or {}
-    candidate = ml_status.get("latest_candidate") or {}
+    candidate = ml_status.get("latest_candidate_model") or ml_status.get("latest_candidate") or {}
 
     return {
         "version": candidate.get("model_version") or "ml-candidate-v1",
@@ -32,7 +32,8 @@ def _candidate_from_ml_status(ml_status: dict[str, Any] | None) -> dict[str, Any
         "candidate_is_production": False,
         "rows_used": candidate.get("rows_used") or 0,
         "accuracy": candidate.get("accuracy"),
-        "brier_score_1x2": candidate.get("brier_score_1x2"),
+        "log_loss": candidate.get("log_loss"),
+        "brier_score_1x2": candidate.get("brier_score_1x2") or candidate.get("brier_score"),
         "trained_at": candidate.get("trained_at"),
     }
 
@@ -61,6 +62,8 @@ def build_model_governance_report(
     feedback_report = feedback_report or {}
 
     production_version = (
+        ((ml_status or {}).get("current_production_model") or {}).get("model_version")
+        or
         model_metadata.get("current_model_version")
         or monitoring_report.get("production_model_version")
         or "elo-poisson-calibrated-v1"
@@ -89,7 +92,7 @@ def build_model_governance_report(
     rows_used = int(candidate.get("rows_used") or 0)
     candidate_accuracy = int(candidate.get("accuracy") or 0)
     candidate_brier = candidate.get("brier_score_1x2")
-    candidate_log_loss = (ml_status.get("latest_candidate") or {}).get("log_loss") if ml_status else None
+    candidate_log_loss = candidate.get("log_loss") or ((ml_status.get("latest_candidate") or {}).get("log_loss") if ml_status else None)
     trained = candidate_status in {"ok", "trained", "success"} or rows_used >= 30
 
     min_rows_ok = rows_used >= 30

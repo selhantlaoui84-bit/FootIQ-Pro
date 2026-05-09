@@ -14,6 +14,7 @@ import {
   getFeatureSummary,
   getFeatureStoreJobStatus,
   getLearningFeedback,
+  getLearningMonitoring,
   getModelVersionsRegistry,
   getShadowPredictionJobStatus,
   getModelGovernance,
@@ -36,6 +37,7 @@ import type {
   HealthResponse,
   CalibrationReport,
   LearningFeedbackReport,
+  LearningMonitoringReport,
   MatchView,
   ModelGovernanceReport,
   ModelVersionsResponse,
@@ -53,6 +55,7 @@ type AdminLoadErrors = {
   dashboardSummaryError: string | null;
   qualityReportError: string | null;
   governanceError: string | null;
+  learningMonitoringError: string | null;
 };
 
 type AdminLoadResult<T> = {
@@ -68,6 +71,7 @@ const emptyAdminLoadErrors: AdminLoadErrors = {
   dashboardSummaryError: null,
   qualityReportError: null,
   governanceError: null,
+  learningMonitoringError: null,
 };
 
 const adminLoadErrorLabels: Record<keyof AdminLoadErrors, string> = {
@@ -78,6 +82,7 @@ const adminLoadErrorLabels: Record<keyof AdminLoadErrors, string> = {
   dashboardSummaryError: 'Résumé dashboard',
   qualityReportError: 'Rapport qualité',
   governanceError: 'Gouvernance modèle',
+  learningMonitoringError: 'Monitoring learning',
 };
 
 function valueBadge(value?: string | null) {
@@ -156,6 +161,7 @@ export default function AdminPage() {
   const [isTraining, setIsTraining] = useState(false);
   const [modelGovernance, setModelGovernance] = useState<ModelGovernanceReport | null>(null);
   const [learningFeedback, setLearningFeedback] = useState<LearningFeedbackReport | null>(null);
+  const [learningMonitoring, setLearningMonitoring] = useState<LearningMonitoringReport | null>(null);
   const [calibrationReport, setCalibrationReport] = useState<CalibrationReport | null>(null);
   const [modelVersions, setModelVersions] = useState<ModelVersionsResponse | null>(null);
   const [adminAlerts, setAdminAlerts] = useState<AdminAlertsReport | null>(null);
@@ -252,6 +258,7 @@ export default function AdminPage() {
       qualityResult,
       governanceResult,
       feedbackResult,
+      monitoringResult,
       calibrationResult,
       modelVersionsResult,
       alertsResult,
@@ -264,6 +271,7 @@ export default function AdminPage() {
       captureAdminLoad(getFeatureQualityReport(), 'Impossible de charger /features/quality-report'),
       captureAdminLoad(getModelGovernance(), 'Impossible de charger /models/governance'),
       captureAdminLoad(getLearningFeedback(), 'Impossible de charger /learning/feedback'),
+      captureAdminLoad(getLearningMonitoring(), 'Impossible de charger /learning/monitoring'),
       captureAdminLoad(getCalibrationReport(), 'Impossible de charger /learning/calibration'),
       captureAdminLoad(getModelVersionsRegistry(), 'Impossible de charger /models/versions'),
       captureAdminLoad(getAdminAlerts(), 'Impossible de charger /admin/alerts'),
@@ -277,6 +285,7 @@ export default function AdminPage() {
       featureSummaryError: featureSummaryResult.error,
       qualityReportError: qualityResult.error,
       governanceError: governanceResult.error,
+      learningMonitoringError: monitoringResult.error,
       alertsError: alertsResult.error,
       dashboardSummaryError: dashboardResult.error,
     });
@@ -299,6 +308,7 @@ export default function AdminPage() {
     if (qualityResult.data) setFeatureQuality(qualityResult.data);
     if (governanceResult.data) setModelGovernance(governanceResult.data);
     if (feedbackResult.data) setLearningFeedback(feedbackResult.data);
+    if (monitoringResult.data) setLearningMonitoring(monitoringResult.data);
     if (calibrationResult.data) setCalibrationReport(calibrationResult.data);
     if (modelVersionsResult.data) setModelVersions(modelVersionsResult.data);
     if (alertsResult.data) setAdminAlerts(alertsResult.data);
@@ -902,7 +912,41 @@ export default function AdminPage() {
             <div className="metric"><span>ROI théorique</span><strong>{learningFeedback?.theoretical_roi ?? 'N/A'}</strong></div>
             <div className="metric"><span>Facteur calibration</span><strong>{calibrationReport?.global_calibration_factor ?? 1}</strong></div>
             <div className="metric"><span>Sample calibration</span><strong>{calibrationReport?.sample_size ?? 0}</strong></div>
-            <div className="metric"><span>Versions suivies</span><strong>{modelVersions?.versions.length ?? 0}</strong></div>
+            <div className="metric"><span>Versions suivies</span><strong>{modelVersions?.versions_count ?? modelVersions?.versions.length ?? 0}</strong></div>
+            <div className="metric"><span>Storage versions</span><strong>{modelVersions?.storage ?? learningMonitoring?.storage ?? 'inconnu'}</strong></div>
+          </div>
+
+          <div className="sectionSplit">
+            <article>
+              <h3>Monitoring learning</h3>
+              <div className="dataList">
+                <span>Statut <strong>{learningMonitoring?.status ?? 'unknown'}</strong></span>
+                <span>Stockage <strong>{learningMonitoring?.storage ?? modelVersions?.storage ?? 'inconnu'}</strong></span>
+                <span>Feedback <strong>{learningMonitoring?.feedback_status ?? 'unknown'}</strong></span>
+                <span>Calibration <strong>{learningMonitoring?.latest_calibration_version ?? calibrationReport?.calibration_version ?? 'N/A'}</strong></span>
+                <span>Production <strong>{learningMonitoring?.production_model_version ?? modelVersions?.current_production_model?.model_version ?? 'N/A'}</strong></span>
+                <span>Candidat <strong>{learningMonitoring?.latest_candidate_model_version ?? modelVersions?.latest_candidate_model?.model_version ?? 'N/A'}</strong></span>
+              </div>
+              {(learningMonitoring?.alerts ?? []).length > 0 && (
+                <div className="banner warning">{learningMonitoring?.alerts.join(' ')}</div>
+              )}
+              {learningMonitoring?.next_best_action && (
+                <Link className="button secondary" href={learningMonitoring.next_best_action.href}>
+                  {learningMonitoring.next_best_action.label}
+                </Link>
+              )}
+            </article>
+            <article>
+              <h3>Modèle candidat vs production</h3>
+              <div className="dataList">
+                <span>Production <strong>{modelVersions?.current_production_model?.model_version ?? 'elo-poisson-calibrated-v1'}</strong></span>
+                <span>Candidat <strong>{modelVersions?.latest_candidate_model?.model_version ?? 'N/A'}</strong></span>
+                <span>Lignes candidat <strong>{modelVersions?.latest_candidate_model?.rows_used ?? 0}</strong></span>
+                <span>Accuracy candidat <strong>{modelVersions?.latest_candidate_model?.accuracy ?? 'N/A'}</strong></span>
+                <span>Log loss candidat <strong>{modelVersions?.latest_candidate_model?.log_loss ?? 'N/A'}</strong></span>
+                <span>Brier candidat <strong>{modelVersions?.latest_candidate_model?.brier_score ?? 'N/A'}</strong></span>
+              </div>
+            </article>
           </div>
 
           <div className="sectionSplit">

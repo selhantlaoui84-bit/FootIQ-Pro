@@ -111,6 +111,37 @@ refresh_logs_table = Table(
     Column("created_at", TIMESTAMP(timezone=True)),
 )
 
+model_versions_table = Table(
+    "model_versions",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("model_version", Text, nullable=False),
+    Column("model_type", Text, nullable=True),
+    Column("status", Text, nullable=False),
+    Column("feature_set_version", Text, nullable=True),
+    Column("calibration_version", Text, nullable=True),
+    Column("trained_at", TIMESTAMP(timezone=True), nullable=True),
+    Column("promoted_at", TIMESTAMP(timezone=True), nullable=True),
+    Column("created_at", TIMESTAMP(timezone=True)),
+    Column("updated_at", TIMESTAMP(timezone=True)),
+    Column("rows_used", Integer, default=0),
+    Column("features_used", Integer, default=0),
+    Column("accuracy", Float, nullable=True),
+    Column("log_loss", Float, nullable=True),
+    Column("brier_score", Float, nullable=True),
+    Column("roi_theoretical", Float, nullable=True),
+    Column("target_distribution_json", Text, nullable=True),
+    Column("metrics_json", Text, nullable=True),
+    Column("governance_json", Text, nullable=True),
+    Column("notes", Text, nullable=True),
+    Column("source", Text, default="postgresql"),
+)
+Index("ux_model_versions_model_version", model_versions_table.c.model_version, unique=True)
+Index("ix_model_versions_status", model_versions_table.c.status)
+Index("ix_model_versions_created_at", model_versions_table.c.created_at)
+Index("ix_model_versions_model_type", model_versions_table.c.model_type)
+Index("ix_model_versions_trained_at", model_versions_table.c.trained_at)
+
 
 def get_database_url() -> str | None:
     database_url = os.getenv("DATABASE_URL")
@@ -173,10 +204,20 @@ def _ensure_runtime_columns_and_indexes(engine: Engine) -> None:
             "ALTER TABLE refresh_logs ADD COLUMN IF NOT EXISTS prediction_save_errors_json TEXT",
             "ALTER TABLE feature_snapshots ADD COLUMN IF NOT EXISTS payload_json TEXT",
             "CREATE UNIQUE INDEX IF NOT EXISTS ux_feature_snapshots_match_model ON feature_snapshots(match_id, model_version)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_model_versions_model_version ON model_versions(model_version)",
+            "CREATE INDEX IF NOT EXISTS ix_model_versions_status ON model_versions(status)",
+            "CREATE INDEX IF NOT EXISTS ix_model_versions_created_at ON model_versions(created_at)",
+            "CREATE INDEX IF NOT EXISTS ix_model_versions_model_type ON model_versions(model_type)",
+            "CREATE INDEX IF NOT EXISTS ix_model_versions_trained_at ON model_versions(trained_at)",
         ]
     elif engine.dialect.name == "sqlite":
         statements = [
             "CREATE UNIQUE INDEX IF NOT EXISTS ux_feature_snapshots_match_model ON feature_snapshots(match_id, model_version)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_model_versions_model_version ON model_versions(model_version)",
+            "CREATE INDEX IF NOT EXISTS ix_model_versions_status ON model_versions(status)",
+            "CREATE INDEX IF NOT EXISTS ix_model_versions_created_at ON model_versions(created_at)",
+            "CREATE INDEX IF NOT EXISTS ix_model_versions_model_type ON model_versions(model_type)",
+            "CREATE INDEX IF NOT EXISTS ix_model_versions_trained_at ON model_versions(trained_at)",
         ]
         with engine.connect() as connection:
             columns = {row._mapping["name"] for row in connection.execute(text("PRAGMA table_info(feature_snapshots)"))}
