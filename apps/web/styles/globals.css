@@ -2818,6 +2818,84 @@ body::before {
   height: 104px;
 }
 
+.insightBars,
+.teamDataQuality,
+.dataOnlyShowcase .premiumPanel {
+  display: grid;
+  gap: 12px;
+}
+
+.dataBar {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 12px;
+  align-items: center;
+}
+
+.dataBar span {
+  color: var(--reference-muted);
+}
+
+.dataBar strong {
+  color: #f5ead1;
+}
+
+.dataBar > div {
+  grid-column: 1 / -1;
+  height: 8px;
+  overflow: hidden;
+  background: rgba(181, 190, 169, 0.13);
+  border: 1px solid rgba(197, 156, 83, 0.12);
+  border-radius: 999px;
+}
+
+.dataBar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--reference-green), var(--reference-gold-soft));
+  border-radius: inherit;
+}
+
+.formBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.formBadges span:not(.muted) {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  color: #02100b;
+  background: var(--reference-muted);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.formBadges .form-v {
+  background: var(--reference-green);
+}
+
+.formBadges .form-n {
+  background: var(--reference-gold-soft);
+}
+
+.formBadges .form-d {
+  color: #f5ead1;
+  background: #b94a42;
+}
+
+.scoreBlock,
+.matchResultSummary span,
+.compactDataGrid .miniStat {
+  background:
+    linear-gradient(145deg, rgba(7, 35, 24, 0.78), rgba(3, 20, 14, 0.92)),
+    var(--reference-panel-deep);
+  border-color: rgba(197, 156, 83, 0.22);
+}
+
 .chartGridLine {
   fill: none;
   stroke: rgba(197, 156, 83, 0.13);

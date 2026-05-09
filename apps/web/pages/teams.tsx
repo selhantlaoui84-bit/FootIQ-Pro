@@ -1,7 +1,7 @@
 import type { GetStaticProps } from 'next';
 import Link from 'next/link';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
-import { MiniLineChart, RadarChart, TeamCrest } from '~/components/ui';
+import { TeamCrest } from '~/components/ui';
 import { getTeams } from '~/lib/api';
 import { teamHref, teams as mockTeams, type Team } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
@@ -42,7 +42,6 @@ export default function TeamsPage({ teams }: TeamsProps) {
               </div>
               <TeamCrest name={team.name} />
               <h2>{team.name}</h2>
-              <RadarChart labels={['Attaque', 'Forme', 'Elo', 'Défense', 'Risque']} />
               <div className="dataList">
                 <span>
                   Rating Elo <strong>{team.elo ?? 'N/A'}</strong>
@@ -54,11 +53,38 @@ export default function TeamsPage({ teams }: TeamsProps) {
                   Source <strong>{team.source ?? 'mock'}</strong>
                 </span>
               </div>
-              <MiniLineChart />
+              <TeamDataQuality team={team} />
             </Link>
           ))}
         </section>
       </Layout>
     </ProtectedRoute>
+  );
+}
+
+function TeamDataQuality({ team }: { team: Team }) {
+  const elo = typeof team.elo === 'number' ? team.elo : null;
+  const eloScore = elo === null ? 0 : Math.max(0, Math.min(100, ((elo - 1400) / 600) * 100));
+  const formLetters = String(team.form ?? '')
+    .replace(/\s+/g, '')
+    .split('')
+    .filter(Boolean)
+    .slice(0, 5);
+
+  return (
+    <div className="teamDataQuality">
+      <div className="dataBar">
+        <span>Niveau Elo</span>
+        <strong>{elo ?? 'N/A'}</strong>
+        <div><i style={{ width: `${eloScore || 4}%` }} /></div>
+      </div>
+      <div className="formBadges" aria-label="Forme récente">
+        {formLetters.length > 0 ? (
+          formLetters.map((letter, index) => <span className={`form-${letter.toLowerCase()}`} key={`${letter}-${index}`}>{letter}</span>)
+        ) : (
+          <span className="muted">Forme non disponible</span>
+        )}
+      </div>
+    </div>
   );
 }

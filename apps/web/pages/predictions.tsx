@@ -4,7 +4,7 @@ import { useRouter } from 'next/router';
 import { useEffect, useMemo, useState } from 'react';
 import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
-import { MiniBarChart, MiniLineChart, ProbabilityRing } from '~/components/ui';
+import { ProbabilityRing } from '~/components/ui';
 import { getPredictions } from '~/lib/api';
 import { isAvoidStatus, matchHref, predictions as mockPredictions, statusClass, type ConfidenceStatus, type Prediction } from '~/lib/mock-data';
 import { formatCompetitionLabel, formatKickoffFr, formatRecommendationLabel, formatStatusLabel } from '~/lib/ui-text';
@@ -12,6 +12,7 @@ import { Layout } from '~/src-layout';
 
 type PredictionsProps = {
   predictions: Prediction[];
+  referenceTime: string;
 };
 
 export const getStaticProps: GetStaticProps<PredictionsProps> = async () => {
@@ -24,16 +25,17 @@ export const getStaticProps: GetStaticProps<PredictionsProps> = async () => {
           limit: 100,
           view: 'upcoming',
         }),
+        referenceTime: new Date().toISOString(),
       },
       revalidate: 120,
     };
   } catch (error) {
     console.error('Predictions ISR fallback:', error);
-    return { props: { predictions: mockPredictions }, revalidate: 120 };
+    return { props: { predictions: mockPredictions, referenceTime: new Date().toISOString() }, revalidate: 120 };
   }
 };
 
-export default function PredictionsPage({ predictions }: PredictionsProps) {
+export default function PredictionsPage({ predictions, referenceTime }: PredictionsProps) {
   const router = useRouter();
   const [status, setStatus] = useState('');
   const [trapOnly, setTrapOnly] = useState(false);
@@ -49,10 +51,14 @@ export default function PredictionsPage({ predictions }: PredictionsProps) {
     setTrapOnly(router.query.trap === 'true');
   }, [router.query.status, router.query.trap]);
 
-  const filtered = useMemo(
-    () =>
-      predictions
+  const filtered = useMemo(() => {
+      const referenceStart = new Date(referenceTime);
+      referenceStart.setHours(0, 0, 0, 0);
+
+      return predictions
         .filter((prediction) => {
+          const kickoffTime = new Date(prediction.kickoff).getTime();
+          const isUpcoming = Number.isFinite(kickoffTime) && kickoffTime >= referenceStart.getTime();
           const statusMatches =
             !status ||
             prediction.confidence.status === status ||
@@ -66,10 +72,14 @@ export default function PredictionsPage({ predictions }: PredictionsProps) {
               .toLowerCase()
               .includes(query.trim().toLowerCase());
 
-          return statusMatches && trapMatches && riskMatches && confidenceMatches && queryMatches;
+          return isUpcoming && statusMatches && trapMatches && riskMatches && confidenceMatches && queryMatches;
         })
-        .sort((a, b) => b.confidence.score - a.confidence.score),
-    [highConfidence, predictions, query, riskOnly, status, trapOnly],
+        .sort((a, b) => {
+          const dateDelta = new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime();
+          return dateDelta || b.confidence.score - a.confidence.score;
+        });
+    },
+    [highConfidence, predictions, query, referenceTime, riskOnly, status, trapOnly],
   );
   const averageConfidence =
     filtered.length > 0
@@ -122,9 +132,8 @@ export default function PredictionsPage({ predictions }: PredictionsProps) {
         <div className="predictionMetrics">
           <article className="premiumPanel metricShowcase">
             <h2>Top value picks</h2>
-            <strong>+{Math.max(1, Math.round(averageConfidence / 20))},42%</strong>
-            <span>Valeur attendue moyenne</span>
-            <MiniLineChart />
+            <strong>{filtered.filter((prediction) => prediction.confidence.score >= 65).length}</strong>
+            <span>Signaux à confiance élevée</span>
           </article>
           <article className="premiumPanel metricShowcase">
             <h2>Confiance moyenne</h2>
@@ -133,8 +142,7 @@ export default function PredictionsPage({ predictions }: PredictionsProps) {
           <article className="premiumPanel metricShowcase">
             <h2>Suivi live</h2>
             <strong>{filtered.length}</strong>
-            <span>Prédictions actives</span>
-            <MiniBarChart />
+            <span>Matchs à venir exploitables</span>
           </article>
         </div>
 

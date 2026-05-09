@@ -2,7 +2,7 @@ import type { GetStaticPaths, GetStaticProps } from 'next';
 import Link from 'next/link';
 import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
-import { MiniLineChart, RadarChart, TacticalPitch } from '~/components/ui';
+import { TacticalPitch } from '~/components/ui';
 import { getMatch, getPrediction } from '~/lib/api';
 import { getMockMatch, getMockPrediction, matches, statusClass, teamNameHref, type Match, type Prediction } from '~/lib/mock-data';
 import { formatCompetitionLabel, formatFinishedMatchSummary, formatKickoffFr, formatMatchStatusLabel, formatScore, formatWinnerLabel } from '~/lib/ui-text';
@@ -118,7 +118,12 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
         <section className="sectionSplit premiumSectionSplit">
           <article className="card">
             <h2>Lecture offensive</h2>
-            <MiniLineChart />
+            <div className="insightBars">
+              <DataBar label="Over 1.5" value={prediction.goals.over_1_5} suffix="%" />
+              <DataBar label="Over 2.5" value={prediction.goals.over_2_5} suffix="%" />
+              <DataBar label="Over 3.5" value={prediction.goals.over_3_5} suffix="%" />
+              <DataBar label="BTTS" value={prediction.goals.btts} suffix="%" />
+            </div>
             <div className="dataList">
               <span>Score attendu <strong>{prediction.goals.expected_home} - {prediction.goals.expected_away}</strong></span>
               <span>Score probable <strong>{prediction.goals.most_likely_score ?? 'N/A'}</strong></span>
@@ -162,7 +167,11 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
           </article>
           <article className="card">
             <h2>Attaque / Défense</h2>
-            <RadarChart />
+            <div className="insightBars">
+              <DataBar label="Écart attaque" value={prediction.features?.attack_delta} max={3} />
+              <DataBar label="Écart défense" value={prediction.features?.defense_delta} max={3} />
+              <DataBar label="Risque de nul" value={prediction.features?.draw_risk_score} max={1} />
+            </div>
             <div className="dataList">
               <span>Écart attaque <strong>{prediction.features?.attack_delta ?? 'N/A'}</strong></span>
               <span>Écart défense <strong>{prediction.features?.defense_delta ?? 'N/A'}</strong></span>
@@ -375,6 +384,29 @@ function Probability({ label, value }: { label: string; value: number }) {
       <strong>{value}%</strong>
       <div className="probabilityBar confidence-bar"><span style={{ width: `${value}%` }} /></div>
     </article>
+  );
+}
+
+function DataBar({
+  label,
+  value,
+  suffix = '',
+  max = 100,
+}: {
+  label: string;
+  value?: number | null;
+  suffix?: string;
+  max?: number;
+}) {
+  const numericValue = typeof value === 'number' && Number.isFinite(value) ? value : null;
+  const width = numericValue === null ? 4 : Math.max(4, Math.min(100, (Math.abs(numericValue) / max) * 100));
+
+  return (
+    <div className="dataBar">
+      <span>{label}</span>
+      <strong>{numericValue === null ? 'N/A' : `${numericValue}${suffix}`}</strong>
+      <div><i style={{ width: `${width}%` }} /></div>
+    </div>
   );
 }
 

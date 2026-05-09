@@ -2,7 +2,6 @@ import type { GetStaticProps } from 'next';
 import Link from 'next/link';
 import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
-import { MiniBarChart, MiniLineChart, RadarChart } from '~/components/ui';
 import {
   getBacktesting,
   getFeatureQualityReport,
@@ -241,26 +240,27 @@ export default function PerformancePage({
           <p>Insights tactiques, statistiques et IA pour prendre les meilleures décisions.</p>
         </section>
 
-        <section className="analyticsShowcase">
+        <section className="analyticsShowcase dataOnlyShowcase">
           <article className="premiumPanel">
             <div className="panelHeading">
-              <span>Évolution ROI</span>
+              <span>Précision résultat</span>
             </div>
-            <MiniLineChart />
             <strong className="landingMetric">{report.result_accuracy}%</strong>
+            <DataBar label="Calibration" value={report.calibration_score} max={100} suffix="/100" />
           </article>
           <article className="premiumPanel">
             <div className="panelHeading">
-              <span>Comparaison modèle</span>
+              <span>Couverture Feature Store</span>
             </div>
-            <RadarChart />
+            <strong className="landingMetric">{featureStore.target_coverage ?? 0}%</strong>
+            <DataBar label="Lignes entraînables" value={featureStore.with_target_count} max={Math.max(featureStore.snapshots_count, 1)} />
           </article>
           <article className="premiumPanel">
             <div className="panelHeading">
               <span>Backtesting</span>
             </div>
-            <MiniBarChart />
-            <span className="muted">Prédictions suivies : {performance.predictions_tracked ?? performance.tracked}</span>
+            <strong className="landingMetric">{report.evaluated_matches}</strong>
+            <span className="muted">Matchs évalués réellement</span>
           </article>
         </section>
 
@@ -944,4 +944,26 @@ export default function PerformancePage({
   );
 }
 
+function DataBar({
+  label,
+  value,
+  suffix = '',
+  max = 100,
+}: {
+  label: string;
+  value?: number | null;
+  suffix?: string;
+  max?: number;
+}) {
+  const numericValue = typeof value === 'number' && Number.isFinite(value) ? value : null;
+  const width = numericValue === null ? 4 : Math.max(4, Math.min(100, (Math.abs(numericValue) / max) * 100));
+
+  return (
+    <div className="dataBar">
+      <span>{label}</span>
+      <strong>{numericValue === null ? 'N/A' : `${numericValue}${suffix}`}</strong>
+      <div><i style={{ width: `${width}%` }} /></div>
+    </div>
+  );
+}
 
