@@ -4,7 +4,7 @@ import { useRouter } from 'next/router';
 import { useEffect, useMemo, useState } from 'react';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { getMatches } from '~/lib/api';
-import { matchHref, statusClass, type Match, type MatchView } from '~/lib/mock-data';
+import { matchHref, matches as mockMatches, statusClass, type Match, type MatchView } from '~/lib/mock-data';
 import {
   formatCompetitionLabel,
   formatFinishedMatchSummary,
@@ -28,7 +28,13 @@ const viewLabels: Record<MatchView, string> = {
 };
 
 export const getServerSideProps: GetServerSideProps<MatchesProps> = async () => {
-  const rawMatches = await getMatches({ includeFinished: true });
+  let rawMatches: Match[] = [];
+  try {
+    rawMatches = await getMatches({ includeFinished: true });
+  } catch (error) {
+    console.error('Matches SSR fallback:', error);
+    rawMatches = mockMatches;
+  }
   const hasOfficialMatches = rawMatches.some((match) => match.source === 'football-data.org');
   const matches = hasOfficialMatches
     ? rawMatches.filter((match) => match.source === 'football-data.org')

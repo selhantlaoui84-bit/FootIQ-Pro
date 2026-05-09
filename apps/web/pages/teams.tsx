@@ -2,17 +2,21 @@ import type { GetStaticProps } from 'next';
 import Link from 'next/link';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { getTeams } from '~/lib/api';
-import { teamHref, type Team } from '~/lib/mock-data';
+import { teamHref, teams as mockTeams, type Team } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
 
 type TeamsProps = {
   teams: Team[];
 };
 
-export const getStaticProps: GetStaticProps<TeamsProps> = async () => ({
-  props: { teams: await getTeams() },
-  revalidate: 120,
-});
+export const getStaticProps: GetStaticProps<TeamsProps> = async () => {
+  try {
+    return { props: { teams: await getTeams() }, revalidate: 120 };
+  } catch (error) {
+    console.error('Teams ISR fallback:', error);
+    return { props: { teams: mockTeams }, revalidate: 120 };
+  }
+};
 
 export default function TeamsPage({ teams }: TeamsProps) {
   const competitions = [...new Set(teams.map((team) => team.competition))].join(' / ');

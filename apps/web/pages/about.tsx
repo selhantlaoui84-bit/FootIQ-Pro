@@ -1,35 +1,35 @@
+import { Card, PageHeader, StatusBanner } from '~/components/ui';
 import { Layout } from '~/src-layout';
 
 export default function AboutPage() {
   return (
     <Layout>
-      <section className="pageHeader">
-        <p className="eyebrow">Positionnement</p>
-        <h1>Analyse probabiliste responsable</h1>
+      <PageHeader eyebrow="Positionnement" title="Analyse probabiliste responsable">
         <p>
           FootIQ Pro aide les fans, analystes, journalistes et créateurs de contenu à comprendre les matchs avec des
-          probabilités, pas avec des promesses.
+          probabilités, pas avec des promesses. La plateforme combine lecture football, discipline de risque et
+          supervision IA.
         </p>
-      </section>
+      </PageHeader>
 
       <section className="grid three">
-        <article className="card">
+        <Card tone="premium">
           <h2>Lire les matchs</h2>
-            <p>Identifier les rencontres où les signaux statistiques convergent clairement.</p>
-        </article>
-        <article className="card">
+          <p>Identifier les rencontres où les signaux statistiques convergent clairement.</p>
+        </Card>
+        <Card tone="warning">
           <h2>Repérer les pièges</h2>
           <p>Détecter les favoris apparents fragilisés par des signaux contradictoires.</p>
-        </article>
-        <article className="card">
+        </Card>
+        <Card tone="info">
           <h2>Expliquer simplement</h2>
           <p>Présenter les risques, les probabilités et la confiance dans un langage clair.</p>
-        </article>
+        </Card>
       </section>
 
-      <section className="notice">
+      <StatusBanner tone="premium">
         FootIQ Pro est un support d'aide à la décision. Aucune analyse ne garantit un score, un résultat ou un gain.
-      </section>
+      </StatusBanner>
     </Layout>
   );
 }

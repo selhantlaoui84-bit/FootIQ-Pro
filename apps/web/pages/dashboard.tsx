@@ -5,6 +5,8 @@ import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { getMatches, getPublicDashboardSummary } from '~/lib/api';
 import {
   matchHref,
+  buildDashboardSummary,
+  matches as mockMatches,
   statusClass,
   type DashboardSummary,
   type Match,
@@ -25,10 +27,18 @@ type DashboardProps = {
 };
 
 export const getServerSideProps: GetServerSideProps<DashboardProps> = async () => {
-  const [rawMatches, summary] = await Promise.all([
-    getMatches({ includeFinished: true }),
-    getPublicDashboardSummary(),
-  ]);
+  let rawMatches: Match[] = [];
+  let summary: DashboardSummary = buildDashboardSummary();
+
+  try {
+    [rawMatches, summary] = await Promise.all([
+      getMatches({ includeFinished: true }),
+      getPublicDashboardSummary(),
+    ]);
+  } catch (error) {
+    console.error('Dashboard SSR fallback:', error);
+    rawMatches = mockMatches;
+  }
   const hasOfficialMatches = rawMatches.some((match) => match.source === 'football-data.org');
   const allMatches = hasOfficialMatches
     ? rawMatches.filter((match) => match.source === 'football-data.org')

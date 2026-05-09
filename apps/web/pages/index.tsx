@@ -1,7 +1,8 @@
 import type { GetStaticProps } from 'next';
 import Link from 'next/link';
-import { getDashboardSummary } from '~/lib/api';
-import { matchHref, type DashboardSummary } from '~/lib/mock-data';
+import { Card, StatusBanner } from '~/components/ui';
+import { getPublicDashboardSummary } from '~/lib/api';
+import { buildDashboardSummary, matchHref, type DashboardSummary } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
 
 type HomeProps = {
@@ -21,16 +22,30 @@ const pillars = [
     body: 'Repérer les favoris apparents avec signaux contradictoires.',
   },
   {
-    title: 'Explications compréhensibles',
-    href: '/about',
-    body: 'Transformer les données en lecture utile et responsable.',
+    title: 'Gestion du risque',
+    href: '/dashboard',
+    body: 'Prioriser les décisions selon la lisibilité, le contexte et le niveau de risque.',
+  },
+  {
+    title: 'Gouvernance IA',
+    href: '/performance',
+    body: 'Suivre le backtesting, la qualité des données et le modèle candidat.',
   },
 ];
 
 export const getStaticProps: GetStaticProps<HomeProps> = async () => ({
-  props: { summary: await getDashboardSummary() },
+  props: { summary: await loadHomeSummary() },
   revalidate: 120,
 });
+
+async function loadHomeSummary() {
+  try {
+    return await getPublicDashboardSummary();
+  } catch (error) {
+    console.error('Home summary fallback:', error);
+    return buildDashboardSummary();
+  }
+}
 
 export default function HomePage({ summary }: HomeProps) {
   const featured = summary.top_reliable_matches[0];
@@ -39,12 +54,12 @@ export default function HomePage({ summary }: HomeProps) {
     <Layout>
       <section className="hero">
         <div className="heroCopy">
-          <p className="eyebrow">Football analytics probabiliste</p>
+          <p className="eyebrow">Football analytics premium</p>
           <h1>FootIQ Pro</h1>
-          <p className="subtitle">L'intelligence probabiliste du football français et européen.</p>
+          <p className="subtitle">IA, value betting, risque et performance dans une lecture stratégique du football.</p>
           <p className="lead">
-            Notre IA ne promet pas de prédire l'avenir. Elle identifie les matchs statistiquement lisibles, les risques
-            et les signaux qui comptent.
+            FootIQ Pro croise probabilités, confiance modèle, signaux de marché et gouvernance ML pour aider à décider
+            avec méthode. L'objectif n'est pas de promettre un résultat, mais d'éclairer le risque.
           </p>
           <div className="actions">
             <Link className="button primary" href="/dashboard">
@@ -56,30 +71,32 @@ export default function HomePage({ summary }: HomeProps) {
           </div>
         </div>
         <Link className="heroPanel clickable-card" href={featured ? matchHref(featured) : '/dashboard'}>
-          <span className="panelLabel">Signal actuel</span>
+          <span className="panelLabel">Signal stratégique</span>
           <strong>{summary.total_matches}</strong>
           <div className="probabilityBar">
             <span style={{ width: `${summary.average_confidence}%` }} />
           </div>
           <div className="miniStats">
             <span>Confiance {summary.average_confidence}%</span>
-
+            <span>Risque {summary.average_risk_score ?? 0}/100</span>
           </div>
         </Link>
       </section>
 
       <section className="grid five">
         {pillars.map((pillar) => (
-          <Link className="card clickable-card card-link" href={pillar.href} key={pillar.title}>
-            <h3>{pillar.title}</h3>
-            <p>{pillar.body}</p>
+          <Link className="card-link" href={pillar.href} key={pillar.title}>
+            <Card className="clickable-card" tone="premium">
+              <h3>{pillar.title}</h3>
+              <p>{pillar.body}</p>
+            </Card>
           </Link>
         ))}
       </section>
 
-      <section className="notice">
+      <StatusBanner tone="premium">
         FootIQ Pro est un outil d'analyse statistique et probabiliste. Aucune prédiction ne garantit un résultat.
-      </section>
+      </StatusBanner>
     </Layout>
   );
 }

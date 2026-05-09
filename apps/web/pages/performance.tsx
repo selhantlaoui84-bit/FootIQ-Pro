@@ -36,6 +36,23 @@ import type {
   ModelsMetadata,
   PerformanceMetrics,
 } from '~/lib/mock-data';
+import {
+  mockBacktestingReport,
+  mockExplainabilitySummary,
+  mockFeatureQualityReport,
+  mockFeatureSummary,
+  mockHybridEngineSummary,
+  mockHybridSummary,
+  mockMlComparison,
+  mockMlFeatureImportance,
+  mockMlShadowBacktesting,
+  mockMlShadowSummary,
+  mockMlStatus,
+  mockModelComparison,
+  mockModelGovernance,
+  mockModelsMetadata,
+  performanceMetrics,
+} from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
 
 type PerformanceProps = {
@@ -57,6 +74,33 @@ type PerformanceProps = {
 };
 
 export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
+  const fallback = {
+    performance: performanceMetrics,
+    backtesting: mockBacktestingReport,
+    models: mockModelsMetadata,
+    comparison: mockModelComparison,
+    featureSummary: mockFeatureSummary,
+    featureQuality: mockFeatureQualityReport,
+    mlStatus: mockMlStatus,
+    mlComparison: mockMlComparison,
+    shadowSummary: mockMlShadowSummary,
+    shadowBacktesting: mockMlShadowBacktesting,
+    hybridSummary: mockHybridSummary,
+    hybridEngineSummary: mockHybridEngineSummary,
+    explainabilitySummary: mockExplainabilitySummary,
+    featureImportance: mockMlFeatureImportance,
+    modelGovernance: mockModelGovernance,
+  };
+
+  const load = async <T,>(label: string, promise: Promise<T>, fallbackValue: T): Promise<T> => {
+    try {
+      return await promise;
+    } catch (error) {
+      console.error(`Performance ISR fallback for ${label}:`, error);
+      return fallbackValue;
+    }
+  };
+
   const [
     performance,
     backtesting,
@@ -74,21 +118,21 @@ export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
     featureImportance,
     modelGovernance,
   ] = await Promise.all([
-    getPerformance(),
-    getBacktesting(),
-    getModels(),
-    getModelComparison(),
-    getFeatureSummary(),
-    getFeatureQualityReport(1000),
-    getMlStatus(),
-    getMlComparison(),
-    getMlShadowSummary(),
-    getMlShadowBacktesting(1000),
-    getHybridSummary(),
-    getHybridEngineSummary(),
-    getExplainabilitySummary(200, 'upcoming'),
-    getMlFeatureImportance(),
-    getModelGovernance(),
+    load('performance', getPerformance(), fallback.performance),
+    load('backtesting', getBacktesting(), fallback.backtesting),
+    load('models', getModels(), fallback.models),
+    load('comparison', getModelComparison(), fallback.comparison),
+    load('featureSummary', getFeatureSummary(), fallback.featureSummary),
+    load('featureQuality', getFeatureQualityReport(1000), fallback.featureQuality),
+    load('mlStatus', getMlStatus(), fallback.mlStatus),
+    load('mlComparison', getMlComparison(), fallback.mlComparison),
+    load('shadowSummary', getMlShadowSummary(), fallback.shadowSummary),
+    load('shadowBacktesting', getMlShadowBacktesting(1000), fallback.shadowBacktesting),
+    load('hybridSummary', getHybridSummary(), fallback.hybridSummary),
+    load('hybridEngineSummary', getHybridEngineSummary(), fallback.hybridEngineSummary),
+    load('explainabilitySummary', getExplainabilitySummary(200, 'upcoming'), fallback.explainabilitySummary),
+    load('featureImportance', getMlFeatureImportance(), fallback.featureImportance),
+    load('modelGovernance', getModelGovernance(), fallback.modelGovernance),
   ]);
 
   return {

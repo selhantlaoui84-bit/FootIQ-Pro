@@ -14,6 +14,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { user, isAdmin, loading, signOut } = useAuth();
   const hideAuthNavDuringLoginRedirect = router.pathname === '/login' && Boolean(user);
+  const isActive = (href: string) => router.pathname === href || router.pathname.startsWith(`${href}/`);
 
   async function handleLogout() {
     await signOut();
@@ -26,26 +27,40 @@ export function Layout({ children }: { children: ReactNode }) {
         <Link className="logo" href="/">
           FootIQ Pro
         </Link>
-        <nav>
+        <nav aria-label="Navigation principale">
           {loading || hideAuthNavDuringLoginRedirect ? null : user ? (
             <>
-              <Link href="/dashboard">Tableau de bord</Link>
+              <Link className={isActive('/dashboard') ? 'active' : undefined} href="/dashboard">
+                Tableau de bord
+              </Link>
               {links.map((link) => (
-                <Link key={link.href} href={link.href}>
+                <Link className={isActive(link.href) ? 'active' : undefined} key={link.href} href={link.href}>
                   {link.label}
                 </Link>
               ))}
-              <Link href="/profile">Profil</Link>
-              {isAdmin && <Link href="/admin">Admin</Link>}
+              <Link className={isActive('/profile') ? 'active' : undefined} href="/profile">
+                Profil
+              </Link>
+              {isAdmin && (
+                <Link className={isActive('/admin') ? 'active' : undefined} href="/admin">
+                  Admin
+                </Link>
+              )}
               <button className="navButton logoutButton" type="button" onClick={handleLogout}>
                 Déconnexion
               </button>
             </>
           ) : (
             <>
-              <Link href="/about">À propos</Link>
-              <Link href="/login">Connexion</Link>
-              <Link href="/register">Créer un compte</Link>
+              <Link className={isActive('/about') ? 'active' : undefined} href="/about">
+                À propos
+              </Link>
+              <Link className={isActive('/login') ? 'active' : undefined} href="/login">
+                Connexion
+              </Link>
+              <Link className={isActive('/register') ? 'active' : undefined} href="/register">
+                Créer un compte
+              </Link>
             </>
           )}
         </nav>
@@ -54,7 +69,7 @@ export function Layout({ children }: { children: ReactNode }) {
       <footer className="siteFooter">
         <div className="footerInner">
           <span className="footerBrand">FootIQ Pro</span>
-          <nav className="footerLinks">
+          <nav className="footerLinks" aria-label="Navigation secondaire">
             <a href="/about">À propos</a>
             <a href="/mentions-legales">Mentions légales</a>
             <a href="/confidentialite">Confidentialité</a>

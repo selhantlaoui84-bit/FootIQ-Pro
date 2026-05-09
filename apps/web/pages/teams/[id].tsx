@@ -2,7 +2,7 @@ import type { GetStaticPaths, GetStaticProps } from 'next';
 import Link from 'next/link';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { getMatches, getPredictions, getTeam } from '~/lib/api';
-import { matchHref, teams, type Match, type Prediction, type Team } from '~/lib/mock-data';
+import { getMockTeam, matchHref, matches as mockMatches, predictions as mockPredictions, teams, type Match, type Prediction, type Team } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
 
 type TeamDetailProps = {
@@ -18,13 +18,24 @@ export const getStaticPaths: GetStaticPaths = async () => ({
 
 export const getStaticProps: GetStaticProps<TeamDetailProps> = async ({ params }) => {
   const id = typeof params?.id === 'string' ? params.id : teams[0].slug;
-  const [team, matches, predictions] = await Promise.all([getTeam(id), getMatches(), getPredictions()]);
-  const relatedMatches = matches.filter((match) => match.home_team === team.name || match.away_team === team.name);
-  const relatedPredictions = predictions.filter(
-    (prediction) => prediction.home_team === team.name || prediction.away_team === team.name,
-  );
+  try {
+    const [team, matches, predictions] = await Promise.all([getTeam(id), getMatches(), getPredictions()]);
+    const relatedMatches = matches.filter((match) => match.home_team === team.name || match.away_team === team.name);
+    const relatedPredictions = predictions.filter(
+      (prediction) => prediction.home_team === team.name || prediction.away_team === team.name,
+    );
 
-  return { props: { team, relatedMatches, relatedPredictions }, revalidate: 120 };
+    return { props: { team, relatedMatches, relatedPredictions }, revalidate: 120 };
+  } catch (error) {
+    console.error(`Team detail ISR fallback for ${id}:`, error);
+    const team = getMockTeam(id);
+    const relatedMatches = mockMatches.filter((match) => match.home_team === team.name || match.away_team === team.name);
+    const relatedPredictions = mockPredictions.filter(
+      (prediction) => prediction.home_team === team.name || prediction.away_team === team.name,
+    );
+
+    return { props: { team, relatedMatches, relatedPredictions }, revalidate: 120 };
+  }
 };
 
 export default function TeamDetailPage({ team, relatedMatches, relatedPredictions }: TeamDetailProps) {

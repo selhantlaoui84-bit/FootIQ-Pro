@@ -3,17 +3,17 @@ import type { Match, Prediction, Recommendation } from '~/lib/mock-data';
 export function normalizeFrenchText(value: string | null | undefined) {
   if (!value) return '';
   return value
-    .replace(/Ã©/g, 'é')
-    .replace(/Ã¨/g, 'è')
-    .replace(/Ãª/g, 'ê')
-    .replace(/Ã /g, 'à')
-    .replace(/Ã€/g, 'À')
-    .replace(/Ã‰/g, 'É')
-    .replace(/Ã‡/g, 'Ç')
-    .replace(/Ã®/g, 'î')
-    .replace(/Ã´/g, 'ô')
-    .replace(/Ã»/g, 'û')
-    .replace(/Ã§/g, 'ç')
+    .replace(/\u00c3\u0083\u00c2\u00a9/g, 'é')
+    .replace(/\u00c3\u0083\u00c2\u00a8/g, 'è')
+    .replace(/\u00c3\u0083\u00c2\u00aa/g, 'ê')
+    .replace(/\u00c3\u0083 /g, 'à')
+    .replace(/\u00c3\u0083\u00e2\u0082\u00ac/g, 'À')
+    .replace(/\u00c3\u0083\u00e2\u20ac\u00b0/g, 'É')
+    .replace(/\u00c3\u0083\u00e2\u20ac\u00a1/g, 'Ç')
+    .replace(/\u00c3\u0083\u00c2\u00ae/g, 'î')
+    .replace(/\u00c3\u0083\u00c2\u00b4/g, 'ô')
+    .replace(/\u00c3\u0083\u00c2\u00bb/g, 'û')
+    .replace(/\u00c3\u0083\u00c2\u00a7/g, 'ç')
     .replace(/Pr\?d/g, 'Préd')
     .replace(/mod\?le/g, 'modèle')
     .replace(/donn\?es/g, 'données')
@@ -105,7 +105,9 @@ export function formatScore(match: Pick<Match, 'score_full_time_home' | 'score_f
   return `${home} - ${away}`;
 }
 
-export function formatWinnerLabel(match: Pick<Match, 'home_team' | 'away_team' | 'winner' | 'score_full_time_home' | 'score_full_time_away'>) {
+export function formatWinnerLabel(
+  match: Pick<Match, 'home_team' | 'away_team' | 'winner' | 'score_full_time_home' | 'score_full_time_away'>,
+) {
   if (match.winner === 'HOME_TEAM') return `Victoire ${match.home_team}`;
   if (match.winner === 'AWAY_TEAM') return `Victoire ${match.away_team}`;
   if (match.winner === 'DRAW') return 'Match nul';

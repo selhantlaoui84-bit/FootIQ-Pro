@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { getMatch, getPrediction } from '~/lib/api';
-import { matches, statusClass, teamNameHref, type Match, type Prediction } from '~/lib/mock-data';
+import { getMockMatch, getMockPrediction, matches, statusClass, teamNameHref, type Match, type Prediction } from '~/lib/mock-data';
 import { formatCompetitionLabel, formatFinishedMatchSummary, formatKickoffFr, formatMatchStatusLabel, formatScore, formatWinnerLabel } from '~/lib/ui-text';
 import { Layout } from '~/src-layout';
 
@@ -19,9 +19,13 @@ export const getStaticPaths: GetStaticPaths = async () => ({
 
 export const getStaticProps: GetStaticProps<MatchDetailProps> = async ({ params }) => {
   const id = typeof params?.id === 'string' ? params.id : matches[0].slug;
-  const [match, prediction] = await Promise.all([getMatch(id), getPrediction(id)]);
-
-  return { props: { match, prediction }, revalidate: 120 };
+  try {
+    const [match, prediction] = await Promise.all([getMatch(id), getPrediction(id)]);
+    return { props: { match, prediction }, revalidate: 120 };
+  } catch (error) {
+    console.error(`Match detail ISR fallback for ${id}:`, error);
+    return { props: { match: getMockMatch(id), prediction: getMockPrediction(id) }, revalidate: 120 };
+  }
 };
 
 export default function MatchDetailPage({ match, prediction }: MatchDetailProps) {

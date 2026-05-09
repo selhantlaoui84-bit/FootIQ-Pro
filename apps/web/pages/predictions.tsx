@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { getPredictions } from '~/lib/api';
-import { isAvoidStatus, matchHref, statusClass, type ConfidenceStatus, type Prediction } from '~/lib/mock-data';
+import { isAvoidStatus, matchHref, predictions as mockPredictions, statusClass, type ConfidenceStatus, type Prediction } from '~/lib/mock-data';
 import { formatCompetitionLabel, formatKickoffFr, formatRecommendationLabel, formatStatusLabel } from '~/lib/ui-text';
 import { Layout } from '~/src-layout';
 
@@ -13,10 +13,24 @@ type PredictionsProps = {
   predictions: Prediction[];
 };
 
-export const getStaticProps: GetStaticProps<PredictionsProps> = async () => ({
-  props: { predictions: await getPredictions({ includeHybridEngine: true, includeExplainability: true, limit: 100, view: 'upcoming' }) },
-  revalidate: 120,
-});
+export const getStaticProps: GetStaticProps<PredictionsProps> = async () => {
+  try {
+    return {
+      props: {
+        predictions: await getPredictions({
+          includeHybridEngine: true,
+          includeExplainability: true,
+          limit: 100,
+          view: 'upcoming',
+        }),
+      },
+      revalidate: 120,
+    };
+  } catch (error) {
+    console.error('Predictions ISR fallback:', error);
+    return { props: { predictions: mockPredictions }, revalidate: 120 };
+  }
+};
 
 export default function PredictionsPage({ predictions }: PredictionsProps) {
   const router = useRouter();
