@@ -239,9 +239,9 @@ function MatchRow({ match }: { match: Match }) {
       <div>
         <span className="muted">{formatCompetitionLabel(match.competition)}</span>
         <div className="fixtureTeams">
-          <TeamLine name={match.home_team} />
+          <TeamLine name={match.home_team} logoUrl={match.home_team_logo ?? match.home_crest} />
           <span className="versus">vs</span>
-          <TeamLine name={match.away_team} tone="away" />
+          <TeamLine name={match.away_team} logoUrl={match.away_team_logo ?? match.away_crest} tone="away" />
         </div>
         <p>{formatKickoffFr(match.kickoff)}</p>
         <div className="cardTop compact">
@@ -310,10 +310,10 @@ function compactMatch(match: Match): Match {
   return rest;
 }
 
-function TeamLine({ name, tone = 'home' }: { name: string; tone?: 'home' | 'away' }) {
+function TeamLine({ name, tone = 'home', logoUrl }: { name: string; tone?: 'home' | 'away'; logoUrl?: string | null }) {
   return (
     <span className="teamLine">
-      <TeamCrest name={name} tone={tone} />
+      <TeamCrest name={name} tone={tone} logoUrl={logoUrl} />
       <strong>{name}</strong>
     </span>
   );

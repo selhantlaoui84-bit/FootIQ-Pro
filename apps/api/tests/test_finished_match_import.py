@@ -4,7 +4,7 @@ from unittest.mock import patch
 import main
 from data.repository import normalize_match_for_storage
 from services.feature_store import build_feature_snapshot
-from services.football_data_client import normalize_match
+from services.football_data_client import normalize_match, normalize_team
 
 
 def _prediction(match_id="m1"):
@@ -44,6 +44,23 @@ class FinishedMatchImportTests(unittest.TestCase):
         self.assertEqual(match["score_half_time_home"], 1)
         self.assertEqual(match["score_half_time_away"], 0)
         self.assertEqual(match["winner"], "HOME_TEAM")
+        self.assertIsNone(match["home_team_logo"])
+
+    def test_team_import_preserves_crest_url(self):
+        team = normalize_team(
+            {
+                "name": "Paris Saint-Germain FC",
+                "shortName": "Paris SG",
+                "tla": "PSG",
+                "crest": "https://crests.football-data.org/524.svg",
+            },
+            "Ligue 1",
+        )
+
+        self.assertEqual(team["short_name"], "Paris SG")
+        self.assertEqual(team["tla"], "PSG")
+        self.assertEqual(team["crest_url"], "https://crests.football-data.org/524.svg")
+        self.assertEqual(team["logo_url"], "https://crests.football-data.org/524.svg")
 
     def test_repository_normalization_maps_nested_score_and_uppercase_status(self):
         match = normalize_match_for_storage(

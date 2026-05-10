@@ -678,6 +678,81 @@ ul {
   font-size: 14px;
 }
 
+.teamLogo {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  overflow: hidden;
+  color: #082015;
+  background: linear-gradient(135deg, #d8f9b7, #8ef1b5);
+  border: 1px solid rgba(255, 215, 136, 0.42);
+  border-radius: 999px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+}
+
+.teamLogo img {
+  width: 76%;
+  height: 76%;
+  object-fit: contain;
+}
+
+.teamLogo span {
+  color: #072017;
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.teamLogo-sm {
+  width: 34px;
+  height: 34px;
+}
+
+.teamLogo-lg {
+  width: 72px;
+  height: 72px;
+}
+
+.teamLogo-xl {
+  width: 104px;
+  height: 104px;
+}
+
+.teamCrest {
+  color: #082015;
+}
+
+.teamCrest.away {
+  background: linear-gradient(135deg, #f3e8b8, #f8c76a);
+}
+
+.teamIdentity {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.teamIdentity > span:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.teamIdentity strong,
+.teamIdentity small {
+  overflow-wrap: anywhere;
+}
+
+.matchTitleTeams {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin: 8px 0;
+}
+
 .confidenceLine,
 .probabilityBar {
   overflow: hidden;
@@ -1787,7 +1862,7 @@ input::placeholder {
   color: var(--muted);
 }
 
-/* ── Footer ── */
+/* Footer */
 .siteFooter {
   margin-top: 80px;
   padding: 32px 0 24px;
@@ -1837,7 +1912,7 @@ input::placeholder {
   margin-left: auto;
 }
 
-/* ── Legal pages ── */
+/* Legal pages */
 .legalPage {
   max-width: 720px;
   margin: 0 auto;
@@ -2616,7 +2691,7 @@ body::before {
   line-height: 1;
 }
 
-.navIcon-grid::before { content: '▦'; }
+.navIcon-grid::before { content: '#'; }
 .navIcon-calendar::before,
 .calendarIcon::before { content: '□'; }
 .navIcon-target::before { content: '◎'; }

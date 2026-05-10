@@ -1,7 +1,7 @@
 import { Html, Head, Main, NextScript } from 'next/document';
 
 const META = {
-  title: 'FootIQ Pro — Analytics probabiliste du football',
+  title: 'FootIQ Pro - Analytics probabiliste du football',
   description:
     "FootIQ Pro identifie les matchs statistiquement lisibles, les signaux de confiance et les pièges du football français et européen. Analyse probabiliste, pas de promesses.",
   url: 'https://foot-iq-pro-ten.vercel.app',
@@ -36,7 +36,7 @@ export default function Document() {
         <meta name="twitter:description" content={META.description} />
         <meta name="twitter:image" content={META.image} />
 
-        {/* Structured data — SoftwareApplication */}
+        {/* Structured data - SoftwareApplication */}
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{

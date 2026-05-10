@@ -4,7 +4,7 @@ import { useRouter } from 'next/router';
 import { useEffect, useMemo, useState } from 'react';
 import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
-import { ProbabilityRing } from '~/components/ui';
+import { ProbabilityRing, TeamIdentity } from '~/components/ui';
 import { getPredictions } from '~/lib/api';
 import { isAvoidStatus, matchHref, predictions as mockPredictions, statusClass, type ConfidenceStatus, type Prediction } from '~/lib/mock-data';
 import { formatCompetitionLabel, formatKickoffFr, formatRecommendationLabel, formatStatusLabel } from '~/lib/ui-text';
@@ -153,11 +153,7 @@ export default function PredictionsPage({ predictions, referenceTime }: Predicti
           </div>
           {selectionOfDay.map((prediction) => (
             <Link className="dailyPick" href={matchHref(prediction)} key={`daily-${prediction.match_id}`}>
-              <span className="signalBall">1N2</span>
-              <span>
-                <strong>{prediction.home_team} vs {prediction.away_team}</strong>
-                <small>{formatRecommendationLabel(prediction.recommendation)}</small>
-              </span>
+              <TeamIdentity teamName={prediction.home_team} logoUrl={prediction.home_team_logo ?? prediction.home_crest} size="sm" detail={formatRecommendationLabel(prediction.recommendation)} />
               <em>{prediction.confidence.score}%</em>
             </Link>
           ))}
@@ -190,9 +186,11 @@ function PredictionCard({ prediction }: { prediction: Prediction }) {
           {formatStatusLabel(prediction.confidence.status)}
         </span>
       </div>
-      <h3>
-        {prediction.home_team} vs {prediction.away_team}
-      </h3>
+      <div className="fixtureTeams">
+        <TeamIdentity teamName={prediction.home_team} logoUrl={prediction.home_team_logo ?? prediction.home_crest} size="sm" />
+        <span className="versus">vs</span>
+        <TeamIdentity teamName={prediction.away_team} logoUrl={prediction.away_team_logo ?? prediction.away_crest} tone="away" size="sm" />
+      </div>
       <p>{formatKickoffFr(prediction.kickoff)}</p>
       <div className="probGrid">
         <span>

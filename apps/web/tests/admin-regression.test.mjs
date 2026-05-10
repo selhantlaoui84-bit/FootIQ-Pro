@@ -1,4 +1,4 @@
-﻿import { readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 
 const refreshProxy = new URL('../pages/api/admin/refresh-data.ts', import.meta.url);
@@ -23,6 +23,8 @@ const apiClient = new URL('../lib/api.ts', import.meta.url);
 const dashboardPage = new URL('../pages/dashboard.tsx', import.meta.url);
 const matchesPage = new URL('../pages/matches.tsx', import.meta.url);
 const performancePage = new URL('../pages/performance.tsx', import.meta.url);
+const uiComponents = new URL('../components/ui.tsx', import.meta.url);
+const teamAssets = new URL('../lib/team-assets.ts', import.meta.url);
 const layoutSourceFile = new URL('../src-layout.tsx', import.meta.url);
 const globalStyles = new URL('../styles/globals.css', import.meta.url);
 const backendMain = new URL('../../api/main.py', import.meta.url);
@@ -291,7 +293,7 @@ async function run() {
   assert.match(dashboardPageSource, /referenceTime/);
   assert.match(dashboardPageSource, /isUpcoming\(match, referenceTimestamp\)/);
   assert.match(dashboardPageSource, /isPastKickoff\(match, referenceTimestamp\)/);
-  assert.match(dashboardPageSource, /TeamCrest name=\{prediction\.home_team\}/);
+  assert.match(dashboardPageSource, /TeamCrest name=\{prediction\.home_team\} logoUrl=/);
   assert.match(dashboardPageSource, /isUpcomingPrediction\(prediction, referenceTimestamp\)/);
   assert.doesNotMatch(dashboardPageSource, /isUpcomingPrediction\(prediction, referenceDayStart\)/);
   assert.doesNotMatch(dashboardPageSource, /\.filter\(\(match\) => String\(match\.status \?\? ''\)\.toUpperCase\(\) !== 'FINISHED'\)/);
@@ -306,6 +308,26 @@ async function run() {
   assert.match(performancePageSource, /Feedback moteur et calibration/);
   assert.match(performancePageSource, /Performance par marché/);
   assert.match(performancePageSource, /Fiabilité par niveau de confiance/);
+  assert.match(performancePageSource, /getLearningMonitoring/);
+  assert.match(performancePageSource, /Promise\.resolve\(fallback\.featureSummary\)/);
+  assert.match(performancePageSource, /En attente de résultats/);
+  assert.match(performancePageSource, /Données insuffisantes/);
+  assert.match(performancePageSource, /shadowHasMetrics/);
+  assert.doesNotMatch(performancePageSource, /Précision shadow<\/span>\s*<strong>\{shadowBacktesting\.shadow_accuracy\}%/);
+
+  const uiSource = await readFile(uiComponents, 'utf8');
+  assert.doesNotMatch(uiSource, brokenEncoding);
+  assert.match(uiSource, /export function TeamLogo/);
+  assert.match(uiSource, /onError=\{\(\) => setFailed\(true\)\}/);
+  assert.match(uiSource, /export function TeamIdentity/);
+  assert.match(uiSource, /export function TeamCrest/);
+  assert.match(uiSource, /resolveTeamLogoUrl/);
+
+  const teamAssetsSource = await readFile(teamAssets, 'utf8');
+  assert.doesNotMatch(teamAssetsSource, brokenEncoding);
+  assert.match(teamAssetsSource, /crests\.football-data\.org/);
+  assert.match(teamAssetsSource, /resolveTeamLogoUrl/);
+  assert.match(teamAssetsSource, /getTeamInitials/);
 
   const layoutSource = await readFile(layoutSourceFile, 'utf8');
   assert.doesNotMatch(layoutSource, brokenEncoding);

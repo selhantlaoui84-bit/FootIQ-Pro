@@ -1,6 +1,8 @@
-﻿import type { GetStaticProps } from 'next';
+import type { GetStaticProps } from 'next';
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import { InfoTooltip } from '~/components/InfoTooltip';
+import { TeamIdentity } from '~/components/ui';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import {
   getBacktesting,
@@ -8,6 +10,7 @@ import {
   getFeatureQualityReport,
   getFeatureSummary,
   getLearningFeedback,
+  getLearningMonitoring,
   getMlFeatureImportance,
   getHybridEngineSummary,
   getHybridSummary,
@@ -40,6 +43,7 @@ import type {
   ModelComparison,
   ModelVersionsResponse,
   LearningFeedbackReport,
+  LearningMonitoringReport,
   ModelsMetadata,
   PerformanceMetrics,
   TrainingReport,
@@ -61,6 +65,7 @@ import {
   mockModelGovernance,
   mockModelVersionsResponse,
   mockLearningFeedbackReport,
+  mockLearningMonitoringReport,
   mockModelsMetadata,
   performanceMetrics,
 } from '~/lib/mock-data';
@@ -85,7 +90,20 @@ type PerformanceProps = {
   learningFeedback: LearningFeedbackReport;
   calibrationReport: CalibrationReport;
   modelVersions: ModelVersionsResponse;
+  learningMonitoring: LearningMonitoringReport;
 };
+
+type LearningPageState = Pick<
+  PerformanceProps,
+  | 'featureSummary'
+  | 'featureQuality'
+  | 'shadowBacktesting'
+  | 'modelGovernance'
+  | 'learningFeedback'
+  | 'calibrationReport'
+  | 'modelVersions'
+  | 'learningMonitoring'
+>;
 
 export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
   const fallback = {
@@ -107,6 +125,7 @@ export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
     learningFeedback: mockLearningFeedbackReport,
     calibrationReport: mockCalibrationReport,
     modelVersions: mockModelVersionsResponse,
+    learningMonitoring: mockLearningMonitoringReport,
   };
 
   const load = async <T,>(label: string, promise: Promise<T>, fallbackValue: T): Promise<T> => {
@@ -137,25 +156,27 @@ export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
     learningFeedback,
     calibrationReport,
     modelVersions,
+    learningMonitoring,
   ] = await Promise.all([
     load('performance', getPerformance(), fallback.performance),
     load('backtesting', getBacktesting(), fallback.backtesting),
     load('models', getModels(), fallback.models),
     load('comparison', getModelComparison(), fallback.comparison),
-    load('featureSummary', getFeatureSummary(), fallback.featureSummary),
-    load('featureQuality', getFeatureQualityReport(1000), fallback.featureQuality),
+    load('featureSummary', Promise.resolve(fallback.featureSummary), fallback.featureSummary),
+    load('featureQuality', Promise.resolve(fallback.featureQuality), fallback.featureQuality),
     load('mlStatus', getMlStatus(), fallback.mlStatus),
     load('mlComparison', getMlComparison(), fallback.mlComparison),
     load('shadowSummary', getMlShadowSummary(), fallback.shadowSummary),
-    load('shadowBacktesting', getMlShadowBacktesting(1000), fallback.shadowBacktesting),
+    load('shadowBacktesting', Promise.resolve(fallback.shadowBacktesting), fallback.shadowBacktesting),
     load('hybridSummary', getHybridSummary(), fallback.hybridSummary),
     load('hybridEngineSummary', getHybridEngineSummary(), fallback.hybridEngineSummary),
     load('explainabilitySummary', getExplainabilitySummary(200, 'upcoming'), fallback.explainabilitySummary),
     load('featureImportance', getMlFeatureImportance(), fallback.featureImportance),
-    load('modelGovernance', getModelGovernance(), fallback.modelGovernance),
-    load('learningFeedback', getLearningFeedback(), fallback.learningFeedback),
-    load('calibrationReport', getCalibrationReport(), fallback.calibrationReport),
-    load('modelVersions', getModelVersionsRegistry(), fallback.modelVersions),
+    load('modelGovernance', Promise.resolve(fallback.modelGovernance), fallback.modelGovernance),
+    load('learningFeedback', Promise.resolve(fallback.learningFeedback), fallback.learningFeedback),
+    load('calibrationReport', Promise.resolve(fallback.calibrationReport), fallback.calibrationReport),
+    load('modelVersions', Promise.resolve(fallback.modelVersions), fallback.modelVersions),
+    load('learningMonitoring', Promise.resolve(fallback.learningMonitoring), fallback.learningMonitoring),
   ]);
 
   return {
@@ -178,6 +199,7 @@ export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
       learningFeedback,
       calibrationReport,
       modelVersions,
+      learningMonitoring,
     },
     revalidate: 120,
   };
@@ -188,21 +210,89 @@ export default function PerformancePage({
   backtesting,
   models,
   comparison,
-  featureSummary,
-  featureQuality,
+  featureSummary: initialFeatureSummary,
+  featureQuality: initialFeatureQuality,
   mlStatus,
   mlComparison,
   shadowSummary,
-  shadowBacktesting,
+  shadowBacktesting: initialShadowBacktesting,
   hybridSummary,
   hybridEngineSummary,
   explainabilitySummary,
   featureImportance,
-  modelGovernance,
-  learningFeedback,
-  calibrationReport,
-  modelVersions,
+  modelGovernance: initialModelGovernance,
+  learningFeedback: initialLearningFeedback,
+  calibrationReport: initialCalibrationReport,
+  modelVersions: initialModelVersions,
+  learningMonitoring: initialLearningMonitoring,
 }: PerformanceProps) {
+  const [learningState, setLearningState] = useState<LearningPageState>({
+    featureSummary: initialFeatureSummary,
+    featureQuality: initialFeatureQuality,
+    shadowBacktesting: initialShadowBacktesting,
+    modelGovernance: initialModelGovernance,
+    learningFeedback: initialLearningFeedback,
+    calibrationReport: initialCalibrationReport,
+    modelVersions: initialModelVersions,
+    learningMonitoring: initialLearningMonitoring,
+  });
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadLearningState() {
+      const [
+        featureSummaryResult,
+        featureQualityResult,
+        shadowBacktestingResult,
+        modelGovernanceResult,
+        learningFeedbackResult,
+        calibrationResult,
+        modelVersionsResult,
+        monitoringResult,
+      ] = await Promise.allSettled([
+        getFeatureSummary(),
+        getFeatureQualityReport(1000),
+        getMlShadowBacktesting(2000),
+        getModelGovernance(),
+        getLearningFeedback(),
+        getCalibrationReport(),
+        getModelVersionsRegistry(),
+        getLearningMonitoring(),
+      ]);
+
+      if (!active) return;
+
+      setLearningState((current) => ({
+        featureSummary: valueOrCurrent(featureSummaryResult, current.featureSummary),
+        featureQuality: valueOrCurrent(featureQualityResult, current.featureQuality),
+        shadowBacktesting: valueOrCurrent(shadowBacktestingResult, current.shadowBacktesting),
+        modelGovernance: valueOrCurrent(modelGovernanceResult, current.modelGovernance),
+        learningFeedback: valueOrCurrent(learningFeedbackResult, current.learningFeedback),
+        calibrationReport: valueOrCurrent(calibrationResult, current.calibrationReport),
+        modelVersions: valueOrCurrent(modelVersionsResult, current.modelVersions),
+        learningMonitoring: valueOrCurrent(monitoringResult, current.learningMonitoring),
+      }));
+    }
+
+    void loadLearningState();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const {
+    featureSummary,
+    featureQuality,
+    shadowBacktesting,
+    modelGovernance,
+    learningFeedback,
+    calibrationReport,
+    modelVersions,
+    learningMonitoring,
+  } = learningState;
+
   const report = {
     ...backtesting,
     model_version: performance.current_model_version ?? performance.model_version ?? models.current_model_version ?? backtesting.model_version,
@@ -219,14 +309,16 @@ export default function PerformancePage({
     calibration_applied: performance.calibration_applied ?? backtesting.calibration_applied,
     note: performance.note ?? backtesting.note,
   };
+  const productionEvaluated = Number(learningFeedback.evaluated_matches ?? report.evaluated_matches ?? 0);
+  const productionAccuracy = productionEvaluated > 0 ? `${learningFeedback.accuracy ?? report.result_accuracy}%` : 'Données insuffisantes';
 
   const items = [
     ['Modèle', report.model_version],
     ['Modèle précédent', report.previous_model_version ?? 'elo-poisson-v1'],
     ['Calibration', report.calibration_applied ? 'active' : 'active'],
     ['Prédictions suivies', performance.predictions_tracked ?? performance.tracked],
-    ['Matchs évalués', report.evaluated_matches],
-    ['Précision résultat', `${report.result_accuracy}%`],
+    ['Matchs évalués', productionEvaluated || 'Données insuffisantes'],
+    ['Précision résultat', productionAccuracy],
     ['Précision over 2.5', `${report.over_2_5_accuracy}%`],
     ['Précision BTTS', `${report.btts_accuracy}%`],
     ['Score Brier moyen', report.average_brier_score],
@@ -255,6 +347,25 @@ export default function PerformancePage({
   const rawDatasetQuality = performance.dataset_quality ?? featureQuality;
   const datasetQuality = buildEffectiveDatasetQuality(rawDatasetQuality, featureStore);
   const candidateImportance = candidate.feature_importance?.length ? candidate.feature_importance : featureImportance;
+  const latestCandidate = modelVersions.latest_candidate_model;
+  const candidateVersion = latestCandidate?.model_version ?? learningMonitoring.latest_candidate_model_version ?? candidate.model_version;
+  const candidateRowsUsed = latestCandidate?.rows_used ?? candidate.rows_used;
+  const candidateFeaturesUsed = latestCandidate?.features_used ?? candidate.features_used;
+  const candidateAccuracy = latestCandidate?.accuracy ?? candidate.accuracy;
+  const candidateLogLoss = latestCandidate?.log_loss ?? candidate.log_loss;
+  const candidateBrier = latestCandidate?.brier_score ?? candidate.brier_score ?? candidate.brier_score_1x2;
+  const shadowEvaluable = Number(shadowBacktesting.evaluable_predictions ?? shadowBacktesting.evaluated_matches ?? 0);
+  const shadowPending = Number(shadowBacktesting.pending_predictions ?? 0);
+  const shadowTotal = Number(shadowBacktesting.shadow_predictions_total ?? 0);
+  const shadowHasMetrics = shadowEvaluable > 0;
+  const shadowRecommendation = shadowBacktesting.recommendation?.reason ?? shadowBacktesting.recommendation_reason;
+  const pipelineBadge =
+    shadowTotal > 0 && shadowEvaluable === 0
+      ? 'Shadow en observation'
+      : shadowEvaluable < (shadowBacktesting.recommendation?.minimum_required ?? 30)
+        ? 'Données insuffisantes'
+        : 'Revue possible';
+  const unavailableMetric = shadowTotal > 0 ? 'En attente de résultats' : 'Données insuffisantes';
 
   const governance = performance.model_governance ?? modelGovernance;
   const effectiveGovernanceGates = buildEffectiveGovernanceGates({
@@ -294,7 +405,12 @@ export default function PerformancePage({
         <section className="pageHeader premiumPageIntro">
           <p className="eyebrow">Analyse modèle</p>
           <h1>Analyse</h1>
-          <p>Insights tactiques, statistiques et IA pour prendre les meilleures décisions.</p>
+          <p>Suivi intelligent du modèle, du backtesting shadow et de la gouvernance.</p>
+          <div className="sourceStrip">
+            <span>{pipelineBadge}</span>
+            <span>Production : {learningMonitoring.production_model_version ?? governance.production_model.version}</span>
+            <span>Candidat : {candidateVersion ?? 'non entraîné'}</span>
+          </div>
         </section>
 
         <section className="analyticsShowcase dataOnlyShowcase">
@@ -302,7 +418,7 @@ export default function PerformancePage({
             <div className="panelHeading">
               <span>Précision résultat</span>
             </div>
-            <strong className="landingMetric">{report.result_accuracy}%</strong>
+            <strong className="landingMetric">{productionAccuracy}</strong>
             <DataBar label="Calibration" value={report.calibration_score} max={100} suffix="/100" />
           </article>
           <article className="premiumPanel">
@@ -314,10 +430,10 @@ export default function PerformancePage({
           </article>
           <article className="premiumPanel">
             <div className="panelHeading">
-              <span>Backtesting</span>
+              <span>Backtesting shadow</span>
             </div>
-            <strong className="landingMetric">{report.evaluated_matches}</strong>
-            <span className="muted">Matchs évalués réellement</span>
+            <strong className="landingMetric">{shadowHasMetrics ? shadowEvaluable : unavailableMetric}</strong>
+            <span className="muted">{shadowTotal} shadow, {shadowPending} en attente</span>
           </article>
         </section>
 
@@ -601,6 +717,29 @@ export default function PerformancePage({
             et garder les candidats en shadow jusqu'à validation de gouvernance.
           </div>
         </section>
+
+        <section className="card sectionAnchor" id="learning-monitoring">
+          <div className="cardTop">
+            <div>
+              <p className="eyebrow">Monitoring learning</p>
+              <h2>État opérationnel du cycle IA</h2>
+            </div>
+            <span className="badge">{learningMonitoring.storage ?? modelVersions.storage ?? 'unknown'}</span>
+          </div>
+          <div className="compactDataGrid four">
+            <div className="metric"><span>Versions modèles</span><strong>{learningMonitoring.model_versions_count ?? modelVersions.versions_count ?? modelVersions.versions.length}</strong></div>
+            <div className="metric"><span>Production</span><strong>{learningMonitoring.production_model_version ?? governance.production_model.version}</strong></div>
+            <div className="metric"><span>Dernier candidat</span><strong>{learningMonitoring.latest_candidate_model_version ?? candidateVersion ?? 'N/A'}</strong></div>
+            <div className="metric"><span>Calibration</span><strong>{learningMonitoring.latest_calibration_version ?? calibrationReport.calibration_version}</strong></div>
+            <div className="metric"><span>Status feedback</span><strong>{learningMonitoring.feedback_status ?? learningFeedback.status}</strong></div>
+            <div className="metric"><span>Status calibration</span><strong>{learningMonitoring.calibration_status ?? calibrationReport.status}</strong></div>
+            <div className="metric"><span>Status shadow</span><strong>{learningMonitoring.shadow_backtesting_status ?? shadowBacktesting.backtesting_status ?? 'pending'}</strong></div>
+            <div className="metric"><span>Action suivante</span><strong>{learningMonitoring.next_best_action?.label ?? 'Continuer le shadow testing'}</strong></div>
+          </div>
+          {(learningMonitoring.alerts ?? []).length > 0 && (
+            <div className="banner warning">{learningMonitoring.alerts.join(' ')}</div>
+          )}
+        </section>
         <section className="sectionSplit" id="feature-store">
           <article className="card accent">
             <p className="eyebrow">Feature Store</p>
@@ -740,16 +879,19 @@ export default function PerformancePage({
         <section className="sectionSplit sectionAnchor" id="candidate-ml">
           <article className="card accent">
             <p className="eyebrow">Modèle ML candidat</p>
-            <h2>{candidate.model_version ?? 'ml-candidate-v1'}</h2>
+            <h2>{candidateVersion ?? 'Aucun candidat entraîné'}</h2>
             <p>Ce candidat ML est entraîné depuis le Feature Store, mais il n'est pas encore utilisé en production.</p>
             <div className="dataList">
-              <span>Statut <strong>{candidate.status}</strong></span>
-              <span>Modèle production <strong>{mlStatus.production_model_version}</strong></span>
+              <span>Statut <strong>{latestCandidate?.status ?? candidate.status ?? 'candidate'}</strong></span>
+              <span>Type modèle <strong>{latestCandidate?.model_type ?? candidate.model_type ?? 'random_forest'}</strong></span>
+              <span>Modèle production <strong>{learningMonitoring.production_model_version ?? mlStatus.production_model_version}</strong></span>
               <span>Candidat en production <strong>{mlStatus.candidate_is_production ? 'oui' : 'non'}</strong></span>
-              <span>Lignes utilisées <strong>{candidate.rows_used ?? 0}</strong></span>
-              <span>Précision <strong>{candidate.accuracy ?? 0}%</strong></span>
-              <span>Log loss <strong>{candidate.log_loss ?? 'N/A'}</strong></span>
-              <span>Brier 1X2 <strong>{candidate.brier_score_1x2 ?? 'N/A'}</strong></span>
+              <span>Lignes utilisées <strong>{candidateRowsUsed ?? 'N/A'}</strong></span>
+              <span>Features utilisées <strong>{Array.isArray(candidateFeaturesUsed) ? candidateFeaturesUsed.length : candidateFeaturesUsed ?? 'N/A'}</strong></span>
+              <span>Précision <strong>{candidateAccuracy === null || candidateAccuracy === undefined ? 'N/A' : `${candidateAccuracy}%`}</strong></span>
+              <span>Log loss <strong>{candidateLogLoss ?? 'N/A'}</strong></span>
+              <span>Brier 1X2 <strong>{candidateBrier ?? 'N/A'}</strong></span>
+              <span>Entraîné le <strong>{latestCandidate?.trained_at ? new Date(latestCandidate.trained_at).toLocaleString('fr-FR') : candidate.trained_at ? new Date(candidate.trained_at).toLocaleString('fr-FR') : 'N/A'}</strong></span>
             </div>
           </article>
 
@@ -924,32 +1066,32 @@ export default function PerformancePage({
 
     <div className="metric">
       <span>Évaluables</span>
-      <strong>{shadowBacktesting.evaluable_predictions ?? shadowBacktesting.evaluated_matches}</strong>
+      <strong>{shadowEvaluable}</strong>
     </div>
 
     <div className="metric">
       <span>En attente</span>
-      <strong>{shadowBacktesting.pending_predictions ?? 0}</strong>
+      <strong>{shadowPending}</strong>
     </div>
 
     <div className="metric">
       <span>Matchs évalués</span>
-      <strong>{shadowBacktesting.evaluated_matches}</strong>
+      <strong>{shadowEvaluable}</strong>
     </div>
 
     <div className="metric">
       <span>Précision officielle</span>
-      <strong>{shadowBacktesting.production_accuracy}%</strong>
+      <strong>{shadowHasMetrics ? `${shadowBacktesting.production_accuracy}%` : unavailableMetric}</strong>
     </div>
 
     <div className="metric">
       <span>Précision shadow</span>
-      <strong>{shadowBacktesting.metrics?.accuracy ?? shadowBacktesting.shadow_accuracy}%</strong>
+      <strong>{shadowHasMetrics ? `${shadowBacktesting.metrics?.accuracy ?? shadowBacktesting.shadow_accuracy}%` : unavailableMetric}</strong>
     </div>
 
     <div className="metric">
       <span>Score d'activation</span>
-      <strong>{shadowBacktesting.activation_score}/100</strong>
+      <strong>{shadowHasMetrics ? `${shadowBacktesting.activation_score}/100` : 'Données insuffisantes'}</strong>
     </div>
 
     <div className="metric">
@@ -981,22 +1123,22 @@ export default function PerformancePage({
       Production <strong>{shadowBacktesting.production_model_version ?? 'elo-poisson-calibrated-v1'}</strong>
     </span>
     <span>
-      Log loss shadow <strong>{shadowBacktesting.metrics?.log_loss ?? shadowBacktesting.shadow_average_log_loss ?? 'N/A'}</strong>
+      Log loss shadow <strong>{shadowHasMetrics ? shadowBacktesting.metrics?.log_loss ?? shadowBacktesting.shadow_average_log_loss ?? 'N/A' : unavailableMetric}</strong>
     </span>
     <span>
-      Brier officiel <strong>{shadowBacktesting.production_average_brier ?? 'N/A'}</strong>
+      Brier officiel <strong>{shadowHasMetrics ? shadowBacktesting.production_average_brier ?? 'N/A' : unavailableMetric}</strong>
     </span>
     <span>
-      Brier shadow <strong>{shadowBacktesting.metrics?.brier_score ?? shadowBacktesting.shadow_average_brier ?? 'N/A'}</strong>
+      Brier shadow <strong>{shadowHasMetrics ? shadowBacktesting.metrics?.brier_score ?? shadowBacktesting.shadow_average_brier ?? 'N/A' : unavailableMetric}</strong>
     </span>
     <span>
-      ROI théorique <strong>{shadowBacktesting.metrics?.roi_theoretical ?? 'N/A'}</strong>
+      ROI théorique <strong>{shadowHasMetrics ? shadowBacktesting.metrics?.roi_theoretical ?? 'N/A' : unavailableMetric}</strong>
     </span>
     <span>
-      Delta accuracy <strong>{shadowBacktesting.comparison?.delta_accuracy ?? 'N/A'}</strong>
+      Delta accuracy <strong>{shadowHasMetrics ? shadowBacktesting.comparison?.delta_accuracy ?? 'N/A' : unavailableMetric}</strong>
     </span>
     <span>
-      Delta Brier <strong>{shadowBacktesting.comparison?.delta_brier_score ?? 'N/A'}</strong>
+      Delta Brier <strong>{shadowHasMetrics ? shadowBacktesting.comparison?.delta_brier_score ?? 'N/A' : unavailableMetric}</strong>
     </span>
     <span>
       Même choix <strong>{shadowBacktesting.same_pick_count}</strong>
@@ -1008,7 +1150,7 @@ export default function PerformancePage({
 
   <div className="banner info">
     <strong>Recommandation : </strong>
-    {shadowBacktesting.recommendation?.status ?? shadowBacktesting.activation_recommendation} - {shadowBacktesting.recommendation?.reason ?? shadowBacktesting.recommendation_reason}
+    {shadowBacktesting.recommendation?.status ?? shadowBacktesting.activation_recommendation} - {shadowRecommendation}
   </div>
 
   {(shadowBacktesting.evaluable_predictions ?? shadowBacktesting.evaluated_matches) === 0 && (
@@ -1029,7 +1171,9 @@ export default function PerformancePage({
       {(shadowBacktesting.evaluated_match_rows ?? shadowBacktesting.recent_evaluations).slice(0, 8).map((item) => (
         <div className="metricTableRow bucketRow" key={item.match_id}>
           <span>
-            {item.home_team} - {item.away_team}
+            <TeamIdentity teamName={item.home_team ?? 'Domicile'} size="sm" />
+            <span className="muted">vs</span>
+            <TeamIdentity teamName={item.away_team ?? 'Extérieur'} tone="away" size="sm" />
           </span>
           <strong>{item.actual_result}</strong>
           <strong>{item.production_pick}</strong>
@@ -1240,6 +1384,10 @@ function mergeGate(gate: GovernanceGate | undefined, override: Partial<Governanc
     ...gate,
     ...override,
   };
+}
+
+function valueOrCurrent<T>(result: PromiseSettledResult<T>, current: T): T {
+  return result.status === 'fulfilled' ? result.value : current;
 }
 
 function DataBar({

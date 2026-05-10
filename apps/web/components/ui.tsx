@@ -1,4 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react';
+import { useState } from 'react';
+import { getTeamInitials, resolveTeamLogoUrl, type TeamLogoSource } from '~/lib/team-assets';
 
 type Tone = 'default' | 'success' | 'warning' | 'danger' | 'info' | 'premium';
 
@@ -99,8 +101,72 @@ export function ActionButton({
   return <span className="premiumInlineButton">{children}</span>;
 }
 
-export function TeamCrest({ name, tone = 'home' }: { name: string; tone?: 'home' | 'away' }) {
-  return <span className={`teamCrest ${tone === 'away' ? 'away' : ''}`}>{initials(name)}</span>;
+export function TeamLogo({
+  teamName,
+  logoUrl,
+  size = 'md',
+  fallbackInitials,
+  className = '',
+}: {
+  teamName: string;
+  logoUrl?: string | null;
+  size?: 'sm' | 'md' | 'lg' | 'xl';
+  fallbackInitials?: string;
+  className?: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  const resolvedLogo = failed ? null : resolveTeamLogoUrl(teamName, logoUrl);
+  const fallback = fallbackInitials || getTeamInitials(teamName);
+
+  return (
+    <span className={`teamLogo teamLogo-${size} ${className}`.trim()} aria-label={teamName}>
+      {resolvedLogo ? (
+        <img alt={teamName} loading={size === 'xl' ? 'eager' : 'lazy'} src={resolvedLogo} onError={() => setFailed(true)} />
+      ) : (
+        <span aria-hidden="true">{fallback}</span>
+      )}
+    </span>
+  );
+}
+
+export function TeamIdentity({
+  teamName,
+  team,
+  logoUrl,
+  detail,
+  tone = 'home',
+  size = 'md',
+}: {
+  teamName: string;
+  team?: TeamLogoSource | null;
+  logoUrl?: string | null;
+  detail?: ReactNode;
+  tone?: 'home' | 'away';
+  size?: 'sm' | 'md' | 'lg' | 'xl';
+}) {
+  return (
+    <span className={`teamIdentity ${tone === 'away' ? 'away' : ''}`}>
+      <TeamLogo teamName={teamName} logoUrl={logoUrl ?? resolveTeamLogoUrl(teamName, team)} size={size} />
+      <span>
+        <strong>{teamName}</strong>
+        {detail && <small>{detail}</small>}
+      </span>
+    </span>
+  );
+}
+
+export function TeamCrest({
+  name,
+  tone = 'home',
+  logoUrl,
+  size = 'md',
+}: {
+  name: string;
+  tone?: 'home' | 'away';
+  logoUrl?: string | null;
+  size?: 'sm' | 'md' | 'lg' | 'xl';
+}) {
+  return <TeamLogo teamName={name} logoUrl={logoUrl} size={size} className={`teamCrest ${tone === 'away' ? 'away' : ''}`} />;
 }
 
 export function TacticalPitch({
@@ -247,13 +313,4 @@ export function ProbabilityRing({ value, label }: { value: number; label: string
       <span>{label}</span>
     </div>
   );
-}
-
-function initials(name: string) {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join('');
 }

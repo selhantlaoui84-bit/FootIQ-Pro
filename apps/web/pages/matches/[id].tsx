@@ -2,7 +2,7 @@ import type { GetStaticPaths, GetStaticProps } from 'next';
 import Link from 'next/link';
 import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
-import { TacticalPitch } from '~/components/ui';
+import { TacticalPitch, TeamIdentity } from '~/components/ui';
 import { getMatch, getPrediction } from '~/lib/api';
 import { getMockMatch, getMockPrediction, matches, statusClass, teamNameHref, type Match, type Prediction } from '~/lib/mock-data';
 import { formatCompetitionLabel, formatFinishedMatchSummary, formatKickoffFr, formatMatchStatusLabel, formatScore, formatWinnerLabel } from '~/lib/ui-text';
@@ -48,9 +48,11 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
         <section className="matchHeader">
           <div>
             <p className="eyebrow">{prediction.competition || match.competition}</p>
-            <h1>
-              {prediction.home_team} vs {prediction.away_team}
-            </h1>
+            <div className="matchTitleTeams">
+              <TeamIdentity teamName={prediction.home_team} logoUrl={prediction.home_team_logo ?? prediction.home_crest ?? match.home_team_logo ?? match.home_crest} size="lg" />
+              <span className="versus">vs</span>
+              <TeamIdentity teamName={prediction.away_team} logoUrl={prediction.away_team_logo ?? prediction.away_crest ?? match.away_team_logo ?? match.away_crest} tone="away" size="lg" />
+            </div>
             <p>{formatKickoffFr(kickoff)}</p>
             <div className="cardTop compact">
               <span className={`badge status-badge ${finished ? 'historicalBadge' : ''}`}>{formatMatchStatusLabel(match.status ?? prediction.status)}</span>
@@ -313,7 +315,10 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
         <section className="grid three">
           {[prediction.home_team, prediction.away_team].map((team) => (
             <Link className="card clickable-card" href={teamNameHref(team)} key={team}>
-              <h3>{team}</h3>
+              <TeamIdentity
+                teamName={team}
+                logoUrl={team === prediction.home_team ? prediction.home_team_logo ?? prediction.home_crest : prediction.away_team_logo ?? prediction.away_crest}
+              />
               <p>Voir la fiche équipe et les matchs liés.</p>
             </Link>
           ))}
