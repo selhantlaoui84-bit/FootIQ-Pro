@@ -228,6 +228,18 @@ export default function AdminPage() {
   const displayedFeatureSnapshots = featureSummaryUnavailable ? 'indisponible' : effectiveFeatureSnapshots;
   const displayedTrainingRows = featureSummaryUnavailable ? 'indisponible' : effectiveTrainingRows;
   const displayedTargetCoverage = featureSummaryUnavailable ? 'indisponible' : `${featureSummary?.target_coverage ?? 0}%`;
+  const stableSnapshotsSaved =
+    (stableRefreshInfo?.snapshots_saved ?? 0) > 0
+      ? stableRefreshInfo?.snapshots_saved
+      : dashboardSummary?.snapshots_count ?? effectiveFeatureSnapshots;
+  const stableFeatureSnapshotsSaved =
+    (stableRefreshInfo?.feature_snapshots_saved ?? 0) > 0
+      ? stableRefreshInfo?.feature_snapshots_saved
+      : effectiveFeatureSnapshots;
+  const stableTrainingRows =
+    (stableRefreshInfo?.training_rows_available ?? 0) > 0
+      ? stableRefreshInfo?.training_rows_available
+      : effectiveTrainingRows;
   const registeredCandidateRows = modelVersions?.latest_candidate_model?.rows_used ?? 0;
   const trainingSucceeded =
     trainingReport?.status === 'ok' ||
@@ -1020,9 +1032,9 @@ export default function AdminPage() {
             <span>Équipes importées <strong>{stableRefreshInfo?.teams_imported ?? 0}</strong></span>
             <span>Prédictions générées <strong>{stableRefreshInfo?.predictions_generated ?? stableRefreshInfo?.predictions_imported ?? 0}</strong></span>
             <span>Prédictions sauvegardées <strong>{stableRefreshInfo?.predictions_saved ?? stableRefreshInfo?.predictions_imported ?? 0}</strong></span>
-            <span>Snapshots sauvegardés <strong>{stableRefreshInfo?.snapshots_saved ?? 0}</strong></span>
-            <span>Snapshots Feature Store <strong>{stableRefreshInfo?.feature_snapshots_saved ?? 0}</strong></span>
-            <span>Lignes entraînables <strong>{stableRefreshInfo?.training_rows_available ?? 0}</strong></span>
+            <span>Snapshots sauvegardés <strong>{stableSnapshotsSaved}</strong></span>
+            <span>Snapshots Feature Store <strong>{stableFeatureSnapshotsSaved}</strong></span>
+            <span>Lignes entraînables <strong>{stableTrainingRows}</strong></span>
             <span>Dernière actualisation <strong>{formatDate(stableRefreshInfo?.last_refresh_at)}</strong></span>
             <span>Compétitions configurées <strong>{stableRefreshInfo?.configured_competitions?.join(', ') || 'FL1, CL'}</strong></span>
           </div>
