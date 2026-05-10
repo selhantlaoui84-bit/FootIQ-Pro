@@ -228,8 +228,19 @@ export default function AdminPage() {
   const displayedFeatureSnapshots = featureSummaryUnavailable ? 'indisponible' : effectiveFeatureSnapshots;
   const displayedTrainingRows = featureSummaryUnavailable ? 'indisponible' : effectiveTrainingRows;
   const displayedTargetCoverage = featureSummaryUnavailable ? 'indisponible' : `${featureSummary?.target_coverage ?? 0}%`;
+  const registeredCandidateRows = modelVersions?.latest_candidate_model?.rows_used ?? 0;
+  const trainingSucceeded =
+    trainingReport?.status === 'ok' ||
+    trainingReport?.status === 'trained' ||
+    trainingReport?.status === 'success' ||
+    (trainingReport?.rows_used ?? 0) >= 30;
+  const candidateModelTrained =
+    workflowStatus?.candidate_model?.trained === true ||
+    trainingSucceeded ||
+    registeredCandidateRows >= 30 ||
+    Boolean(modelVersions?.latest_candidate_model?.model_version);
   const displayedNextStep = effectiveFeatureStoreReady
-    ? (workflowStatus?.candidate_model?.trained ? 'generate_shadow_predictions' : 'train_candidate_model')
+    ? (candidateModelTrained ? 'generate_shadow_predictions' : 'train_candidate_model')
     : (workflowStatus?.next_step ?? 'refresh_data');
   const effectiveNextStep = displayedNextStep;
 
@@ -242,7 +253,6 @@ export default function AdminPage() {
   const dataImported =
     workflowStatus?.refresh?.data_imported ??
     ((resolvedRefreshStorage === 'postgresql' || workflowStatus?.refresh?.storage === 'postgresql') && refreshMatchesImported > 0);
-  const candidateModelTrained = workflowStatus?.candidate_model?.trained ?? false;
   const refreshJobStale = isProbablyStale(currentRefreshJob);
   const featureStoreJobStale = isProbablyStale(currentFeatureStoreJob);
   const adminLoadErrorEntries = Object.entries(adminLoadErrors).filter(

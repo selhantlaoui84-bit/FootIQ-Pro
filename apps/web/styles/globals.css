@@ -2282,11 +2282,22 @@ input::placeholder {
 .premiumSignalList a,
 .marketLine {
   display: grid;
-  grid-template-columns: 38px 1fr auto auto;
+  grid-template-columns: 42px minmax(0, 1fr) auto auto;
   gap: 12px;
   align-items: center;
   padding: 10px 0;
   border-bottom: 1px solid rgba(216, 182, 106, 0.13);
+}
+
+.premiumSignalList .teamCrest {
+  width: 42px;
+  height: 42px;
+  font-size: 12px;
+  box-shadow: 0 0 18px rgba(50, 230, 154, 0.2);
+}
+
+.premiumSignalList span {
+  min-width: 0;
 }
 
 .emptyState.compact {

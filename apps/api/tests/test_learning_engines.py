@@ -290,7 +290,11 @@ class LearningEngineTests(unittest.TestCase):
         self.assertFalse(report["promotion_readiness"]["ready"])
         self.assertFalse(report["promotion_rules"]["tested_matches"]["passed"])
         self.assertFalse(report["promotion_rules"]["roi"]["passed"])
-        self.assertIn("Critères stricts de promotion non satisfaits.", report["promotion_readiness"]["blocking_reasons"])
+        self.assertNotIn("Critères stricts de promotion non satisfaits.", report["promotion_readiness"]["blocking_reasons"])
+        self.assertIn(
+            "Critères stricts de promotion non satisfaits : garder le candidat en shadow.",
+            report["promotion_readiness"]["warnings"],
+        )
 
     def test_training_diagnostics_counts_invalid_rows_and_targets(self):
         rows = [
