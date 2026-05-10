@@ -171,6 +171,13 @@ async function run() {
   assert.match(adminPageSource, /Impossible de charger \/features\/summary/);
   assert.match(adminPageSource, /displayedFeatureReady/);
   assert.match(adminPageSource, /disabled=\{isTraining \|\| !isAdmin \|\| !effectiveFeatureStoreReady\}/);
+  assert.match(adminPageSource, /Version modèle/);
+  assert.match(adminPageSource, /Lignes chargées/);
+  assert.match(adminPageSource, /Lignes utilisées/);
+  assert.match(adminPageSource, /Features utilisées/);
+  assert.match(adminPageSource, /Brier score/);
+  assert.match(adminPageSource, /Distribution target/);
+  assert.match(adminPageSource, /Erreur entraînement/);
   assert.match(adminPageSource, /getShadowPredictionJobStatus/);
   assert.match(adminPageSource, /shadowJobId/);
   assert.match(adminPageSource, /Job shadow/);
@@ -304,7 +311,7 @@ async function run() {
   assert.match(backendSource, /Backend refresh misconfigured: missing/);
   assert.match(backendSource, /@app\.post\("\/admin\/train-candidate-model"\)/);
   assert.match(backendSource, /def train_candidate_model_admin/);
-  assert.match(backendSource, /train_candidate_model\(rows, model_type=model_type\)/);
+  assert.match(backendSource, /train_candidate_model\(rows, model_type=safe_model_type\)/);
   assert.match(backendSource, /@app\.post\("\/admin\/generate-shadow-predictions"\)/);
   assert.match(backendSource, /def generate_shadow_predictions_admin/);
   assert.match(backendSource, /generate_shadow_prediction\(match, production_prediction\)/);

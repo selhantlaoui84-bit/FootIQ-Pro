@@ -408,7 +408,7 @@ export async function getPerformance(): Promise<PerformanceMetrics> {
     return performanceMetrics;
   }
 
-  const data = await fetchBackendJson<PerformanceMetrics>('/performance', undefined, 3000);
+  const data = await fetchBackendJson<PerformanceMetrics>('/performance', undefined, 10000);
 
   return data ?? performanceMetrics;
 }

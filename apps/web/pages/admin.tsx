@@ -140,6 +140,13 @@ function formatDate(value?: string | null) {
   return value;
 }
 
+function trainingFeatureCount(report?: TrainingReport | null) {
+  if (!report) return 0;
+  if (typeof report.features_used === 'number') return report.features_used;
+  if (Array.isArray(report.features_used)) return report.features_used.length;
+  return report.feature_names?.length ?? report.feature_columns?.length ?? 0;
+}
+
 export default function AdminPage() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [workflowStatus, setWorkflowStatus] = useState<AdminWorkflowStatus | null>(null);
@@ -615,7 +622,7 @@ export default function AdminPage() {
       setTrainingReport(result);
 
       if (result.status === 'error') {
-        setError(result.detail ?? "Construisez d'abord le Feature Store avant d'entraîner le modèle.");
+        setError(`Erreur entraînement : ${result.detail ?? result.errors?.join(' ') ?? "Construisez d'abord le Feature Store avant d'entraîner le modèle."}`);
       } else if (result.status === 'blocked') {
         setError(
           result.reason ??
@@ -855,10 +862,23 @@ export default function AdminPage() {
               {trainingReport && (
                 <div className="dataList">
                   <span>Statut <strong>{trainingReport.status}</strong></span>
-                  <span>Lignes utilisées <strong>{trainingReport.rows_used ?? trainingReport.rows_loaded ?? 0}</strong></span>
+                  <span>Version modèle <strong>{trainingReport.model_version ?? 'N/A'}</strong></span>
+                  <span>Type modèle <strong>{trainingReport.model_type ?? modelType}</strong></span>
+                  <span>Lignes chargées <strong>{trainingReport.rows_loaded ?? 0}</strong></span>
+                  <span>Lignes utilisées <strong>{trainingReport.rows_used ?? 0}</strong></span>
+                  <span>Lignes validées <strong>{trainingReport.rows_after_validation ?? trainingReport.rows_used ?? 0}</strong></span>
+                  <span>Features utilisées <strong>{trainingFeatureCount(trainingReport)}</strong></span>
                   <span>Précision <strong>{trainingReport.accuracy ?? 'N/A'}</strong></span>
                   <span>Log loss <strong>{trainingReport.log_loss ?? 'N/A'}</strong></span>
+                  <span>Brier score <strong>{trainingReport.brier_score ?? trainingReport.brier_score_1x2 ?? 'N/A'}</strong></span>
+                  <span>Distribution target <strong>{Object.entries(trainingReport.target_distribution ?? {}).map(([key, value]) => `${key}:${value}`).join(', ') || 'N/A'}</strong></span>
                 </div>
+              )}
+              {(trainingReport?.warnings?.length ?? 0) > 0 && (
+                <div className="banner warning">{trainingReport?.warnings?.join(' ')}</div>
+              )}
+              {(trainingReport?.errors?.length ?? 0) > 0 && (
+                <div className="banner error">Erreur entraînement : {trainingReport?.errors?.join(' ')}</div>
               )}
             </article>
           </div>

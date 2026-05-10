@@ -336,19 +336,28 @@ export type FeatureImportanceRow = {
 };
 
 export type TrainingReport = {
-  status: 'ok' | 'insufficient_data' | 'error' | 'not_trained' | 'blocked' | string;
+  status: 'ok' | 'success' | 'insufficient_data' | 'error' | 'not_trained' | 'blocked' | string;
+  storage?: string;
   model_type?: 'random_forest' | 'xgboost' | string;
   fallback_used?: boolean;
   model_version?: string;
+  rows_loaded?: number;
   rows_used?: number;
+  rows_after_validation?: number;
+  invalid_rows?: number;
+  invalid_feature_rows?: number;
+  invalid_target_rows?: number;
   train_rows?: number;
   test_rows?: number;
   accuracy?: number;
   log_loss?: number | null;
+  brier_score?: number | null;
   brier_score_1x2?: number | null;
   confusion_matrix?: Record<string, unknown>;
   feature_importance?: FeatureImportanceRow[];
   feature_columns?: string[];
+  feature_names?: string[];
+  features_used?: number | string[];
   trained_at?: string;
   artifact_path?: string;
   metadata_path?: string;
@@ -356,8 +365,10 @@ export type TrainingReport = {
   detail?: string;
   reason?: string;
   warning?: string;
-  rows_loaded?: number;
   rows_with_target?: number;
+  target_distribution?: Record<string, number>;
+  warnings?: string[];
+  errors?: string[];
   quality_recommendation?: string;
   quality_recommendation_reason?: string;
   minimum_required_rows?: number;
