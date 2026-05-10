@@ -469,7 +469,32 @@ class LearningEngineTests(unittest.TestCase):
 
         self.assertEqual(report["shadow_predictions_total"], 1)
         self.assertEqual(report["pending_predictions"], 1)
+        self.assertEqual(report["invalid_predictions"], 0)
         self.assertEqual(report["metrics"]["accuracy"], None)
+
+    def test_shadow_backtesting_does_not_count_pending_as_wrong(self):
+        report = calculate_shadow_backtest_report(
+            [{"id": "m1", "match_id": "m1", "status": "SCHEDULED"}],
+            [shadow_record("m1", shadow_pick="away", production_pick="home")],
+        )
+
+        self.assertEqual(report["evaluable_predictions"], 0)
+        self.assertEqual(report["pending_predictions"], 1)
+        self.assertIsNone(report["metrics"]["accuracy"])
+        self.assertIsNone(report["comparison"]["delta_accuracy"])
+
+    def test_shadow_backtesting_invalid_prediction_is_not_evaluable(self):
+        record = shadow_record("m1", shadow_pick="home", production_pick="home")
+        record["shadow_prediction"]["predicted_result"] = None
+        record["shadow_prediction"]["probabilities"] = {}
+        record["comparison"]["shadow_pick"] = None
+
+        report = calculate_shadow_backtest_report([finished_match("m1", "home")], [record])
+
+        self.assertEqual(report["evaluable_predictions"], 0)
+        self.assertEqual(report["pending_predictions"], 0)
+        self.assertEqual(report["invalid_predictions"], 1)
+        self.assertEqual(report["invalid_matches"][0]["reason"], "missing_shadow_selection")
 
     def test_shadow_backtesting_evaluable_metrics_and_roi(self):
         report = calculate_shadow_backtest_report(
@@ -493,7 +518,11 @@ class LearningEngineTests(unittest.TestCase):
         self.assertIsNotNone(report["metrics"]["brier_score"])
         self.assertEqual(report["metrics"]["roi_theoretical"], 0.0)
         self.assertEqual(report["comparison"]["delta_accuracy"], 0)
+        self.assertEqual(report["comparison"]["comparison_status"], "insufficient_data")
+        self.assertIsNone(report["comparison"]["candidate_better_than_production"])
+        self.assertEqual(report["production_metrics"]["accuracy"], 50)
         self.assertEqual(report["by_market"][0]["market"], "1x2")
+        self.assertEqual(report["by_market"][0]["evaluable_count"], 2)
         self.assertGreaterEqual(len(report["by_competition"]), 1)
         self.assertGreaterEqual(len(report["by_confidence"]), 1)
 
@@ -524,7 +553,7 @@ class LearningEngineTests(unittest.TestCase):
 
         self.assertFalse(workflow["shadow_backtesting"]["ready"])
         self.assertEqual(workflow["shadow_backtesting"]["pending_predictions"], 1)
-        self.assertEqual(workflow["next_step"], "review_shadow_backtesting")
+        self.assertEqual(workflow["next_step"], "wait_for_results")
 
     def test_workflow_status_after_shadow_predictions_evaluable(self):
         with patch.object(main, "_feature_summary", return_value={"snapshots_count": 10, "with_target_count": 8, "target_coverage": 80, "storage": "postgresql"}), patch.object(

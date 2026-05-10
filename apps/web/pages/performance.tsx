@@ -2,7 +2,7 @@ import type { GetStaticProps } from 'next';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { InfoTooltip } from '~/components/InfoTooltip';
-import { TeamIdentity } from '~/components/ui';
+import { TeamIdentity } from '~/components/TeamIdentity';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import {
   getBacktesting,
@@ -356,6 +356,7 @@ export default function PerformancePage({
   const candidateBrier = latestCandidate?.brier_score ?? candidate.brier_score ?? candidate.brier_score_1x2;
   const shadowEvaluable = Number(shadowBacktesting.evaluable_predictions ?? shadowBacktesting.evaluated_matches ?? 0);
   const shadowPending = Number(shadowBacktesting.pending_predictions ?? 0);
+  const shadowInvalid = Number(shadowBacktesting.invalid_predictions ?? 0);
   const shadowTotal = Number(shadowBacktesting.shadow_predictions_total ?? 0);
   const shadowHasMetrics = shadowEvaluable > 0;
   const shadowRecommendation = shadowBacktesting.recommendation?.reason ?? shadowBacktesting.recommendation_reason;
@@ -1093,13 +1094,18 @@ export default function PerformancePage({
     </div>
 
     <div className="metric">
+      <span>Invalides</span>
+      <strong>{shadowInvalid}</strong>
+    </div>
+
+    <div className="metric">
       <span>Matchs évalués</span>
       <strong>{shadowEvaluable}</strong>
     </div>
 
     <div className="metric">
       <span>Précision officielle</span>
-      <strong>{shadowHasMetrics ? `${shadowBacktesting.production_accuracy}%` : unavailableMetric}</strong>
+      <strong>{shadowHasMetrics && shadowBacktesting.production_metrics?.accuracy !== null ? `${shadowBacktesting.production_metrics?.accuracy ?? shadowBacktesting.production_accuracy}%` : unavailableMetric}</strong>
     </div>
 
     <div className="metric">
@@ -1191,7 +1197,7 @@ export default function PerformancePage({
           <span>
             <TeamIdentity teamName={item.home_team ?? 'Domicile'} size="sm" />
             <span className="muted">vs</span>
-            <TeamIdentity teamName={item.away_team ?? 'Extérieur'} tone="away" size="sm" />
+            <TeamIdentity align="right" className="away" teamName={item.away_team ?? 'Extérieur'} size="sm" />
           </span>
           <strong>{item.actual_result}</strong>
           <strong>{item.production_pick}</strong>
