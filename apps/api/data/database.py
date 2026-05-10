@@ -142,6 +142,23 @@ Index("ix_model_versions_created_at", model_versions_table.c.created_at)
 Index("ix_model_versions_model_type", model_versions_table.c.model_type)
 Index("ix_model_versions_trained_at", model_versions_table.c.trained_at)
 
+model_promotion_audit_table = Table(
+    "model_promotion_audit",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("action", Text, nullable=False),
+    Column("candidate_model_version", Text, nullable=True),
+    Column("previous_production_model_version", Text, nullable=True),
+    Column("new_production_model_version", Text, nullable=True),
+    Column("requested_by", Text, nullable=True),
+    Column("governance_json", Text, nullable=True),
+    Column("result", Text, nullable=True),
+    Column("detail", Text, nullable=True),
+    Column("created_at", TIMESTAMP(timezone=True)),
+)
+Index("ix_model_promotion_audit_created_at", model_promotion_audit_table.c.created_at)
+Index("ix_model_promotion_audit_action", model_promotion_audit_table.c.action)
+
 
 def get_database_url() -> str | None:
     database_url = os.getenv("DATABASE_URL")
@@ -209,6 +226,8 @@ def _ensure_runtime_columns_and_indexes(engine: Engine) -> None:
             "CREATE INDEX IF NOT EXISTS ix_model_versions_created_at ON model_versions(created_at)",
             "CREATE INDEX IF NOT EXISTS ix_model_versions_model_type ON model_versions(model_type)",
             "CREATE INDEX IF NOT EXISTS ix_model_versions_trained_at ON model_versions(trained_at)",
+            "CREATE INDEX IF NOT EXISTS ix_model_promotion_audit_created_at ON model_promotion_audit(created_at)",
+            "CREATE INDEX IF NOT EXISTS ix_model_promotion_audit_action ON model_promotion_audit(action)",
         ]
     elif engine.dialect.name == "sqlite":
         statements = [
@@ -218,6 +237,8 @@ def _ensure_runtime_columns_and_indexes(engine: Engine) -> None:
             "CREATE INDEX IF NOT EXISTS ix_model_versions_created_at ON model_versions(created_at)",
             "CREATE INDEX IF NOT EXISTS ix_model_versions_model_type ON model_versions(model_type)",
             "CREATE INDEX IF NOT EXISTS ix_model_versions_trained_at ON model_versions(trained_at)",
+            "CREATE INDEX IF NOT EXISTS ix_model_promotion_audit_created_at ON model_promotion_audit(created_at)",
+            "CREATE INDEX IF NOT EXISTS ix_model_promotion_audit_action ON model_promotion_audit(action)",
         ]
         with engine.connect() as connection:
             columns = {row._mapping["name"] for row in connection.execute(text("PRAGMA table_info(feature_snapshots)"))}

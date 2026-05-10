@@ -16,12 +16,15 @@ import {
   getLearningFeedback,
   getLearningMonitoring,
   getMlShadowBacktesting,
+  getModelPromotionAudit,
   getModelVersionsRegistry,
   getShadowPredictionJobStatus,
   getModelGovernance,
   getRefreshJobStatus,
   getRefreshStatus,
   refreshData,
+  promoteCandidateModel,
+  rollbackProductionModel,
   resetStaleJobs,
   trainCandidateModel,
 } from '~/lib/api';
@@ -42,6 +45,9 @@ import type {
   MatchView,
   MlShadowBacktesting,
   ModelGovernanceReport,
+  ModelPromotionAuditResponse,
+  PromoteCandidateModelResponse,
+  RollbackProductionModelResponse,
   ModelVersionsResponse,
   RefreshJobStatus,
   RefreshResponse,
@@ -59,6 +65,7 @@ type AdminLoadErrors = {
   governanceError: string | null;
   learningMonitoringError: string | null;
   shadowBacktestingError: string | null;
+  promotionAuditError: string | null;
 };
 
 type AdminLoadResult<T> = {
@@ -76,6 +83,7 @@ const emptyAdminLoadErrors: AdminLoadErrors = {
   governanceError: null,
   learningMonitoringError: null,
   shadowBacktestingError: null,
+  promotionAuditError: null,
 };
 
 const adminLoadErrorLabels: Record<keyof AdminLoadErrors, string> = {
@@ -88,6 +96,7 @@ const adminLoadErrorLabels: Record<keyof AdminLoadErrors, string> = {
   governanceError: 'Gouvernance modèle',
   learningMonitoringError: 'Monitoring learning',
   shadowBacktestingError: 'Backtesting shadow',
+  promotionAuditError: 'Audit promotion',
 };
 
 function valueBadge(value?: string | null) {
@@ -177,6 +186,10 @@ export default function AdminPage() {
   const [shadowBacktesting, setShadowBacktesting] = useState<MlShadowBacktesting | null>(null);
   const [calibrationReport, setCalibrationReport] = useState<CalibrationReport | null>(null);
   const [modelVersions, setModelVersions] = useState<ModelVersionsResponse | null>(null);
+  const [promotionAudit, setPromotionAudit] = useState<ModelPromotionAuditResponse | null>(null);
+  const [promotionResult, setPromotionResult] = useState<PromoteCandidateModelResponse | RollbackProductionModelResponse | null>(null);
+  const [isPromotingModel, setIsPromotingModel] = useState(false);
+  const [isRollingBackModel, setIsRollingBackModel] = useState(false);
   const [adminAlerts, setAdminAlerts] = useState<AdminAlertsReport | null>(null);
   const [modelType, setModelType] = useState('random_forest');
   const [trainingLimit, setTrainingLimit] = useState(5000);
@@ -283,6 +296,15 @@ export default function AdminPage() {
   const adminLoadErrorEntries = Object.entries(adminLoadErrors).filter(
     (entry): entry is [keyof AdminLoadErrors, string] => Boolean(entry[1]),
   );
+  const promotionEvaluation = modelGovernance?.promotion_evaluation;
+  const productionModel = modelVersions?.current_production_model;
+  const candidateModel = modelVersions?.latest_candidate_model;
+  const promotionAllowed = promotionEvaluation?.promotion_allowed === true;
+  const promotionReasons =
+    promotionEvaluation?.reasons?.length
+      ? promotionEvaluation.reasons
+      : modelGovernance?.promotion_readiness.blocking_reasons ?? [];
+  const rollbackTarget = modelVersions?.versions.find((item) => item.status === 'archived');
 
   async function reloadAdminState() {
     const [
@@ -297,6 +319,7 @@ export default function AdminPage() {
       shadowBacktestingResult,
       calibrationResult,
       modelVersionsResult,
+      promotionAuditResult,
       alertsResult,
       dashboardResult,
     ] = await Promise.all([
@@ -311,6 +334,7 @@ export default function AdminPage() {
       captureAdminLoad(getMlShadowBacktesting(2000), 'Impossible de charger /shadow/backtesting'),
       captureAdminLoad(getCalibrationReport(), 'Impossible de charger /learning/calibration'),
       captureAdminLoad(getModelVersionsRegistry(), 'Impossible de charger /models/versions'),
+      captureAdminLoad(getModelPromotionAudit(), 'Impossible de charger /models/promotion-audit'),
       captureAdminLoad(getAdminAlerts(), 'Impossible de charger /admin/alerts'),
       captureAdminLoad(getDashboardSummary(), 'Impossible de charger /dashboard/summary'),
     ]);
@@ -324,6 +348,7 @@ export default function AdminPage() {
       governanceError: governanceResult.error,
       learningMonitoringError: monitoringResult.error,
       shadowBacktestingError: shadowBacktestingResult.error,
+      promotionAuditError: promotionAuditResult.error,
       alertsError: alertsResult.error,
       dashboardSummaryError: dashboardResult.error,
     });
@@ -350,6 +375,7 @@ export default function AdminPage() {
     if (shadowBacktestingResult.data) setShadowBacktesting(shadowBacktestingResult.data);
     if (calibrationResult.data) setCalibrationReport(calibrationResult.data);
     if (modelVersionsResult.data) setModelVersions(modelVersionsResult.data);
+    if (promotionAuditResult.data) setPromotionAudit(promotionAuditResult.data);
     if (alertsResult.data) setAdminAlerts(alertsResult.data);
     if (dashboardResult.data) setDashboardSummary(dashboardResult.data);
   }
@@ -682,6 +708,60 @@ export default function AdminPage() {
     }
   }
 
+  async function handlePromoteCandidate() {
+    const modelVersion = candidateModel?.model_version ?? promotionEvaluation?.candidate_model_version;
+    if (!modelVersion) {
+      setError('Aucun modèle candidat disponible pour promotion.');
+      return;
+    }
+    if (!promotionAllowed) {
+      setError(`Promotion bloquée : ${promotionReasons.join(' ') || 'gouvernance non validée.'}`);
+      return;
+    }
+    const confirmed = window.confirm('Je confirme vouloir promouvoir ce modèle candidat en production.');
+    if (!confirmed) return;
+
+    setIsPromotingModel(true);
+    setError(null);
+    try {
+      const result = await promoteCandidateModel({ modelVersion, confirm: true });
+      setPromotionResult(result);
+      if (result.status !== 'success') {
+        setError(result.detail ?? 'Promotion bloquée par la gouvernance.');
+      }
+      await reloadAdminState();
+    } catch (promotionError) {
+      setError(promotionError instanceof Error ? promotionError.message : 'Promotion modèle indisponible.');
+    } finally {
+      setIsPromotingModel(false);
+    }
+  }
+
+  async function handleRollbackProduction() {
+    const targetModelVersion = rollbackTarget?.model_version;
+    if (!targetModelVersion) {
+      setError('Aucune ancienne production archivée disponible pour rollback.');
+      return;
+    }
+    const confirmed = window.confirm('Je confirme vouloir restaurer cette ancienne version production.');
+    if (!confirmed) return;
+
+    setIsRollingBackModel(true);
+    setError(null);
+    try {
+      const result = await rollbackProductionModel({ targetModelVersion, confirm: true });
+      setPromotionResult(result);
+      if (result.status !== 'success') {
+        setError(result.detail ?? 'Rollback production bloqué.');
+      }
+      await reloadAdminState();
+    } catch (rollbackError) {
+      setError(rollbackError instanceof Error ? rollbackError.message : 'Rollback production indisponible.');
+    } finally {
+      setIsRollingBackModel(false);
+    }
+  }
+
   return (
     <ProtectedRoute requireAdmin>
       <Layout>
@@ -946,6 +1026,54 @@ export default function AdminPage() {
               )}
             </article>
           </div>
+
+          <article className="sectionAnchor" id="model-promotion">
+            <h3>Promotion modèle</h3>
+            <div className="compactDataGrid four">
+              <div className="metric"><span>Production actuelle</span><strong>{productionModel?.model_version ?? modelGovernance?.production_model.version ?? 'elo-poisson-calibrated-v1'}</strong></div>
+              <div className="metric"><span>Production verrouillée</span><strong>{modelGovernance?.production_model.locked ? 'oui' : 'non'}</strong></div>
+              <div className="metric"><span>Candidat actuel</span><strong>{candidateModel?.model_version ?? promotionEvaluation?.candidate_model_version ?? 'N/A'}</strong></div>
+              <div className="metric"><span>Statut candidat</span><strong>{candidateModel?.status ?? modelGovernance?.candidate_model.status ?? 'unknown'}</strong></div>
+              <div className="metric"><span>Lignes candidat</span><strong>{candidateModel?.rows_used ?? modelGovernance?.candidate_model.rows_used ?? 0}</strong></div>
+              <div className="metric"><span>Accuracy candidat</span><strong>{candidateModel?.accuracy ?? modelGovernance?.candidate_model.accuracy ?? 'N/A'}</strong></div>
+              <div className="metric"><span>Log loss candidat</span><strong>{candidateModel?.log_loss ?? promotionEvaluation?.metrics?.candidate_log_loss ?? 'N/A'}</strong></div>
+              <div className="metric"><span>Brier candidat</span><strong>{candidateModel?.brier_score ?? promotionEvaluation?.metrics?.candidate_brier_score ?? 'N/A'}</strong></div>
+              <div className="metric"><span>Readiness</span><strong>{promotionEvaluation?.readiness ?? modelGovernance?.promotion_readiness.level ?? 'unknown'}</strong></div>
+              <div className="metric"><span>Promotion autorisée</span><strong>{promotionAllowed ? 'oui' : 'non'}</strong></div>
+              <div className="metric"><span>Évaluables requis</span><strong>{promotionEvaluation?.requirements.current_evaluable_predictions ?? 0}/{promotionEvaluation?.requirements.minimum_evaluable_predictions ?? 30}</strong></div>
+              <div className="metric"><span>Dernière promotion</span><strong>{learningMonitoring?.last_promotion_at ?? 'N/A'}</strong></div>
+            </div>
+
+            {promotionReasons.length > 0 && (
+              <div className="banner warning">
+                <strong>Raisons de blocage : </strong>{promotionReasons.join(' ')}
+              </div>
+            )}
+            {promotionResult && (
+              <div className={promotionResult.status === 'success' ? 'banner info' : 'banner warning'}>
+                {promotionResult.status === 'success'
+                  ? `Action modèle réussie. Audit ${promotionResult.audit_id ?? 'N/A'}.`
+                  : promotionResult.detail ?? 'Action modèle bloquée.'}
+              </div>
+            )}
+            <div className="quickActions">
+              <button className="button primary" type="button" onClick={handlePromoteCandidate} disabled={!isAdmin || !promotionAllowed || isPromotingModel}>
+                {isPromotingModel ? 'Promotion...' : 'Promouvoir le candidat'}
+              </button>
+              <button className="button secondary" type="button" onClick={handleRollbackProduction} disabled={!isAdmin || !rollbackTarget || isRollingBackModel}>
+                {isRollingBackModel ? 'Rollback...' : `Rollback production${rollbackTarget ? ` vers ${rollbackTarget.model_version}` : ''}`}
+              </button>
+            </div>
+
+            <h4>Audit récent</h4>
+            <div className="dataList">
+              {(promotionAudit?.events ?? []).length === 0 ? (
+                <span>Aucun événement de promotion <strong>0</strong></span>
+              ) : promotionAudit?.events.slice(0, 5).map((event) => (
+                <span key={event.id}>{event.action} <strong>{event.result ?? 'unknown'} - {event.new_production_model_version ?? event.candidate_model_version ?? 'N/A'}</strong></span>
+              ))}
+            </div>
+          </article>
 
           <article className="sectionAnchor" id="shadow-backtesting">
             <h3>Backtesting shadow</h3>

@@ -1,4 +1,5 @@
 import unittest
+import asyncio
 from pathlib import Path
 from unittest.mock import patch
 
@@ -15,7 +16,7 @@ from services.ml_training import (
     prepare_training_rows,
     train_candidate_model,
 )
-from services.model_governance import build_model_governance_report
+from services.model_governance import build_model_governance_report, evaluate_model_promotion
 from services.model_versioning import get_versions_report, record_model_version, list_model_versions
 from services.shadow_backtesting import calculate_shadow_backtest_report
 
@@ -90,6 +91,14 @@ def shadow_record(
         },
         "created_at": "2026-05-10T10:00:00+00:00",
     }
+
+
+class FakeRequest:
+    def __init__(self, body):
+        self.body = body
+
+    async def json(self):
+        return self.body
 
 
 def feature_snapshot_row(index: int) -> dict:
@@ -600,6 +609,141 @@ class LearningEngineTests(unittest.TestCase):
         self.assertEqual(prepared["invalid_rows"], 2)
         self.assertEqual(prepared["target_distribution"], {"home": 1, "draw": 1})
         self.assertIn("elo_delta", prepared["features_used"])
+
+    def test_promotion_blocked_without_candidate(self):
+        report = evaluate_model_promotion(
+            versions_report={"versions": [], "latest_candidate_model": None},
+            governance_report={"production_model": {"locked": False}, "policy": {"production_model_locked": False}},
+            shadow_backtesting_report={"shadow_predictions_total": 0, "evaluable_predictions": 0},
+        )
+
+        self.assertFalse(report["promotion_allowed"])
+        self.assertEqual(report["readiness"], "blocked_no_shadow_backtesting")
+        self.assertIn("Aucun modèle candidat disponible.", report["reasons"])
+
+    def test_promotion_blocked_insufficient_shadow_data(self):
+        report = evaluate_model_promotion(
+            versions_report={
+                "latest_candidate_model": {"model_version": "ml-v1", "status": "candidate", "rows_used": 80, "accuracy": 55},
+                "current_production_model": {"model_version": "prod-v1"},
+                "versions": [],
+            },
+            governance_report={"production_model": {"locked": False}, "policy": {"production_model_locked": False}},
+            shadow_backtesting_report={"shadow_predictions_total": 10, "evaluable_predictions": 1, "metrics": {"accuracy": 60}},
+        )
+
+        self.assertFalse(report["promotion_allowed"])
+        self.assertEqual(report["readiness"], "blocked_insufficient_data")
+
+    def test_promotion_blocked_if_production_locked(self):
+        report = evaluate_model_promotion(
+            versions_report={
+                "latest_candidate_model": {"model_version": "ml-v1", "status": "candidate", "rows_used": 80, "accuracy": 55},
+                "current_production_model": {"model_version": "prod-v1", "locked": True},
+                "versions": [],
+            },
+            governance_report={"production_model": {"locked": True}, "policy": {"production_model_locked": True}},
+            shadow_backtesting_report={"shadow_predictions_total": 40, "evaluable_predictions": 35, "metrics": {"accuracy": 60}},
+        )
+
+        self.assertFalse(report["promotion_allowed"])
+        self.assertEqual(report["readiness"], "blocked_production_locked")
+
+    def test_promotion_allowed_when_governance_ready(self):
+        report = evaluate_model_promotion(
+            versions_report={
+                "latest_candidate_model": {
+                    "model_version": "ml-ready-v1",
+                    "status": "candidate",
+                    "rows_used": 100,
+                    "accuracy": 60,
+                    "log_loss": 0.8,
+                    "brier_score": 0.4,
+                },
+                "current_production_model": {"model_version": "prod-v1"},
+                "versions": [],
+            },
+            governance_report={"production_model": {"locked": False}, "policy": {"production_model_locked": False}},
+            shadow_backtesting_report={
+                "shadow_predictions_total": 40,
+                "evaluable_predictions": 35,
+                "metrics": {"accuracy": 60, "log_loss": 0.8, "brier_score": 0.4, "roi_theoretical": 0.1},
+                "comparison": {"delta_accuracy": 3, "delta_log_loss": -0.1, "delta_brier_score": -0.02, "delta_roi": 0.1},
+            },
+        )
+
+        self.assertTrue(report["promotion_allowed"])
+        self.assertEqual(report["readiness"], "promotion_ready")
+
+    def test_promote_candidate_archives_previous_production_and_logs(self):
+        self.use_sqlite_registry()
+        repository.save_model_version({"model_version": "prod-v1", "status": "production", "rows_used": 100})
+        repository.save_model_version({"model_version": "ml-promote-v1", "status": "candidate", "rows_used": 120, "accuracy": 60})
+        allowed = {
+            "status": "ok",
+            "promotion_allowed": True,
+            "readiness": "promotion_ready",
+            "reasons": [],
+            "requirements": {"minimum_evaluable_predictions": 30, "current_evaluable_predictions": 35},
+        }
+        with patch.object(main, "_require_admin_key", return_value=None), patch.object(main, "evaluate_model_promotion", return_value=allowed), patch.object(
+            main,
+            "calculate_shadow_backtest_report",
+            return_value={"shadow_predictions_total": 40, "evaluable_predictions": 35},
+        ):
+            request = FakeRequest({"model_version": "ml-promote-v1", "confirm": True})
+            result = asyncio.run(main.promote_candidate_model(request, x_admin_key="test"))
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(repository.get_model_version("prod-v1")["status"], "archived")
+        self.assertEqual(repository.get_model_version("ml-promote-v1")["status"], "production")
+        self.assertEqual(repository.list_model_promotion_audit()[0]["action"], "promote")
+
+    def test_promote_candidate_requires_confirm_true(self):
+        self.use_sqlite_registry()
+        with patch.object(main, "_require_admin_key", return_value=None):
+            request = FakeRequest({"model_version": "ml-v1", "confirm": False})
+            result = asyncio.run(main.promote_candidate_model(request, x_admin_key="test"))
+
+        self.assertEqual(result["status"], "blocked")
+
+    def test_rollback_requires_confirm_true(self):
+        self.use_sqlite_registry()
+        with patch.object(main, "_require_admin_key", return_value=None):
+            request = FakeRequest({"target_model_version": "prod-v1", "confirm": False})
+            result = asyncio.run(main.rollback_production_model(request, x_admin_key="test"))
+
+        self.assertEqual(result["status"], "blocked")
+
+    def test_rollback_restores_previous_production(self):
+        self.use_sqlite_registry()
+        repository.save_model_version({"model_version": "prod-current", "status": "production", "rows_used": 100})
+        repository.save_model_version({"model_version": "prod-previous", "status": "archived", "rows_used": 100})
+        with patch.object(main, "_require_admin_key", return_value=None):
+            request = FakeRequest({"target_model_version": "prod-previous", "confirm": True})
+            result = asyncio.run(main.rollback_production_model(request, x_admin_key="test"))
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(repository.get_model_version("prod-previous")["status"], "production")
+        self.assertEqual(repository.get_model_version("prod-current")["status"], "archived")
+
+    def test_promotion_audit_endpoint(self):
+        self.use_sqlite_registry()
+        repository.log_model_promotion_event(action="blocked", candidate_model_version="ml-v1", result="blocked", detail="no")
+        with patch.object(main, "_require_admin_key", return_value=None):
+            report = main.model_promotion_audit(x_admin_key="test")
+
+        self.assertEqual(report["status"], "ok")
+        self.assertEqual(report["events_count"], 1)
+
+    def test_learning_monitoring_includes_promotion_readiness(self):
+        self.use_sqlite_registry()
+        repository.save_model_version({"model_version": "ml-monitor-promotion-v1", "status": "candidate", "rows_used": 80, "metrics": {"accuracy": 51}})
+        with patch.object(main, "calculate_shadow_backtest_report", return_value={"shadow_predictions_total": 1, "evaluable_predictions": 0, "pending_predictions": 1}):
+            report = main.learning_monitoring()
+
+        self.assertIn("promotion_readiness", report)
+        self.assertFalse(report["promotion_allowed"])
 
 
 if __name__ == "__main__":

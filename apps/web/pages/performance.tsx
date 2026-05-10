@@ -543,7 +543,25 @@ export default function PerformancePage({
       <span>Promotion automatique</span>
       <strong>{governance.policy.automatic_promotion ? 'oui' : 'non'}</strong>
     </div>
+    <div className="metric">
+      <span>Statut promotion</span>
+      <strong>{governance.promotion_evaluation?.readiness ?? governance.promotion_readiness.level}</strong>
+    </div>
+    <div className="metric">
+      <span>Promotion autorisée</span>
+      <strong>{governance.promotion_evaluation?.promotion_allowed ? 'oui' : 'non'}</strong>
+    </div>
+    <div className="metric">
+      <span>Évaluables requis</span>
+      <strong>{governance.promotion_evaluation ? `${governance.promotion_evaluation.requirements.current_evaluable_predictions}/${governance.promotion_evaluation.requirements.minimum_evaluable_predictions}` : 'N/A'}</strong>
+    </div>
   </div>
+
+  {(governance.promotion_evaluation?.reasons?.length ?? 0) > 0 && (
+    <div className="banner warning">
+      <strong>Promotion bloquée : </strong>{governance.promotion_evaluation?.reasons.join(' ')}
+    </div>
+  )}
 
   <h3>Gates de validation</h3>
   <div className="governanceGrid">

@@ -29,7 +29,7 @@ from services.shadow_backtesting import calculate_shadow_backtest_report
 from services.elo_model import calculate_team_elos
 from services.model_registry import get_model_metadata
 from services.model_monitoring import build_monitoring_report
-from services.model_governance import build_model_governance_report
+from services.model_governance import build_model_governance_report, evaluate_model_promotion
 from services.feedback_engine import build_feedback_report
 from services.calibration_engine import CALIBRATION_VERSION, build_calibration_profile
 from services.model_versioning import get_versions_report, list_model_versions, record_model_version
@@ -534,7 +534,7 @@ def _model_governance_report():
             "reason": "Résumé hybride indisponible.",
         }
 
-    return build_model_governance_report(
+    report = build_model_governance_report(
         model_metadata,
         ml_status,
         dataset_quality,
@@ -543,6 +543,21 @@ def _model_governance_report():
         hybrid_engine_summary,
         feedback_report,
     )
+    try:
+        report["promotion_evaluation"] = evaluate_model_promotion(
+            versions_report=get_versions_report(),
+            governance_report=report,
+            shadow_backtesting_report=shadow_backtesting,
+        )
+    except Exception as exc:
+        report["promotion_evaluation"] = {
+            "status": "error",
+            "promotion_allowed": False,
+            "readiness": "manual_review_required",
+            "reasons": [str(exc)],
+            "requirements": {"minimum_evaluable_predictions": 30, "current_evaluable_predictions": 0},
+        }
+    return report
 
 
 def _feature_csv(rows: list[dict]) -> str:
@@ -893,6 +908,179 @@ def model_versions():
     }
 
 
+@app.get("/models/promotion-audit")
+def model_promotion_audit(
+    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    _require_admin_key(x_admin_key)
+    repository.init_model_promotion_audit_schema()
+    events = repository.list_model_promotion_audit(limit=limit)
+    return {
+        "status": "ok",
+        "storage": "postgresql" if repository.db_available() else "unavailable",
+        "events_count": len(events),
+        "events": events,
+    }
+
+
+@app.post("/models/promote-candidate")
+async def promote_candidate_model(
+    request: Request,
+    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
+):
+    _require_admin_key(x_admin_key)
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+
+    model_version = payload.get("model_version") or payload.get("modelVersion")
+    confirm = payload.get("confirm") is True
+    if not confirm:
+        return {
+            "status": "blocked",
+            "detail": "Promotion bloquée : confirm=true est requis.",
+            "governance": {
+                "promotion_allowed": False,
+                "readiness": "manual_review_required",
+                "reasons": ["Confirmation explicite manquante."],
+            },
+        }
+
+    versions_report = get_versions_report()
+    shadow_report = calculate_shadow_backtest_report(
+        _available_matches(),
+        repository.get_ml_shadow_predictions(limit=5000),
+    )
+    governance_report = _model_governance_report()
+    evaluation = evaluate_model_promotion(
+        model_version,
+        versions_report=versions_report,
+        governance_report=governance_report,
+        shadow_backtesting_report=shadow_report,
+    )
+    previous_production = repository.get_current_production_model()
+    previous_version = (previous_production or {}).get("model_version")
+
+    if not evaluation.get("promotion_allowed"):
+        audit = repository.log_model_promotion_event(
+            action="blocked",
+            candidate_model_version=model_version,
+            previous_production_model_version=previous_version,
+            governance=evaluation,
+            result="blocked",
+            detail="Promotion bloquée par la gouvernance.",
+        )
+        return {
+            "status": "blocked",
+            "detail": "Promotion bloquée par la gouvernance.",
+            "governance": evaluation,
+            "audit_id": (audit or {}).get("id"),
+        }
+
+    promoted = repository.promote_model_version(model_version)
+    if not promoted:
+        audit = repository.log_model_promotion_event(
+            action="blocked",
+            candidate_model_version=model_version,
+            previous_production_model_version=previous_version,
+            governance=evaluation,
+            result="error",
+            detail="Promotion impossible : modèle candidat introuvable ou PostgreSQL indisponible.",
+        )
+        return {
+            "status": "blocked",
+            "detail": "Promotion impossible : modèle candidat introuvable ou PostgreSQL indisponible.",
+            "governance": evaluation,
+            "audit_id": (audit or {}).get("id"),
+        }
+
+    audit = repository.log_model_promotion_event(
+        action="promote",
+        candidate_model_version=model_version,
+        previous_production_model_version=previous_version,
+        new_production_model_version=promoted.get("model_version"),
+        governance=evaluation,
+        result="success",
+        detail="Modèle candidat promu manuellement en production.",
+    )
+    return {
+        "status": "success",
+        "promoted_model_version": promoted.get("model_version"),
+        "previous_production_model_version": previous_version,
+        "archived_previous_production": bool(previous_version and previous_version != promoted.get("model_version")),
+        "audit_id": (audit or {}).get("id"),
+        "new_production_model": promoted,
+        "governance": evaluation,
+    }
+
+
+@app.post("/models/rollback-production")
+async def rollback_production_model(
+    request: Request,
+    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
+):
+    _require_admin_key(x_admin_key)
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+
+    target_version = payload.get("target_model_version") or payload.get("targetModelVersion")
+    confirm = payload.get("confirm") is True
+    if not confirm:
+        return {
+            "status": "blocked",
+            "detail": "Rollback bloqué : confirm=true est requis.",
+        }
+
+    target = repository.get_model_version(target_version)
+    current = repository.get_current_production_model()
+    current_version = (current or {}).get("model_version")
+    if not target or target.get("status") not in {"archived", "production"}:
+        audit = repository.log_model_promotion_event(
+            action="blocked",
+            previous_production_model_version=current_version,
+            new_production_model_version=target_version,
+            result="blocked",
+            detail="Rollback bloqué : cible introuvable ou non restaurable.",
+        )
+        return {
+            "status": "blocked",
+            "detail": "Rollback bloqué : cible introuvable ou non restaurable.",
+            "audit_id": (audit or {}).get("id"),
+        }
+    if target.get("model_version") == current_version:
+        return {
+            "status": "blocked",
+            "detail": "Rollback bloqué : la cible est déjà en production.",
+        }
+
+    restored = repository.promote_model_version(target.get("model_version"))
+    audit = repository.log_model_promotion_event(
+        action="rollback",
+        previous_production_model_version=current_version,
+        new_production_model_version=(restored or {}).get("model_version"),
+        result="success" if restored else "error",
+        detail="Rollback manuel exécuté." if restored else "Rollback impossible.",
+    )
+    if not restored:
+        return {
+            "status": "blocked",
+            "detail": "Rollback impossible : PostgreSQL indisponible ou cible introuvable.",
+            "audit_id": (audit or {}).get("id"),
+        }
+
+    return {
+        "status": "success",
+        "production_model_version": restored.get("model_version"),
+        "previous_production_model_version": current_version,
+        "audit_id": (audit or {}).get("id"),
+        "new_production_model": restored,
+    }
+
+
 @app.get("/models/comparison")
 def model_comparison():
     return calculate_snapshot_backtest(_available_matches(), repository.get_prediction_snapshots())
@@ -937,6 +1125,15 @@ def learning_monitoring():
 
     production_model = versions_report.get("current_production_model") or {}
     candidate_model = versions_report.get("latest_candidate_model") or {}
+    governance_report = _model_governance_report()
+    promotion_evaluation = evaluate_model_promotion(
+        (candidate_model or {}).get("model_version"),
+        versions_report=versions_report,
+        governance_report=governance_report,
+        shadow_backtesting_report=shadow_report,
+    )
+    last_promotion = repository.get_latest_model_promotion_event("promote")
+    last_rollback = repository.get_latest_model_promotion_event("rollback")
     if versions_report.get("storage") != "postgresql":
         alerts.append("Registre model_versions en fallback fichier.")
     if not candidate_model:
@@ -953,10 +1150,14 @@ def learning_monitoring():
         next_best_action = {"label": "Générer les prédictions shadow", "href": "/admin"}
     elif shadow_pending > 0 and shadow_evaluable == 0:
         next_best_action = {"label": "Attendre les résultats des matchs", "href": "/admin"}
+    elif promotion_evaluation.get("readiness") == "blocked_production_locked":
+        next_best_action = {"label": "Production verrouillée", "href": "/admin"}
     elif shadow_evaluable < 30:
         next_best_action = {"label": "Continuer le shadow testing", "href": "/admin"}
-    else:
+    elif promotion_evaluation.get("promotion_allowed"):
         next_best_action = {"label": "Revue manuelle de promotion", "href": "/admin"}
+    else:
+        next_best_action = {"label": "Continuer le shadow testing", "href": "/admin"}
 
     return {
         "status": "ok" if not alerts else "warning",
@@ -976,6 +1177,11 @@ def learning_monitoring():
         "shadow_evaluable_predictions": shadow_evaluable,
         "latest_shadow_backtesting_at": shadow_report.get("generated_at"),
         "governance_recommendation": shadow_report.get("recommendation"),
+        "promotion_readiness": promotion_evaluation.get("readiness"),
+        "promotion_allowed": promotion_evaluation.get("promotion_allowed"),
+        "promotion_blocking_reasons": promotion_evaluation.get("reasons", []),
+        "last_promotion_at": (last_promotion or {}).get("created_at"),
+        "last_rollback_at": (last_rollback or {}).get("created_at"),
         "alerts": alerts,
         "next_best_action": next_best_action,
         "feature_store": feature_summary,

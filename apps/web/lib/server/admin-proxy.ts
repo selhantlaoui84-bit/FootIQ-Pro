@@ -45,21 +45,28 @@ export async function proxyBackendRequest(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 15000);
   const headers: Record<string, string> = { Accept: 'application/json' };
+  let body: string | undefined;
 
   if (options.requireAdminKey && adminKey) {
     headers['X-Admin-Key'] = adminKey;
+  }
+
+  if (method === 'POST' && req.body && Object.keys(req.body).length > 0) {
+    headers['Content-Type'] = 'application/json';
+    body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
   }
 
   try {
     const response = await fetch(`${apiUrl}${options.backendPath}`, {
       method,
       headers,
+      body,
       signal: controller.signal,
     });
     const text = await response.text();
-    const body = parseBackendBody(text, response.statusText || 'Backend response is empty');
+    const responseBody = parseBackendBody(text, response.statusText || 'Backend response is empty');
 
-    return res.status(response.status).json(body);
+    return res.status(response.status).json(responseBody);
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
       return res.status(504).json({ detail: options.timeoutDetail ?? 'Backend request timed out' });

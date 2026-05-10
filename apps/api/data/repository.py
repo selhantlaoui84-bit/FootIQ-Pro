@@ -919,6 +919,115 @@ def archive_model_version(model_version: str) -> dict | None:
     return update_model_version_status(model_version, "archived")
 
 
+def init_model_promotion_audit_schema() -> bool:
+    return init_db()
+
+
+def _promotion_audit_from_row(row: dict | None) -> dict | None:
+    if not row:
+        return None
+    created_at = row.get("created_at")
+    return {
+        "id": row.get("id"),
+        "action": row.get("action"),
+        "candidate_model_version": row.get("candidate_model_version"),
+        "previous_production_model_version": row.get("previous_production_model_version"),
+        "new_production_model_version": row.get("new_production_model_version"),
+        "requested_by": row.get("requested_by"),
+        "governance": _loads(row.get("governance_json")) or {},
+        "result": row.get("result"),
+        "detail": row.get("detail"),
+        "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else created_at,
+    }
+
+
+def log_model_promotion_event(
+    *,
+    action: str,
+    candidate_model_version: str | None = None,
+    previous_production_model_version: str | None = None,
+    new_production_model_version: str | None = None,
+    requested_by: str | None = None,
+    governance: dict | None = None,
+    result: str | None = None,
+    detail: str | None = None,
+) -> dict | None:
+    if not action or not db_available():
+        return None
+
+    audit_id = str(uuid.uuid4())
+    ok = execute_safe(
+        text(
+            """
+            INSERT INTO model_promotion_audit (
+                id, action, candidate_model_version, previous_production_model_version,
+                new_production_model_version, requested_by, governance_json, result, detail, created_at
+            )
+            VALUES (
+                :id, :action, :candidate_model_version, :previous_production_model_version,
+                :new_production_model_version, :requested_by, :governance_json, :result, :detail, :created_at
+            )
+            """
+        ),
+        {
+            "id": audit_id,
+            "action": action,
+            "candidate_model_version": candidate_model_version,
+            "previous_production_model_version": previous_production_model_version,
+            "new_production_model_version": new_production_model_version,
+            "requested_by": requested_by,
+            "governance_json": _json(governance or {}),
+            "result": result,
+            "detail": detail,
+            "created_at": _now(),
+        },
+    )
+    if not ok:
+        return None
+    row = fetch_one_safe(text("SELECT * FROM model_promotion_audit WHERE id = :id LIMIT 1"), {"id": audit_id})
+    return _promotion_audit_from_row(row)
+
+
+def list_model_promotion_audit(limit: int = 50) -> list[dict]:
+    if not db_available():
+        return []
+    try:
+        parsed_limit = int(limit or 50)
+    except (TypeError, ValueError):
+        parsed_limit = 50
+    safe_limit = max(1, min(parsed_limit, 200))
+    rows = fetch_all_safe(
+        text(
+            """
+            SELECT *
+            FROM model_promotion_audit
+            ORDER BY created_at DESC
+            LIMIT :limit
+            """
+        ),
+        {"limit": safe_limit},
+    )
+    return [item for item in (_promotion_audit_from_row(row) for row in rows) if item]
+
+
+def get_latest_model_promotion_event(action: str) -> dict | None:
+    if not action or not db_available():
+        return None
+    row = fetch_one_safe(
+        text(
+            """
+            SELECT *
+            FROM model_promotion_audit
+            WHERE action = :action AND result = 'success'
+            ORDER BY created_at DESC
+            LIMIT 1
+            """
+        ),
+        {"action": action},
+    )
+    return _promotion_audit_from_row(row)
+
+
 def import_model_versions_from_file_if_needed(file_path: str | Path | None = None) -> dict:
     if not db_available():
         return {"status": "skipped", "storage": "file_fallback", "imported_count": 0, "reason": "database_unavailable"}
