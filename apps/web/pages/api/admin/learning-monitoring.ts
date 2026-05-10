@@ -19,6 +19,22 @@ function numberFrom(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
+function candidateFrom(modelVersions: JsonObject): JsonObject {
+  const directCandidate = modelVersions.latest_candidate_model;
+  if (directCandidate && typeof directCandidate === 'object' && !Array.isArray(directCandidate)) {
+    return directCandidate as JsonObject;
+  }
+
+  const versions = Array.isArray(modelVersions.versions) ? modelVersions.versions : [];
+  const candidate = versions.find((version) => {
+    if (!version || typeof version !== 'object' || Array.isArray(version)) return false;
+    const item = version as JsonObject;
+    return String(item.status ?? '').toLowerCase() === 'candidate' && Boolean(item.model_version);
+  });
+
+  return candidate && typeof candidate === 'object' && !Array.isArray(candidate) ? (candidate as JsonObject) : {};
+}
+
 async function fetchBackendJson(
   apiUrl: string,
   path: string,
@@ -55,7 +71,7 @@ function buildMonitoringFallback(
   featureSummary: JsonObject,
 ): JsonObject {
   const productionModel = (modelVersions.current_production_model as JsonObject | undefined) ?? {};
-  const candidateModel = (modelVersions.latest_candidate_model as JsonObject | undefined) ?? {};
+  const candidateModel = candidateFrom(modelVersions);
   const alerts: string[] = [];
   const storage = String(modelVersions.storage ?? featureSummary.storage ?? 'unknown');
   const featureSnapshots = numberFrom(featureSummary.snapshots_count);
@@ -111,7 +127,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     const [modelVersions, feedback, calibration, featureSummary] = await Promise.allSettled([
-      fetchBackendJson(apiUrl, '/models/versions', serverAdminKey, 8000),
+      fetchBackendJson(apiUrl, '/models/versions', serverAdminKey, 30000),
       fetchBackendJson(apiUrl, '/learning/feedback', serverAdminKey, 8000),
       fetchBackendJson(apiUrl, '/learning/calibration', serverAdminKey, 8000),
       fetchBackendJson(apiUrl, '/features/summary', serverAdminKey, 8000),

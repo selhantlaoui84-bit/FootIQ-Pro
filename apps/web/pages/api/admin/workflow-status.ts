@@ -19,6 +19,22 @@ function numberFrom(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
+function candidateFrom(modelVersions: JsonObject): JsonObject {
+  const directCandidate = modelVersions.latest_candidate_model;
+  if (directCandidate && typeof directCandidate === 'object' && !Array.isArray(directCandidate)) {
+    return directCandidate as JsonObject;
+  }
+
+  const versions = Array.isArray(modelVersions.versions) ? modelVersions.versions : [];
+  const candidate = versions.find((version) => {
+    if (!version || typeof version !== 'object' || Array.isArray(version)) return false;
+    const item = version as JsonObject;
+    return String(item.status ?? '').toLowerCase() === 'candidate' && Boolean(item.model_version);
+  });
+
+  return candidate && typeof candidate === 'object' && !Array.isArray(candidate) ? (candidate as JsonObject) : {};
+}
+
 async function fetchBackendJson(
   apiUrl: string,
   path: string,
@@ -53,12 +69,18 @@ function buildWorkflowFallback(
   const snapshotsCount = numberFrom(featureSummary.snapshots_count);
   const trainingRowsAvailable = numberFrom(featureSummary.with_target_count);
   const featureReady = snapshotsCount > 0 || trainingRowsAvailable > 0;
-  const candidate = (modelVersions.latest_candidate_model as JsonObject | undefined) ?? {};
+  const candidate = candidateFrom(modelVersions);
+  const candidateMetrics =
+    candidate.metrics && typeof candidate.metrics === 'object' && !Array.isArray(candidate.metrics)
+      ? (candidate.metrics as JsonObject)
+      : {};
   const candidateStatus = String(candidate.status ?? 'not_trained');
   const candidateTrained =
     ['ok', 'trained', 'success', 'candidate', 'shadow'].includes(candidateStatus) ||
     numberFrom(candidate.rows_used) >= 30 ||
     Boolean(candidate.model_version);
+  const shadowCount = numberFrom(candidateMetrics.shadow_predictions_saved);
+  const disagreementCount = numberFrom(candidateMetrics.disagreement_count);
   const storage =
     featureSummary.storage === 'postgresql' || refreshStatus.storage === 'postgresql'
       ? 'postgresql'
@@ -97,7 +119,7 @@ function buildWorkflowFallback(
       model_version: candidate.model_version ?? null,
       accuracy: candidate.accuracy ?? null,
     },
-    shadow_predictions: { generated: false, count: 0, disagreement_count: 0 },
+    shadow_predictions: { generated: shadowCount > 0, count: shadowCount, disagreement_count: disagreementCount },
     shadow_backtesting: {
       ready: false,
       evaluated_matches: 0,
@@ -105,7 +127,9 @@ function buildWorkflowFallback(
       activation_recommendation: 'unknown',
     },
     hybrid: { mode: 'official_with_shadow_advisory', recommendation: 'workflow_fallback' },
-    next_step: candidateTrained
+    next_step: candidateTrained && shadowCount > 0
+      ? 'review_shadow_backtesting'
+      : candidateTrained
       ? 'generate_shadow_predictions'
       : featureReady
         ? 'train_candidate_model'
@@ -147,7 +171,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const [featureSummaryResult, refreshStatusResult, modelVersionsResult] = await Promise.allSettled([
       fetchBackendJson(apiUrl, '/features/summary', serverAdminKey, 8000),
       fetchBackendJson(apiUrl, '/admin/refresh-status', serverAdminKey, 8000),
-      fetchBackendJson(apiUrl, '/models/versions', serverAdminKey, 8000),
+      fetchBackendJson(apiUrl, '/models/versions', serverAdminKey, 30000),
     ]);
 
     const featureSummary =
