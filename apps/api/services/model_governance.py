@@ -107,11 +107,13 @@ def build_model_governance_report(
         blockers.append("Modèle candidat non promouvable.")
         next_actions.append("Entraîner le modèle candidat après validation dataset.")
 
-    shadow_evaluated = int(shadow_backtesting.get("evaluated_matches") or 0)
-    shadow_accuracy = int(shadow_backtesting.get("shadow_accuracy") or 0)
-    production_accuracy = int(shadow_backtesting.get("production_accuracy") or 0)
+    shadow_evaluated = int(shadow_backtesting.get("evaluable_predictions") or shadow_backtesting.get("evaluated_matches") or 0)
+    shadow_accuracy = int(shadow_backtesting.get("shadow_accuracy") or (shadow_backtesting.get("metrics") or {}).get("accuracy") or 0)
+    production_accuracy = int(shadow_backtesting.get("production_accuracy") or (shadow_backtesting.get("comparison") or {}).get("production_accuracy") or 0)
+    shadow_recommendation = shadow_backtesting.get("recommendation") or {}
+    comparison = shadow_backtesting.get("comparison") or {}
 
-    if shadow_evaluated >= 50:
+    if shadow_evaluated >= 30:
         score += 20
         if shadow_accuracy >= production_accuracy - 3:
             score += 10
@@ -121,19 +123,19 @@ def build_model_governance_report(
             warnings.append("Le ML shadow reste inférieur au modèle officiel sur les matchs évalués.")
     else:
         shadow_gate = _gate(False, "Échantillon shadow insuffisant pour une décision robuste.")
-        warnings.append("Shadow backtesting insuffisant : moins de 50 matchs évalués.")
+        warnings.append("Shadow backtesting insuffisant : moins de 30 matchs évalués.")
         next_actions.append("Générer davantage de prédictions shadow puis attendre plus de matchs terminés.")
 
     production_log_loss = feedback_report.get("log_loss")
     production_brier = feedback_report.get("brier_score")
-    production_roi = feedback_report.get("theoretical_roi")
-    enough_tested = shadow_evaluated >= 50
+    production_roi = comparison.get("production_roi", feedback_report.get("theoretical_roi"))
+    candidate_roi = (shadow_backtesting.get("metrics") or {}).get("roi_theoretical")
+    enough_tested = shadow_evaluated >= 30
     log_loss_improved = (
-        candidate_log_loss is not None
-        and production_log_loss is not None
-        and float(candidate_log_loss) < float(production_log_loss)
+        comparison.get("delta_log_loss") is not None
+        and float(comparison.get("delta_log_loss")) <= 0
     )
-    roi_non_negative = production_roi is not None and float(production_roi) >= 0
+    roi_non_negative = candidate_roi is not None and float(candidate_roi) >= 0
     drift_delta = abs(shadow_accuracy - production_accuracy) if shadow_evaluated else None
     drift_ok = drift_delta is not None and drift_delta <= 20
 
@@ -144,13 +146,13 @@ def build_model_governance_report(
         "brier_score": _gate(brier_ok, f"Brier candidat {candidate_brier}."),
         "roi": _gate(roi_non_negative, "ROI théorique production non négatif sur l'échantillon évalué."),
         "drift": _gate(drift_ok, "Pas de dérive excessive entre shadow et production."),
-        "tested_matches": _gate(enough_tested, f"{shadow_evaluated} matchs shadow évalués, minimum 50."),
+        "tested_matches": _gate(enough_tested, f"{shadow_evaluated} matchs shadow évalués, minimum 30."),
     }
 
     if not all(rule["passed"] for rule in promotion_rules.values()):
         if trained:
             warnings.append("Critères stricts de promotion non satisfaits : garder le candidat en shadow.")
-            next_actions.append("Générer des prédictions shadow et accumuler au moins 50 matchs testés.")
+            next_actions.append("Générer des prédictions shadow et accumuler au moins 30 matchs testés.")
         else:
             blockers.append("Critères stricts de promotion non satisfaits.")
 
@@ -179,10 +181,18 @@ def build_model_governance_report(
         hybrid_gate = _gate(False, "Moteur hybride pas encore suffisamment exploitable.")
         warnings.append("Signal hybride encore limité ou indisponible.")
 
-    if blockers:
+    promotion_label = shadow_recommendation.get("status")
+    if model_metadata.get("locked") is True or model_metadata.get("production_locked") is True:
+        level = "production_locked"
+        blockers.append("Modèle production verrouillé.")
+    elif shadow_evaluated < 30:
+        level = "blocked_insufficient_data"
+    elif promotion_label in {"blocked_worse_than_production", "candidate_promising", "promotion_ready_manual_review"}:
+        level = promotion_label
+    elif blockers:
         level = "blocked"
     elif score >= 75:
-        level = "review_only"
+        level = "promotion_ready_manual_review"
         warnings.append("Le score est bon, mais aucune promotion automatique n'est autorisée.")
     elif score >= 50:
         level = "watch"
@@ -212,8 +222,11 @@ def build_model_governance_report(
             "shadow_backtesting": {
                 **shadow_gate,
                 "evaluated_matches": shadow_evaluated,
+                "evaluable_predictions": shadow_evaluated,
+                "pending_predictions": shadow_backtesting.get("pending_predictions", 0),
                 "shadow_accuracy": shadow_accuracy,
                 "production_accuracy": production_accuracy,
+                "recommendation": shadow_recommendation,
             },
             "monitoring": {
                 **monitoring_gate,
@@ -231,6 +244,11 @@ def build_model_governance_report(
             "log_loss": production_log_loss,
             "brier_score": production_brier,
             "theoretical_roi": production_roi,
+        },
+        "shadow_backtesting": {
+            "metrics": shadow_backtesting.get("metrics", {}),
+            "comparison": comparison,
+            "recommendation": shadow_recommendation,
         },
         "promotion_readiness": {
             "ready": False,

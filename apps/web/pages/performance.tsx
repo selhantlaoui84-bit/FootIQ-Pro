@@ -918,6 +918,21 @@ export default function PerformancePage({
 
   <div className="compactDataGrid four">
     <div className="metric">
+      <span>Shadow sauvegardées</span>
+      <strong>{shadowBacktesting.shadow_predictions_total ?? 0}</strong>
+    </div>
+
+    <div className="metric">
+      <span>Évaluables</span>
+      <strong>{shadowBacktesting.evaluable_predictions ?? shadowBacktesting.evaluated_matches}</strong>
+    </div>
+
+    <div className="metric">
+      <span>En attente</span>
+      <strong>{shadowBacktesting.pending_predictions ?? 0}</strong>
+    </div>
+
+    <div className="metric">
       <span>Matchs évalués</span>
       <strong>{shadowBacktesting.evaluated_matches}</strong>
     </div>
@@ -929,7 +944,7 @@ export default function PerformancePage({
 
     <div className="metric">
       <span>Précision shadow</span>
-      <strong>{shadowBacktesting.shadow_accuracy}%</strong>
+      <strong>{shadowBacktesting.metrics?.accuracy ?? shadowBacktesting.shadow_accuracy}%</strong>
     </div>
 
     <div className="metric">
@@ -960,10 +975,28 @@ export default function PerformancePage({
 
   <div className="dataList">
     <span>
+      Candidat <strong>{shadowBacktesting.candidate_model_version ?? 'N/A'}</strong>
+    </span>
+    <span>
+      Production <strong>{shadowBacktesting.production_model_version ?? 'elo-poisson-calibrated-v1'}</strong>
+    </span>
+    <span>
+      Log loss shadow <strong>{shadowBacktesting.metrics?.log_loss ?? shadowBacktesting.shadow_average_log_loss ?? 'N/A'}</strong>
+    </span>
+    <span>
       Brier officiel <strong>{shadowBacktesting.production_average_brier ?? 'N/A'}</strong>
     </span>
     <span>
-      Brier shadow <strong>{shadowBacktesting.shadow_average_brier ?? 'N/A'}</strong>
+      Brier shadow <strong>{shadowBacktesting.metrics?.brier_score ?? shadowBacktesting.shadow_average_brier ?? 'N/A'}</strong>
+    </span>
+    <span>
+      ROI théorique <strong>{shadowBacktesting.metrics?.roi_theoretical ?? 'N/A'}</strong>
+    </span>
+    <span>
+      Delta accuracy <strong>{shadowBacktesting.comparison?.delta_accuracy ?? 'N/A'}</strong>
+    </span>
+    <span>
+      Delta Brier <strong>{shadowBacktesting.comparison?.delta_brier_score ?? 'N/A'}</strong>
     </span>
     <span>
       Même choix <strong>{shadowBacktesting.same_pick_count}</strong>
@@ -975,10 +1008,16 @@ export default function PerformancePage({
 
   <div className="banner info">
     <strong>Recommandation : </strong>
-    {shadowBacktesting.activation_recommendation} - {shadowBacktesting.recommendation_reason}
+    {shadowBacktesting.recommendation?.status ?? shadowBacktesting.activation_recommendation} - {shadowBacktesting.recommendation?.reason ?? shadowBacktesting.recommendation_reason}
   </div>
 
-  {shadowBacktesting.recent_evaluations?.length > 0 && (
+  {(shadowBacktesting.evaluable_predictions ?? shadowBacktesting.evaluated_matches) === 0 && (
+    <div className="banner warning">
+      Données insuffisantes : {shadowBacktesting.recommendation?.current ?? 0}/{shadowBacktesting.recommendation?.minimum_required ?? 30} prédictions shadow évaluables.
+    </div>
+  )}
+
+  {(shadowBacktesting.evaluated_match_rows ?? shadowBacktesting.recent_evaluations)?.length > 0 && (
     <div className="metricTable">
       <div className="metricTableRow header">
         <span>Match</span>
@@ -987,7 +1026,7 @@ export default function PerformancePage({
         <span>Shadow</span>
       </div>
 
-      {shadowBacktesting.recent_evaluations.slice(0, 8).map((item) => (
+      {(shadowBacktesting.evaluated_match_rows ?? shadowBacktesting.recent_evaluations).slice(0, 8).map((item) => (
         <div className="metricTableRow bucketRow" key={item.match_id}>
           <span>
             {item.home_team} - {item.away_team}
