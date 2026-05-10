@@ -2,9 +2,11 @@ import type { GetStaticPaths, GetStaticProps } from 'next';
 import Link from 'next/link';
 import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
-import { TacticalPitch, TeamIdentity } from '~/components/ui';
+import { TeamIdentity } from '~/components/TeamIdentity';
+import { TacticalPitch } from '~/components/ui';
 import { getMatch, getPrediction } from '~/lib/api';
 import { getMockMatch, getMockPrediction, matches, statusClass, teamNameHref, type Match, type Prediction } from '~/lib/mock-data';
+import { resolveMatchTeamLogo } from '~/lib/team-logos';
 import { formatCompetitionLabel, formatFinishedMatchSummary, formatKickoffFr, formatMatchStatusLabel, formatScore, formatWinnerLabel } from '~/lib/ui-text';
 import { Layout } from '~/src-layout';
 
@@ -41,6 +43,8 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
   const hybrid = prediction.hybrid;
   const hybridEngine = prediction.hybrid_engine;
   const explainability = prediction.explainability;
+  const homeLogo = resolveMatchTeamLogo({ ...match, ...prediction }, 'home');
+  const awayLogo = resolveMatchTeamLogo({ ...match, ...prediction }, 'away');
 
   return (
     <ProtectedRoute>
@@ -49,9 +53,9 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
           <div>
             <p className="eyebrow">{prediction.competition || match.competition}</p>
             <div className="matchTitleTeams">
-              <TeamIdentity teamName={prediction.home_team} logoUrl={prediction.home_team_logo ?? prediction.home_crest ?? match.home_team_logo ?? match.home_crest} size="lg" />
+              <TeamIdentity teamName={prediction.home_team} logoUrl={homeLogo} size="lg" />
               <span className="versus">vs</span>
-              <TeamIdentity teamName={prediction.away_team} logoUrl={prediction.away_team_logo ?? prediction.away_crest ?? match.away_team_logo ?? match.away_crest} tone="away" size="lg" />
+              <TeamIdentity align="right" className="away" teamName={prediction.away_team} logoUrl={awayLogo} size="lg" />
             </div>
             <p>{formatKickoffFr(kickoff)}</p>
             <div className="cardTop compact">
@@ -317,7 +321,7 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
             <Link className="card clickable-card" href={teamNameHref(team)} key={team}>
               <TeamIdentity
                 teamName={team}
-                logoUrl={team === prediction.home_team ? prediction.home_team_logo ?? prediction.home_crest : prediction.away_team_logo ?? prediction.away_crest}
+                logoUrl={team === prediction.home_team ? homeLogo : awayLogo}
               />
               <p>Voir la fiche équipe et les matchs liés.</p>
             </Link>

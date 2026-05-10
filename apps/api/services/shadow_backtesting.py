@@ -142,6 +142,12 @@ def _accuracy(correct: int, total: int) -> int:
     return round((correct / total) * 100)
 
 
+def _accuracy_or_none(correct: int, total: int) -> int | None:
+    if total <= 0:
+        return None
+    return _accuracy(correct, total)
+
+
 def _average(values: list[float]) -> float | None:
     if not values:
         return None
@@ -346,6 +352,7 @@ def calculate_shadow_backtest_report(
 
     evaluations = []
     pending_matches = []
+    invalid_matches = []
     candidate_versions = []
     production_versions = []
 
@@ -362,7 +369,7 @@ def calculate_shadow_backtest_report(
         match = match_by_id.get(str(match_id))
 
         if not match:
-            pending_matches.append({
+            invalid_matches.append({
                 "match_id": match_id,
                 "model_version": candidate_version,
                 "reason": "match_not_found",
@@ -371,8 +378,18 @@ def calculate_shadow_backtest_report(
 
         evaluation = evaluate_shadow_prediction(match, record)
 
-        if evaluation:
+        if evaluation and evaluation.get("shadow_pick"):
             evaluations.append(evaluation)
+        elif get_match_result(match):
+            invalid_matches.append({
+                "match_id": match_id,
+                "model_version": candidate_version,
+                "home_team": match.get("home_team"),
+                "away_team": match.get("away_team"),
+                "competition": match.get("competition"),
+                "kickoff": match.get("kickoff"),
+                "reason": "missing_shadow_selection",
+            })
         else:
             pending_matches.append({
                 "match_id": match_id,
@@ -386,7 +403,8 @@ def calculate_shadow_backtest_report(
 
     evaluated_matches = len(evaluations)
     shadow_predictions_total = len(shadow_records or [])
-    pending_predictions = max(0, shadow_predictions_total - evaluated_matches)
+    pending_predictions = len(pending_matches)
+    invalid_predictions = len(invalid_matches)
     candidate_model_version = candidate_versions[0] if candidate_versions else None
     production_model_version = production_versions[0] if production_versions else None
 
@@ -400,6 +418,7 @@ def calculate_shadow_backtest_report(
             "shadow_predictions_total": shadow_predictions_total,
             "evaluable_predictions": 0,
             "pending_predictions": pending_predictions,
+            "invalid_predictions": invalid_predictions,
             "metrics": {
                 "accuracy": None,
                 "log_loss": None,
@@ -409,25 +428,34 @@ def calculate_shadow_backtest_report(
                 "average_confidence": None,
                 "calibration_gap": None,
             },
+            "production_metrics": {
+                "accuracy": None,
+                "log_loss": None,
+                "brier_score": None,
+                "roi_theoretical": None,
+            },
             "comparison": {
                 "candidate_vs_production": "insufficient_data",
+                "comparison_status": "insufficient_data" if shadow_predictions_total else "no_shadow_predictions",
                 "delta_accuracy": None,
                 "delta_log_loss": None,
                 "delta_brier_score": None,
                 "delta_roi": None,
+                "candidate_better_than_production": None,
             },
             "by_market": [],
             "by_competition": [],
             "by_confidence": [],
+            "evaluated_matches": 0,
             "evaluated_match_rows": [],
             "pending_matches": pending_matches[:20],
+            "invalid_matches": invalid_matches[:20],
             "recommendation": {
                 "status": "collect_more_data",
                 "reason": "Pas assez de prédictions shadow évaluables.",
                 "minimum_required": MINIMUM_EVALUABLE_PREDICTIONS,
                 "current": 0,
             },
-            "evaluated_matches": 0,
             "production_accuracy": 0,
             "shadow_accuracy": 0,
             "production_average_brier": None,
@@ -449,6 +477,7 @@ def calculate_shadow_backtest_report(
 
     production_correct_count = sum(1 for item in evaluations if item["production_correct"] is True)
     shadow_correct_count = sum(1 for item in evaluations if item["shadow_correct"] is True)
+    production_evaluable_count = sum(1 for item in evaluations if item.get("production_correct") is not None)
 
     same_pick_count = sum(1 for item in evaluations if item["same_pick"] is True)
     disagreement_items = [item for item in evaluations if item["same_pick"] is False]
@@ -494,7 +523,8 @@ def calculate_shadow_backtest_report(
     shadow_profit_total = round(sum(shadow_profits), 4) if shadow_profits else None
     average_confidence = _average(shadow_confidences)
 
-    production_accuracy = _accuracy(production_correct_count, evaluated_matches)
+    production_accuracy = _accuracy(production_correct_count, production_evaluable_count)
+    production_accuracy_metric = _accuracy_or_none(production_correct_count, production_evaluable_count)
     shadow_accuracy = _accuracy(shadow_correct_count, evaluated_matches)
     calibration_gap = None
     if average_confidence is not None:
@@ -517,7 +547,9 @@ def calculate_shadow_backtest_report(
     def ensure_bucket(store: dict[str, dict[str, Any]], key: str) -> dict[str, Any]:
         if key not in store:
             store[key] = {
+                "count": 0,
                 "evaluated_matches": 0,
+                "production_evaluable": 0,
                 "production_correct": 0,
                 "shadow_correct": 0,
                 "disagreements": 0,
@@ -534,7 +566,10 @@ def calculate_shadow_backtest_report(
             (confidence_breakdown, item.get("confidence_bucket") or "unknown"),
         ]:
             bucket = ensure_bucket(store, str(key_name))
+            bucket["count"] += 1
             bucket["evaluated_matches"] += 1
+            if item.get("production_correct") is not None:
+                bucket["production_evaluable"] += 1
 
             if item["production_correct"] is True:
                 bucket["production_correct"] += 1
@@ -556,15 +591,20 @@ def calculate_shadow_backtest_report(
         rows = []
         for key, bucket in store.items():
             total = bucket["evaluated_matches"]
+            production_total = bucket["production_evaluable"]
             row = {
                 label: key,
+                "count": bucket["count"],
+                "evaluable_count": total,
                 "evaluated_matches": total,
-                "production_accuracy": _accuracy(bucket["production_correct"], total),
+                "accuracy": _accuracy(bucket["shadow_correct"], total) if total else None,
+                "production_accuracy": _accuracy_or_none(bucket["production_correct"], production_total),
                 "shadow_accuracy": _accuracy(bucket["shadow_correct"], total),
                 "disagreements": bucket["disagreements"],
                 "log_loss": _average(bucket.pop("shadow_log_losses")),
                 "brier_score": _average(bucket.pop("shadow_briers")),
                 "roi_theoretical": _roi(bucket.pop("shadow_profits")),
+                "status": "ok" if total else "insufficient_data",
             }
             bucket.update(row)
             rows.append(row)
@@ -580,7 +620,7 @@ def calculate_shadow_backtest_report(
         reverse=True,
     )[:10]
 
-    delta_accuracy = shadow_accuracy - production_accuracy
+    delta_accuracy = None if production_accuracy_metric is None else shadow_accuracy - production_accuracy_metric
     delta_log_loss = (
         None if shadow_average_log_loss is None or production_average_log_loss is None
         else round(shadow_average_log_loss - production_average_log_loss, 4)
@@ -594,13 +634,32 @@ def calculate_shadow_backtest_report(
         else round(shadow_roi - production_roi, 4)
     )
 
+    if production_accuracy_metric is None:
+        comparison_status = "no_production_reference"
+        candidate_better_than_production = None
+    elif evaluated_matches < MINIMUM_EVALUABLE_PREDICTIONS:
+        comparison_status = "insufficient_data"
+        candidate_better_than_production = None
+    elif delta_accuracy is not None and delta_accuracy > 1 and (delta_log_loss is None or delta_log_loss <= 0) and (delta_brier is None or delta_brier <= 0):
+        comparison_status = "candidate_better"
+        candidate_better_than_production = True
+    elif delta_accuracy is not None and delta_accuracy < -1:
+        comparison_status = "candidate_worse"
+        candidate_better_than_production = False
+    else:
+        comparison_status = "candidate_equivalent"
+        candidate_better_than_production = None
+
     if evaluated_matches < MINIMUM_EVALUABLE_PREDICTIONS:
         governance_status = "collect_more_data"
         governance_reason = "Pas assez de prédictions shadow évaluables."
-    elif delta_accuracy >= 0 and (delta_log_loss is None or delta_log_loss <= 0) and (delta_brier is None or delta_brier <= 0):
+    elif production_accuracy_metric is None:
+        governance_status = "candidate_promising"
+        governance_reason = "Référence production non disponible sur les mêmes matchs, revue manuelle requise après plus de shadow testing."
+    elif delta_accuracy is not None and delta_accuracy >= 0 and (delta_log_loss is None or delta_log_loss <= 0) and (delta_brier is None or delta_brier <= 0):
         governance_status = "promotion_ready_manual_review" if shadow_roi is None or shadow_roi >= 0 else "candidate_promising"
         governance_reason = "Le candidat est compétitif, revue manuelle requise avant toute promotion."
-    elif delta_accuracy >= 0 or (delta_log_loss is not None and delta_log_loss <= 0):
+    elif (delta_accuracy is not None and delta_accuracy >= 0) or (delta_log_loss is not None and delta_log_loss <= 0):
         governance_status = "candidate_promising"
         governance_reason = "Le candidat montre un signal positif mais pas assez complet pour une promotion."
     else:
@@ -616,6 +675,7 @@ def calculate_shadow_backtest_report(
         "shadow_predictions_total": shadow_predictions_total,
         "evaluable_predictions": evaluated_matches,
         "pending_predictions": pending_predictions,
+        "invalid_predictions": invalid_predictions,
         "metrics": {
             "accuracy": shadow_accuracy,
             "log_loss": shadow_average_log_loss,
@@ -625,12 +685,20 @@ def calculate_shadow_backtest_report(
             "average_confidence": average_confidence,
             "calibration_gap": calibration_gap,
         },
+        "production_metrics": {
+            "accuracy": production_accuracy_metric,
+            "log_loss": production_average_log_loss,
+            "brier_score": production_average_brier,
+            "roi_theoretical": production_roi,
+        },
         "comparison": {
             "candidate_vs_production": governance_status,
+            "comparison_status": comparison_status,
             "delta_accuracy": delta_accuracy,
             "delta_log_loss": delta_log_loss,
             "delta_brier_score": delta_brier,
             "delta_roi": delta_roi,
+            "candidate_better_than_production": candidate_better_than_production,
             "production_accuracy": production_accuracy,
             "production_log_loss": production_average_log_loss,
             "production_brier_score": production_average_brier,
@@ -639,15 +707,17 @@ def calculate_shadow_backtest_report(
         "by_market": by_market,
         "by_competition": by_competition,
         "by_confidence": by_confidence,
+        "evaluated_matches": evaluated_matches,
         "evaluated_match_rows": recent_evaluations,
         "pending_matches": pending_matches[:20],
+        "invalid_matches": invalid_matches[:20],
         "recommendation": {
             "status": governance_status,
             "reason": governance_reason,
             "minimum_required": MINIMUM_EVALUABLE_PREDICTIONS,
             "current": evaluated_matches,
         },
-        "evaluated_matches": evaluated_matches,
+        "evaluated_count": evaluated_matches,
         "production_accuracy": production_accuracy,
         "shadow_accuracy": shadow_accuracy,
         "production_average_log_loss": production_average_log_loss,

@@ -939,6 +939,7 @@ export type AdminWorkflowStatus = {
     evaluated_matches: number;
     evaluable_predictions?: number;
     pending_predictions?: number;
+    invalid_predictions?: number;
     shadow_accuracy: number;
     activation_recommendation: string;
     recommendation?: Record<string, unknown>;
@@ -1955,6 +1956,7 @@ export type MlShadowBacktesting = {
   shadow_predictions_total?: number;
   evaluable_predictions?: number;
   pending_predictions?: number;
+  invalid_predictions?: number;
   metrics?: {
     accuracy: number | null;
     log_loss: number | null;
@@ -1964,12 +1966,20 @@ export type MlShadowBacktesting = {
     average_confidence?: number | null;
     calibration_gap?: number | null;
   };
+  production_metrics?: {
+    accuracy: number | null;
+    log_loss: number | null;
+    brier_score: number | null;
+    roi_theoretical: number | null;
+  };
   comparison?: {
     candidate_vs_production: string;
+    comparison_status?: string;
     delta_accuracy: number | null;
     delta_log_loss: number | null;
     delta_brier_score: number | null;
     delta_roi: number | null;
+    candidate_better_than_production?: boolean | null;
     production_accuracy?: number;
     production_log_loss?: number | null;
     production_brier_score?: number | null;
@@ -1980,6 +1990,7 @@ export type MlShadowBacktesting = {
   by_confidence?: Array<Record<string, unknown>>;
   evaluated_match_rows?: MlShadowBacktestingEvaluation[];
   pending_matches?: Array<Record<string, unknown>>;
+  invalid_matches?: Array<Record<string, unknown>>;
   recommendation?: {
     status: string;
     reason: string;
@@ -2022,6 +2033,7 @@ export const mockMlShadowBacktesting = {
   shadow_predictions_total: 0,
   evaluable_predictions: 0,
   pending_predictions: 0,
+  invalid_predictions: 0,
   metrics: {
     accuracy: null,
     log_loss: null,
@@ -2031,18 +2043,27 @@ export const mockMlShadowBacktesting = {
     average_confidence: null,
     calibration_gap: null,
   },
+  production_metrics: {
+    accuracy: null,
+    log_loss: null,
+    brier_score: null,
+    roi_theoretical: null,
+  },
   comparison: {
     candidate_vs_production: 'insufficient_data',
+    comparison_status: 'insufficient_data',
     delta_accuracy: null,
     delta_log_loss: null,
     delta_brier_score: null,
     delta_roi: null,
+    candidate_better_than_production: null,
   },
   by_market: [],
   by_competition: [],
   by_confidence: [],
   evaluated_match_rows: [],
   pending_matches: [],
+  invalid_matches: [],
   recommendation: {
     status: 'collect_more_data',
     reason: 'Pas assez de prédictions shadow évaluables.',

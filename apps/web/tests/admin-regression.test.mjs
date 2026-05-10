@@ -22,9 +22,14 @@ const middleware = new URL('../middleware.ts', import.meta.url);
 const apiClient = new URL('../lib/api.ts', import.meta.url);
 const dashboardPage = new URL('../pages/dashboard.tsx', import.meta.url);
 const matchesPage = new URL('../pages/matches.tsx', import.meta.url);
+const matchDetailPage = new URL('../pages/matches/[id].tsx', import.meta.url);
+const predictionsPage = new URL('../pages/predictions.tsx', import.meta.url);
 const performancePage = new URL('../pages/performance.tsx', import.meta.url);
 const uiComponents = new URL('../components/ui.tsx', import.meta.url);
 const teamAssets = new URL('../lib/team-assets.ts', import.meta.url);
+const teamLogos = new URL('../lib/team-logos.ts', import.meta.url);
+const teamLogoComponent = new URL('../components/TeamLogo.tsx', import.meta.url);
+const teamIdentityComponent = new URL('../components/TeamIdentity.tsx', import.meta.url);
 const layoutSourceFile = new URL('../src-layout.tsx', import.meta.url);
 const globalStyles = new URL('../styles/globals.css', import.meta.url);
 const backendMain = new URL('../../api/main.py', import.meta.url);
@@ -281,11 +286,27 @@ async function run() {
   const matchesPageSource = await readFile(matchesPage, 'utf8');
   assert.doesNotMatch(matchesPageSource, brokenEncoding);
   assert.match(matchesPageSource, /GetServerSideProps/);
+  assert.match(matchesPageSource, /TeamIdentity/);
+  assert.match(matchesPageSource, /resolveMatchTeamLogo\(match, 'home'\)/);
+  assert.match(matchesPageSource, /resolveMatchTeamLogo\(match, 'away'\)/);
   assert.doesNotMatch(matchesPageSource, /getStaticProps/);
   assert.match(matchesPageSource, /referenceTimestamp/);
   assert.match(matchesPageSource, /isUpcoming\(match, referenceTimestamp\)/);
   assert.match(matchesPageSource, /isPastKickoff\(match, referenceTimestamp\)/);
   assert.doesNotMatch(matchesPageSource, /status === 'FINISHED'[\s\S]{0,120}: !finished/);
+
+  const matchDetailSource = await readFile(matchDetailPage, 'utf8');
+  assert.doesNotMatch(matchDetailSource, brokenEncoding);
+  assert.match(matchDetailSource, /TeamIdentity/);
+  assert.match(matchDetailSource, /resolveMatchTeamLogo/);
+  assert.match(matchDetailSource, /getStaticProps/);
+  assert.match(matchDetailSource, /getStaticPaths/);
+
+  const predictionsPageSource = await readFile(predictionsPage, 'utf8');
+  assert.doesNotMatch(predictionsPageSource, brokenEncoding);
+  assert.match(predictionsPageSource, /TeamIdentity/);
+  assert.match(predictionsPageSource, /resolveMatchTeamLogo\(prediction, 'home'\)/);
+  assert.match(predictionsPageSource, /resolveMatchTeamLogo\(prediction, 'away'\)/);
 
   const dashboardPageSource = await readFile(dashboardPage, 'utf8');
   assert.doesNotMatch(dashboardPageSource, brokenEncoding);
@@ -312,6 +333,9 @@ async function run() {
   assert.match(performancePageSource, /Promise\.resolve\(fallback\.featureSummary\)/);
   assert.match(performancePageSource, /En attente de résultats/);
   assert.match(performancePageSource, /Données insuffisantes/);
+  assert.match(performancePageSource, /Shadow backtesting|Backtesting shadow/);
+  assert.match(performancePageSource, /invalid_predictions/);
+  assert.match(performancePageSource, /production_metrics/);
   assert.match(performancePageSource, /shadowHasMetrics/);
   assert.doesNotMatch(performancePageSource, /Précision shadow<\/span>\s*<strong>\{shadowBacktesting\.shadow_accuracy\}%/);
 
@@ -325,9 +349,27 @@ async function run() {
 
   const teamAssetsSource = await readFile(teamAssets, 'utf8');
   assert.doesNotMatch(teamAssetsSource, brokenEncoding);
-  assert.match(teamAssetsSource, /crests\.football-data\.org/);
+  assert.match(teamAssetsSource, /team-logos/);
   assert.match(teamAssetsSource, /resolveTeamLogoUrl/);
   assert.match(teamAssetsSource, /getTeamInitials/);
+
+  const teamLogosSource = await readFile(teamLogos, 'utf8');
+  assert.doesNotMatch(teamLogosSource, brokenEncoding);
+  assert.match(teamLogosSource, /crests\.football-data\.org/);
+  assert.match(teamLogosSource, /resolveTeamLogo/);
+  assert.match(teamLogosSource, /resolveMatchTeamLogo/);
+  assert.match(teamLogosSource, /getTeamInitials/);
+
+  const teamLogoSource = await readFile(teamLogoComponent, 'utf8');
+  assert.doesNotMatch(teamLogoSource, brokenEncoding);
+  assert.match(teamLogoSource, /export function TeamLogo/);
+  assert.match(teamLogoSource, /onError=\{\(\) => setFailed\(true\)\}/);
+  assert.match(teamLogoSource, /loading=/);
+
+  const teamIdentitySource = await readFile(teamIdentityComponent, 'utf8');
+  assert.doesNotMatch(teamIdentitySource, brokenEncoding);
+  assert.match(teamIdentitySource, /export function TeamIdentity/);
+  assert.match(teamIdentitySource, /TeamLogo/);
 
   const layoutSource = await readFile(layoutSourceFile, 'utf8');
   assert.doesNotMatch(layoutSource, brokenEncoding);

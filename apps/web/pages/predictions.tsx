@@ -4,9 +4,11 @@ import { useRouter } from 'next/router';
 import { useEffect, useMemo, useState } from 'react';
 import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
-import { ProbabilityRing, TeamIdentity } from '~/components/ui';
+import { TeamIdentity } from '~/components/TeamIdentity';
+import { ProbabilityRing } from '~/components/ui';
 import { getPredictions } from '~/lib/api';
 import { isAvoidStatus, matchHref, predictions as mockPredictions, statusClass, type ConfidenceStatus, type Prediction } from '~/lib/mock-data';
+import { resolveMatchTeamLogo } from '~/lib/team-logos';
 import { formatCompetitionLabel, formatKickoffFr, formatRecommendationLabel, formatStatusLabel } from '~/lib/ui-text';
 import { Layout } from '~/src-layout';
 
@@ -153,7 +155,12 @@ export default function PredictionsPage({ predictions, referenceTime }: Predicti
           </div>
           {selectionOfDay.map((prediction) => (
             <Link className="dailyPick" href={matchHref(prediction)} key={`daily-${prediction.match_id}`}>
-              <TeamIdentity teamName={prediction.home_team} logoUrl={prediction.home_team_logo ?? prediction.home_crest} size="sm" detail={formatRecommendationLabel(prediction.recommendation)} />
+              <TeamIdentity
+                teamName={prediction.home_team}
+                logoUrl={resolveMatchTeamLogo(prediction, 'home')}
+                size="sm"
+                subtitle={formatRecommendationLabel(prediction.recommendation)}
+              />
               <em>{prediction.confidence.score}%</em>
             </Link>
           ))}
@@ -187,9 +194,15 @@ function PredictionCard({ prediction }: { prediction: Prediction }) {
         </span>
       </div>
       <div className="fixtureTeams">
-        <TeamIdentity teamName={prediction.home_team} logoUrl={prediction.home_team_logo ?? prediction.home_crest} size="sm" />
+        <TeamIdentity teamName={prediction.home_team} logoUrl={resolveMatchTeamLogo(prediction, 'home')} size="sm" />
         <span className="versus">vs</span>
-        <TeamIdentity teamName={prediction.away_team} logoUrl={prediction.away_team_logo ?? prediction.away_crest} tone="away" size="sm" />
+        <TeamIdentity
+          align="right"
+          className="away"
+          teamName={prediction.away_team}
+          logoUrl={resolveMatchTeamLogo(prediction, 'away')}
+          size="sm"
+        />
       </div>
       <p>{formatKickoffFr(prediction.kickoff)}</p>
       <div className="probGrid">

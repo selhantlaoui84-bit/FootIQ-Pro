@@ -272,8 +272,10 @@ def _workflow_status_compact():
         next_step = "build_feature_store" if finished_with_scores > 0 else "import_historical_results"
     elif not candidate_trained:
         next_step = "train_candidate_model"
+    elif shadow_generated and shadow_pending > 0 and shadow_evaluable == 0:
+        next_step = "wait_for_results"
     elif shadow_generated and shadow_evaluable < 30:
-        next_step = "review_shadow_backtesting"
+        next_step = "continue_shadow_testing"
     elif shadow_backtesting_ready:
         next_step = "review_governance"
     else:
@@ -325,6 +327,7 @@ def _workflow_status_compact():
             "evaluated_matches": shadow_evaluable,
             "evaluable_predictions": shadow_evaluable,
             "pending_predictions": shadow_pending,
+            "invalid_predictions": int(shadow_backtesting.get("invalid_predictions") or 0),
             "shadow_accuracy": shadow_backtesting.get("shadow_accuracy", 0),
             "activation_recommendation": shadow_backtesting.get("activation_recommendation", "do_not_activate"),
             "recommendation": shadow_backtesting.get("recommendation"),
@@ -945,6 +948,7 @@ def learning_monitoring():
     shadow_total = int(shadow_report.get("shadow_predictions_total") or 0)
     shadow_evaluable = int(shadow_report.get("evaluable_predictions") or shadow_report.get("evaluated_matches") or 0)
     shadow_pending = int(shadow_report.get("pending_predictions") or 0)
+    shadow_invalid = int(shadow_report.get("invalid_predictions") or 0)
     if not candidate_model and feature_store_status in {"empty", "error"}:
         next_best_action = {"label": "Construire le Feature Store", "href": "/admin"}
     elif not candidate_model:
@@ -974,6 +978,8 @@ def learning_monitoring():
         "shadow_backtesting_status": shadow_report.get("backtesting_status") or shadow_report.get("status"),
         "shadow_predictions_total": shadow_total,
         "shadow_evaluable_predictions": shadow_evaluable,
+        "shadow_pending_predictions": shadow_pending,
+        "shadow_invalid_predictions": shadow_invalid,
         "latest_shadow_backtesting_at": shadow_report.get("generated_at"),
         "governance_recommendation": shadow_report.get("recommendation"),
         "alerts": alerts,

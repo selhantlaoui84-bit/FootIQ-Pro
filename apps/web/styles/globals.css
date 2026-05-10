@@ -692,16 +692,24 @@ ul {
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
 }
 
-.teamLogo img {
+.teamLogo img,
+.teamLogoImage {
   width: 76%;
   height: 76%;
   object-fit: contain;
 }
 
-.teamLogo span {
+.teamLogo span,
+.teamLogoFallback {
   color: #072017;
   font-size: 13px;
   font-weight: 950;
+}
+
+.teamLogo-xs,
+.teamLogoXs {
+  width: 26px;
+  height: 26px;
 }
 
 .teamLogo-sm {
@@ -709,12 +717,32 @@ ul {
   height: 34px;
 }
 
+.teamLogoSm {
+  width: 34px;
+  height: 34px;
+}
+
+.teamLogoMd {
+  width: 52px;
+  height: 52px;
+}
+
 .teamLogo-lg {
   width: 72px;
   height: 72px;
 }
 
+.teamLogoLg {
+  width: 72px;
+  height: 72px;
+}
+
 .teamLogo-xl {
+  width: 104px;
+  height: 104px;
+}
+
+.teamLogoXl {
   width: 104px;
   height: 104px;
 }
@@ -734,14 +762,27 @@ ul {
   gap: 10px;
 }
 
-.teamIdentity > span:last-child {
+.teamIdentity-center {
+  justify-content: center;
+  text-align: center;
+}
+
+.teamIdentity-right {
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.teamIdentity > span:last-child,
+.teamIdentityText {
   display: grid;
   min-width: 0;
   gap: 2px;
 }
 
 .teamIdentity strong,
-.teamIdentity small {
+.teamIdentity small,
+.teamIdentityName,
+.teamIdentitySubtitle {
   overflow-wrap: anywhere;
 }
 

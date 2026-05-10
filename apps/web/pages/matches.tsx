@@ -3,9 +3,11 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useEffect, useMemo, useState } from 'react';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
-import { MiniLineChart, TacticalPitch, TeamCrest } from '~/components/ui';
+import { TeamIdentity } from '~/components/TeamIdentity';
+import { MiniLineChart, TacticalPitch } from '~/components/ui';
 import { getMatches } from '~/lib/api';
 import { matchHref, matches as mockMatches, statusClass, type Match, type MatchView } from '~/lib/mock-data';
+import { resolveMatchTeamLogo } from '~/lib/team-logos';
 import {
   formatCompetitionLabel,
   formatFinishedMatchSummary,
@@ -239,9 +241,9 @@ function MatchRow({ match }: { match: Match }) {
       <div>
         <span className="muted">{formatCompetitionLabel(match.competition)}</span>
         <div className="fixtureTeams">
-          <TeamLine name={match.home_team} logoUrl={match.home_team_logo ?? match.home_crest} />
+          <TeamLine name={match.home_team} logoUrl={resolveMatchTeamLogo(match, 'home')} />
           <span className="versus">vs</span>
-          <TeamLine name={match.away_team} logoUrl={match.away_team_logo ?? match.away_crest} tone="away" />
+          <TeamLine name={match.away_team} logoUrl={resolveMatchTeamLogo(match, 'away')} tone="away" />
         </div>
         <p>{formatKickoffFr(match.kickoff)}</p>
         <div className="cardTop compact">
@@ -312,10 +314,13 @@ function compactMatch(match: Match): Match {
 
 function TeamLine({ name, tone = 'home', logoUrl }: { name: string; tone?: 'home' | 'away'; logoUrl?: string | null }) {
   return (
-    <span className="teamLine">
-      <TeamCrest name={name} tone={tone} logoUrl={logoUrl} />
-      <strong>{name}</strong>
-    </span>
+    <TeamIdentity
+      align={tone === 'away' ? 'right' : 'left'}
+      className={`teamLine ${tone === 'away' ? 'away' : ''}`}
+      logoUrl={logoUrl}
+      teamName={name}
+      size="sm"
+    />
   );
 }
 

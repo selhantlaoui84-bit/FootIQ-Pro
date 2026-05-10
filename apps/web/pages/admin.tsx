@@ -955,13 +955,15 @@ export default function AdminPage() {
               <div className="metric"><span>Shadow total</span><strong>{shadowBacktesting?.shadow_predictions_total ?? workflowStatus?.shadow_predictions.count ?? 0}</strong></div>
               <div className="metric"><span>Évaluables</span><strong>{shadowBacktesting?.evaluable_predictions ?? shadowBacktesting?.evaluated_matches ?? 0}</strong></div>
               <div className="metric"><span>En attente</span><strong>{shadowBacktesting?.pending_predictions ?? workflowStatus?.shadow_backtesting.pending_predictions ?? 0}</strong></div>
+              <div className="metric"><span>Invalides</span><strong>{shadowBacktesting?.invalid_predictions ?? workflowStatus?.shadow_backtesting.invalid_predictions ?? 0}</strong></div>
               <div className="metric"><span>Accuracy candidat</span><strong>{shadowBacktesting?.metrics?.accuracy ?? (shadowBacktesting?.evaluated_matches ? shadowBacktesting.shadow_accuracy : 'N/A')}</strong></div>
               <div className="metric"><span>Log loss candidat</span><strong>{shadowBacktesting?.metrics?.log_loss ?? 'N/A'}</strong></div>
               <div className="metric"><span>Brier candidat</span><strong>{shadowBacktesting?.metrics?.brier_score ?? shadowBacktesting?.shadow_average_brier ?? 'N/A'}</strong></div>
               <div className="metric"><span>ROI théorique</span><strong>{shadowBacktesting?.metrics?.roi_theoretical ?? 'N/A'}</strong></div>
+              <div className="metric"><span>Référence production</span><strong>{shadowBacktesting?.production_metrics?.accuracy === null ? 'Non disponible' : `${shadowBacktesting?.production_metrics?.accuracy ?? 'N/A'}%`}</strong></div>
               <div className="metric"><span>Delta accuracy</span><strong>{shadowBacktesting?.comparison?.delta_accuracy ?? 'N/A'}</strong></div>
               <div className="metric"><span>Delta log loss</span><strong>{shadowBacktesting?.comparison?.delta_log_loss ?? 'N/A'}</strong></div>
-              <div className="metric"><span>Statut gouvernance</span><strong>{shadowBacktesting?.recommendation?.status ?? shadowBacktesting?.activation_recommendation ?? 'collect_more_data'}</strong></div>
+              <div className="metric"><span>Comparaison</span><strong>{shadowBacktesting?.comparison?.comparison_status ?? shadowBacktesting?.recommendation?.status ?? 'collect_more_data'}</strong></div>
             </div>
             {(shadowBacktesting?.evaluable_predictions ?? shadowBacktesting?.evaluated_matches ?? 0) === 0 ? (
               <div className="banner info">
