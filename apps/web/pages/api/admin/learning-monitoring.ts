@@ -69,6 +69,7 @@ function buildMonitoringFallback(
   feedback: JsonObject,
   calibration: JsonObject,
   featureSummary: JsonObject,
+  shadowBacktesting: JsonObject = {},
 ): JsonObject {
   const productionModel = (modelVersions.current_production_model as JsonObject | undefined) ?? {};
   const candidateModel = candidateFrom(modelVersions);
@@ -76,10 +77,26 @@ function buildMonitoringFallback(
   const storage = String(modelVersions.storage ?? featureSummary.storage ?? 'unknown');
   const featureSnapshots = numberFrom(featureSummary.snapshots_count);
   const trainingRows = numberFrom(featureSummary.with_target_count);
+  const shadowTotal = numberFrom(shadowBacktesting.shadow_predictions_total);
+  const shadowEvaluable = numberFrom(shadowBacktesting.evaluable_predictions ?? shadowBacktesting.evaluated_matches);
+  const shadowPending = numberFrom(shadowBacktesting.pending_predictions);
 
-  if (storage !== 'postgresql') alerts.push('Registre model_versions non confirmé en PostgreSQL.');
-  if (!candidateModel.model_version) alerts.push('Aucun modèle candidat enregistré.');
+  if (storage !== 'postgresql') alerts.push('Registre model_versions non confirme en PostgreSQL.');
+  if (!candidateModel.model_version) alerts.push('Aucun modele candidat enregistre.');
   if (featureSnapshots === 0 && trainingRows === 0) alerts.push('Feature Store vide ou non disponible.');
+
+  let nextBestAction: JsonObject;
+  if (!candidateModel.model_version) {
+    nextBestAction = { label: 'Entrainer un modele candidat', href: '/admin' };
+  } else if (shadowTotal === 0) {
+    nextBestAction = { label: 'Generer les predictions shadow', href: '/admin' };
+  } else if (shadowPending > 0 && shadowEvaluable === 0) {
+    nextBestAction = { label: 'Attendre les resultats des matchs', href: '/admin' };
+  } else if (shadowEvaluable < 30) {
+    nextBestAction = { label: 'Continuer le shadow testing', href: '/admin' };
+  } else {
+    nextBestAction = { label: 'Revue manuelle de promotion', href: '/admin' };
+  }
 
   return {
     status: alerts.length > 0 ? 'warning' : 'ok',
@@ -94,10 +111,13 @@ function buildMonitoringFallback(
     model_versions_count: numberFrom(modelVersions.versions_count),
     production_model_version: productionModel.model_version ?? 'elo-poisson-calibrated-v1',
     latest_candidate_model_version: candidateModel.model_version ?? null,
+    shadow_backtesting_status: shadowBacktesting.backtesting_status ?? shadowBacktesting.status ?? null,
+    shadow_predictions_total: shadowTotal,
+    shadow_evaluable_predictions: shadowEvaluable,
+    latest_shadow_backtesting_at: shadowBacktesting.generated_at ?? null,
+    governance_recommendation: shadowBacktesting.recommendation ?? null,
     alerts,
-    next_best_action: candidateModel.model_version
-      ? { label: 'Générer les prédictions shadow', href: '/admin' }
-      : { label: 'Entraîner un modèle candidat', href: '/admin' },
+    next_best_action: nextBestAction,
     fallback_source: 'models-versions-learning-feedback-calibration-feature-summary',
   };
 }
@@ -123,15 +143,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const serverAdminKey = adminKey as string;
-  void timeoutMs;
 
   try {
-    const [modelVersions, feedback, calibration, featureSummary] = await Promise.allSettled([
+    const [monitoring, modelVersions, feedback, calibration, featureSummary, shadowBacktesting] = await Promise.allSettled([
+      fetchBackendJson(apiUrl, '/learning/monitoring', serverAdminKey, timeoutMs),
       fetchBackendJson(apiUrl, '/models/versions', serverAdminKey, 30000),
       fetchBackendJson(apiUrl, '/learning/feedback', serverAdminKey, 8000),
       fetchBackendJson(apiUrl, '/learning/calibration', serverAdminKey, 8000),
       fetchBackendJson(apiUrl, '/features/summary', serverAdminKey, 8000),
+      fetchBackendJson(apiUrl, '/shadow/backtesting', serverAdminKey, 30000),
     ]);
+
+    if (monitoring.status === 'fulfilled' && monitoring.value.status < 500) {
+      return res.status(200).json(monitoring.value.body);
+    }
 
     return res.status(200).json(
       buildMonitoringFallback(
@@ -139,6 +164,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         fulfilledBody(feedback),
         fulfilledBody(calibration),
         fulfilledBody(featureSummary),
+        fulfilledBody(shadowBacktesting),
       ),
     );
   } catch (error) {
