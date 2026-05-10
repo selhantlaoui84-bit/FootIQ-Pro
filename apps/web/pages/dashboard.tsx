@@ -27,11 +27,20 @@ type DashboardProps = {
   referenceTime: string;
 };
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs} ms`)), timeoutMs);
+    }),
+  ]);
+}
+
 export const getServerSideProps: GetServerSideProps<DashboardProps> = async () => {
   const [matchesResult, summaryResult, predictionsResult] = await Promise.allSettled([
-    getMatches({ includeFinished: true }),
-    getPublicDashboardSummary(),
-    getPredictions({ limit: 160, view: 'upcoming', includeHybridEngine: true }),
+    withTimeout(getMatches({ includeFinished: true }), 5000, 'Dashboard matches'),
+    withTimeout(getPublicDashboardSummary(), 5000, 'Dashboard summary'),
+    withTimeout(getPredictions({ limit: 160, view: 'upcoming', includeHybridEngine: true }), 5000, 'Dashboard predictions'),
   ]);
 
   let rawMatches: Match[] = matchesResult.status === 'fulfilled' ? matchesResult.value : mockMatches;

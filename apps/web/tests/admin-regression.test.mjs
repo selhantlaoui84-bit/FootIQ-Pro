@@ -176,7 +176,8 @@ async function run() {
   assert.match(adminPageSource, /Job shadow/);
   assert.match(adminPageSource, /effectiveNextStep/);
   assert.match(adminPageSource, /train_candidate_model/);
-  assert.match(adminPageSource, /workflowStatus\?\.candidate_model\?\.trained \? 'generate_shadow_predictions' : 'train_candidate_model'/);
+  assert.match(adminPageSource, /registeredCandidateRows >= 30/);
+  assert.match(adminPageSource, /candidateModelTrained \? 'generate_shadow_predictions' : 'train_candidate_model'/);
   assert.match(adminPageSource, /setRefreshJobId\(null\)/);
   assert.match(adminPageSource, /if \(isProbablyStale\(job\)\)/);
   assert.match(adminPageSource, /setRefreshJobId\(response\.job_id\)/);

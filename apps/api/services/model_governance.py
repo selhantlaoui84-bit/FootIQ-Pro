@@ -148,7 +148,11 @@ def build_model_governance_report(
     }
 
     if not all(rule["passed"] for rule in promotion_rules.values()):
-        blockers.append("Critères stricts de promotion non satisfaits.")
+        if trained:
+            warnings.append("Critères stricts de promotion non satisfaits : garder le candidat en shadow.")
+            next_actions.append("Générer des prédictions shadow et accumuler au moins 50 matchs testés.")
+        else:
+            blockers.append("Critères stricts de promotion non satisfaits.")
 
     trend = monitoring_report.get("trend_summary") or {}
     monitoring_status = trend.get("monitoring_status") or "unknown"
