@@ -40,7 +40,7 @@ export default function TeamsPage({ teams }: TeamsProps) {
                 <span>{team.competition}</span>
                 <span className={`trend ${team.trend ?? 'stable'}`}>{team.trend ?? 'stable'}</span>
               </div>
-              <TeamCrest name={team.name} />
+              <TeamCrest name={team.name} logoUrl={team.logo_url ?? team.crest_url ?? team.crestUrl ?? team.crest ?? team.emblem ?? team.image} />
               <h2>{team.name}</h2>
               <div className="dataList">
                 <span>

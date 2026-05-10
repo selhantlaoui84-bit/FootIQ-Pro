@@ -1,4 +1,4 @@
-﻿import logging
+import logging
 import os
 import re
 import unicodedata
@@ -72,8 +72,10 @@ def _winner_from_score(winner, home_score, away_score):
 
 
 def normalize_match(raw_match, competition_label):
-    home_team_name = raw_match.get("homeTeam", {}).get("name") or raw_match.get("homeTeam", {}).get("shortName") or "Home"
-    away_team_name = raw_match.get("awayTeam", {}).get("name") or raw_match.get("awayTeam", {}).get("shortName") or "Away"
+    home_team = raw_match.get("homeTeam", {}) if isinstance(raw_match.get("homeTeam"), dict) else {}
+    away_team = raw_match.get("awayTeam", {}) if isinstance(raw_match.get("awayTeam"), dict) else {}
+    home_team_name = home_team.get("name") or home_team.get("shortName") or "Home"
+    away_team_name = away_team.get("name") or away_team.get("shortName") or "Away"
     slug = f"{slugify(home_team_name)}-{slugify(away_team_name)}"
     score = raw_match.get("score") if isinstance(raw_match.get("score"), dict) else {}
     full_time = score.get("fullTime") if isinstance(score, dict) else {}
@@ -90,6 +92,10 @@ def normalize_match(raw_match, competition_label):
         "slug": slug,
         "home_team": home_team_name,
         "away_team": away_team_name,
+        "home_team_logo": home_team.get("crest") or home_team.get("crestUrl") or home_team.get("logo"),
+        "away_team_logo": away_team.get("crest") or away_team.get("crestUrl") or away_team.get("logo"),
+        "home_crest": home_team.get("crest") or home_team.get("crestUrl"),
+        "away_crest": away_team.get("crest") or away_team.get("crestUrl"),
         "competition": competition_label,
         "kickoff": raw_match.get("utcDate"),
         "status": status,
@@ -108,13 +114,20 @@ def normalize_match(raw_match, competition_label):
 def normalize_team(raw_team, competition_label):
     team_name = raw_team.get("name") or raw_team.get("shortName") or "Unknown"
     slug = slugify(team_name)
+    crest_url = raw_team.get("crest") or raw_team.get("crestUrl") or raw_team.get("logo")
 
     return {
         "id": slug,
         "slug": slug,
         "name": team_name,
+        "short_name": raw_team.get("shortName"),
+        "tla": raw_team.get("tla"),
+        "crest_url": crest_url,
+        "logo_url": crest_url,
+        "crest": raw_team.get("crest") or raw_team.get("crestUrl"),
         "competition": competition_label,
         "source": "football-data.org",
+        "raw_json": raw_team,
     }
 
 

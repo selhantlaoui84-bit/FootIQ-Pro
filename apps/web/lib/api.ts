@@ -46,6 +46,7 @@ import {
   type MlStatus,
   type MlComparison,
   type MlShadowRow,
+  type MlShadowBacktesting,
   type MlShadowSummary,
   type GenerateShadowPredictionsResponse,
   type MatchView,
@@ -621,10 +622,10 @@ export async function buildFeatureStore(options?: { limit?: number; force?: bool
   }
 }
 
-export async function getMlShadowBacktesting(limit = 500) {
+export async function getMlShadowBacktesting(limit = 500): Promise<MlShadowBacktesting> {
   if (IS_BUILD) return mockMlShadowBacktesting;
 
-  return fetchProxyJson<typeof mockMlShadowBacktesting>(
+  return fetchProxyJson<MlShadowBacktesting>(
     `/api/admin/shadow-backtesting?limit=${encodeURIComponent(String(limit))}`,
     undefined,
     60000,

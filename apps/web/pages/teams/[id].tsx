@@ -1,7 +1,7 @@
 import type { GetStaticPaths, GetStaticProps } from 'next';
 import Link from 'next/link';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
-import { MiniLineChart, RadarChart, TeamCrest } from '~/components/ui';
+import { MiniLineChart, RadarChart, TeamCrest, TeamIdentity } from '~/components/ui';
 import { getMatches, getPredictions, getTeam } from '~/lib/api';
 import { getMockTeam, matchHref, matches as mockMatches, predictions as mockPredictions, teams, type Match, type Prediction, type Team } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
@@ -53,7 +53,7 @@ export default function TeamDetailPage({ team, relatedMatches, relatedPrediction
       <Layout>
         <section className="pageHeader teamDetailHero">
           <p className="eyebrow">{team.competition}</p>
-          <TeamCrest name={team.name} />
+          <TeamCrest name={team.name} logoUrl={team.logo_url ?? team.crest_url ?? team.crestUrl ?? team.crest ?? team.emblem ?? team.image} size="xl" />
           <h1>{team.name}</h1>
           <p>Profil équipe, forme récente, prédictions associées et lecture tactique.</p>
         </section>
@@ -145,9 +145,11 @@ function MatchCard({ match }: { match: Match }) {
   return (
     <Link className="card clickable-card" href={matchHref(match)}>
       <span className="muted">{match.competition}</span>
-      <h3>
-        {match.home_team} vs {match.away_team}
-      </h3>
+      <div className="fixtureTeams">
+        <TeamIdentity teamName={match.home_team} logoUrl={match.home_team_logo ?? match.home_crest} size="sm" />
+        <span className="versus">vs</span>
+        <TeamIdentity teamName={match.away_team} logoUrl={match.away_team_logo ?? match.away_crest} tone="away" size="sm" />
+      </div>
       <p>{new Date(match.kickoff).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })}</p>
     </Link>
   );

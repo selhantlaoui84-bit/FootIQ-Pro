@@ -148,14 +148,14 @@ export default function DashboardPage({ matches, predictions, summary, reference
               </div>
               <div className="teamsDuel">
                 <div>
-                  <TeamCrest name={featuredMatch?.home_team ?? 'Équipe domicile'} />
+                  <TeamCrest name={featuredMatch?.home_team ?? 'Équipe domicile'} logoUrl={featuredMatch?.home_team_logo ?? featuredMatch?.home_crest} />
                   <strong>{featuredMatch?.home_team ?? 'Équipe domicile'}</strong>
                   <small>Probabilité de victoire</small>
                   <em>{featuredMatch?.probabilities?.home ?? 54}%</em>
                 </div>
                 <TacticalPitch value={featuredMatch?.probabilities?.draw ?? 26} />
                 <div>
-                  <TeamCrest name={featuredMatch?.away_team ?? 'Équipe extérieure'} tone="away" />
+                  <TeamCrest name={featuredMatch?.away_team ?? 'Équipe extérieure'} logoUrl={featuredMatch?.away_team_logo ?? featuredMatch?.away_crest} tone="away" />
                   <strong>{featuredMatch?.away_team ?? 'Équipe extérieure'}</strong>
                   <small>Probabilité de victoire</small>
                   <em>{featuredMatch?.probabilities?.away ?? 20}%</em>
@@ -175,7 +175,7 @@ export default function DashboardPage({ matches, predictions, summary, reference
               <div className="premiumSignalList">
                 {signalPredictions.slice(0, 5).map((prediction) => (
                   <Link href={matchHref(prediction)} key={prediction.match_id}>
-                    <TeamCrest name={prediction.home_team} />
+                    <TeamCrest name={prediction.home_team} logoUrl={prediction.home_team_logo ?? prediction.home_crest} />
                     <span>
                       <strong>{prediction.home_team}</strong>
                       <small>{prediction.main_prediction}</small>
@@ -366,9 +366,9 @@ function UpcomingMatchCard({ match }: { match: Match }) {
       </div>
 
       <div className="fixtureTeams">
-        <TeamLine name={match.home_team} />
+        <TeamLine name={match.home_team} logoUrl={match.home_team_logo ?? match.home_crest} />
         <span className="versus">vs</span>
-        <TeamLine name={match.away_team} tone="away" />
+        <TeamLine name={match.away_team} logoUrl={match.away_team_logo ?? match.away_crest} tone="away" />
       </div>
 
       {hasProbabilities ? (
@@ -471,10 +471,10 @@ function TacticalPitch({ value }: { value: number }) {
   );
 }
 
-function TeamLine({ name, tone = 'home' }: { name: string; tone?: 'home' | 'away' }) {
+function TeamLine({ name, tone = 'home', logoUrl }: { name: string; tone?: 'home' | 'away'; logoUrl?: string | null }) {
   return (
     <span className="teamLine">
-      <TeamCrest name={name} tone={tone} />
+      <TeamCrest name={name} tone={tone} logoUrl={logoUrl} />
       <strong>{name}</strong>
     </span>
   );

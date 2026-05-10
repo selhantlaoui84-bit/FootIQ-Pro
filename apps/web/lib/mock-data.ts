@@ -1,4 +1,4 @@
-﻿export type ConfidenceStatus = 'FIABLE' | 'MOYEN' | 'À ÉVITER';
+export type ConfidenceStatus = 'FIABLE' | 'MOYEN' | 'À ÉVITER';
 export type Recommendation = 'Exploitable' | 'Prudence' | 'À éviter' | 'À éviter';
 
 export type ExplainabilityFactor = {
@@ -43,6 +43,10 @@ export type Prediction = {
   slug: string;
   home_team: string;
   away_team: string;
+  home_team_logo?: string | null;
+  away_team_logo?: string | null;
+  home_crest?: string | null;
+  away_crest?: string | null;
   competition: string;
   kickoff: string;
   status?: string;
@@ -166,6 +170,10 @@ export type Match = {
   slug: string;
   home_team: string;
   away_team: string;
+  home_team_logo?: string | null;
+  away_team_logo?: string | null;
+  home_crest?: string | null;
+  away_crest?: string | null;
   competition: string;
   kickoff: string;
   status?: string;
@@ -191,6 +199,15 @@ export type Team = {
   slug: string;
   name: string;
   competition: string;
+  logo_url?: string | null;
+  crest_url?: string | null;
+  logoUrl?: string | null;
+  crestUrl?: string | null;
+  crest?: string | null;
+  emblem?: string | null;
+  image?: string | null;
+  short_name?: string | null;
+  tla?: string | null;
   elo?: number;
   form?: string;
   goals_for?: number;
