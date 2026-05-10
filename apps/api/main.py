@@ -260,7 +260,9 @@ def _workflow_status_compact():
     candidate_status = str(ml_status.get("status") or latest_candidate_model.get("status") or "not_trained")
     candidate_trained = candidate_status in {"ok", "trained", "success", "candidate"} or candidate_rows_used >= 30
     shadow_generated = shadow_summary.get("shadow_predictions_count", 0) > 0
-    shadow_backtesting_ready = shadow_backtesting.get("evaluated_matches", 0) > 0
+    shadow_evaluable = int(shadow_backtesting.get("evaluable_predictions") or shadow_backtesting.get("evaluated_matches") or 0)
+    shadow_pending = int(shadow_backtesting.get("pending_predictions") or 0)
+    shadow_backtesting_ready = shadow_evaluable > 0
 
     if candidate_trained and not shadow_generated:
         next_step = "generate_shadow_predictions"
@@ -270,8 +272,10 @@ def _workflow_status_compact():
         next_step = "build_feature_store" if finished_with_scores > 0 else "import_historical_results"
     elif not candidate_trained:
         next_step = "train_candidate_model"
-    elif not shadow_backtesting_ready:
+    elif shadow_generated and shadow_evaluable < 30:
         next_step = "review_shadow_backtesting"
+    elif shadow_backtesting_ready:
+        next_step = "review_governance"
     else:
         next_step = "ready_for_hybrid_review"
 
@@ -318,9 +322,12 @@ def _workflow_status_compact():
         },
         "shadow_backtesting": {
             "ready": shadow_backtesting_ready,
-            "evaluated_matches": shadow_backtesting.get("evaluated_matches", 0),
+            "evaluated_matches": shadow_evaluable,
+            "evaluable_predictions": shadow_evaluable,
+            "pending_predictions": shadow_pending,
             "shadow_accuracy": shadow_backtesting.get("shadow_accuracy", 0),
             "activation_recommendation": shadow_backtesting.get("activation_recommendation", "do_not_activate"),
+            "recommendation": shadow_backtesting.get("recommendation"),
         },
         "latest_refresh_job": latest_refresh_job,
         "latest_feature_store_job": latest_feature_store_job,
@@ -333,6 +340,10 @@ def _admin_alerts_report():
     refresh_status = _refresh_status()
     feature_summary = _feature_summary_fast()
     ml_status = _ml_status_compact()
+    shadow_backtesting = calculate_shadow_backtest_report(
+        _available_matches(),
+        repository.get_ml_shadow_predictions(limit=2000),
+    )
     shadow_summary = _shadow_summary_compact()
     workflow_status = {
         "latest_refresh_job": runtime_store.get_refresh_job_status(),
@@ -909,6 +920,10 @@ def learning_monitoring():
     feedback_report = build_feedback_report(_available_matches(), _available_predictions(), model_version=MODEL_VERSION)
     calibration_report = build_calibration_profile(_available_matches(), _available_predictions(), model_version=MODEL_VERSION)
     ml_status = _ml_status_compact()
+    shadow_report = calculate_shadow_backtest_report(
+        _available_matches(),
+        repository.get_ml_shadow_predictions(limit=2000),
+    )
 
     try:
         feature_summary = _feature_summary_fast()
@@ -927,13 +942,21 @@ def learning_monitoring():
     if not candidate_model:
         alerts.append("Aucun modèle candidat enregistré.")
 
-    next_best_action = (
-        {"label": "Générer les prédictions shadow", "href": "/admin"}
-        if candidate_model
-        else {"label": "Construire le Feature Store", "href": "/admin"}
-        if feature_store_status in {"empty", "error"}
-        else {"label": "Entraîner un modèle candidat", "href": "/admin"}
-    )
+    shadow_total = int(shadow_report.get("shadow_predictions_total") or 0)
+    shadow_evaluable = int(shadow_report.get("evaluable_predictions") or shadow_report.get("evaluated_matches") or 0)
+    shadow_pending = int(shadow_report.get("pending_predictions") or 0)
+    if not candidate_model and feature_store_status in {"empty", "error"}:
+        next_best_action = {"label": "Construire le Feature Store", "href": "/admin"}
+    elif not candidate_model:
+        next_best_action = {"label": "Entraîner un modèle candidat", "href": "/admin"}
+    elif shadow_total == 0:
+        next_best_action = {"label": "Générer les prédictions shadow", "href": "/admin"}
+    elif shadow_pending > 0 and shadow_evaluable == 0:
+        next_best_action = {"label": "Attendre les résultats des matchs", "href": "/admin"}
+    elif shadow_evaluable < 30:
+        next_best_action = {"label": "Continuer le shadow testing", "href": "/admin"}
+    else:
+        next_best_action = {"label": "Revue manuelle de promotion", "href": "/admin"}
 
     return {
         "status": "ok" if not alerts else "warning",
@@ -948,6 +971,11 @@ def learning_monitoring():
         "model_versions_count": versions_report.get("versions_count", 0),
         "production_model_version": production_model.get("model_version") or MODEL_VERSION,
         "latest_candidate_model_version": candidate_model.get("model_version"),
+        "shadow_backtesting_status": shadow_report.get("backtesting_status") or shadow_report.get("status"),
+        "shadow_predictions_total": shadow_total,
+        "shadow_evaluable_predictions": shadow_evaluable,
+        "latest_shadow_backtesting_at": shadow_report.get("generated_at"),
+        "governance_recommendation": shadow_report.get("recommendation"),
         "alerts": alerts,
         "next_best_action": next_best_action,
         "feature_store": feature_summary,
@@ -1092,6 +1120,11 @@ def backtesting_report():
 
 @app.get("/ml/shadow-backtesting")
 def ml_shadow_backtesting(limit: int = Query(default=500, ge=1, le=2000)):
+    shadow_records = repository.get_ml_shadow_predictions(limit=limit)
+    return calculate_shadow_backtest_report(_available_matches(), shadow_records)
+
+@app.get("/shadow/backtesting")
+def shadow_backtesting_report(limit: int = Query(default=2000, ge=1, le=5000)):
     shadow_records = repository.get_ml_shadow_predictions(limit=limit)
     return calculate_shadow_backtest_report(_available_matches(), shadow_records)
 

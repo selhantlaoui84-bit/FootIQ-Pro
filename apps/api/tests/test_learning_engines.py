@@ -17,6 +17,7 @@ from services.ml_training import (
 )
 from services.model_governance import build_model_governance_report
 from services.model_versioning import get_versions_report, record_model_version, list_model_versions
+from services.shadow_backtesting import calculate_shadow_backtest_report
 
 
 def finished_match(match_id, result="home", competition="Ligue 1"):
@@ -44,6 +45,50 @@ def prediction(match_id, home=70, draw=20, away=10, competition="Ligue 1"):
         "probabilities": {"home": home, "draw": draw, "away": away},
         "goals": {"over_2_5": 60, "btts": 55},
         "confidence": {"score": max(home, draw, away), "status": "FIABLE"},
+    }
+
+
+def shadow_record(
+    match_id,
+    shadow_pick="home",
+    production_pick="home",
+    shadow_probs=None,
+    production_probs=None,
+    confidence=70,
+    odds=1.8,
+):
+    shadow_probs = shadow_probs or {"home": 70, "draw": 20, "away": 10}
+    production_probs = production_probs or {"home": 60, "draw": 25, "away": 15}
+    return {
+        "id": f"shadow-{match_id}",
+        "match_id": match_id,
+        "candidate_model_version": "ml-shadow-v1",
+        "production_model_version": "elo-poisson-calibrated-v1",
+        "production_prediction": {
+            "match_id": match_id,
+            "model_version": "elo-poisson-calibrated-v1",
+            "probabilities": production_probs,
+            "confidence": {"score": max(production_probs.values())},
+            "odds": {production_pick: odds},
+            "market": "1x2",
+        },
+        "shadow_prediction": {
+            "match_id": match_id,
+            "model_version": "ml-shadow-v1",
+            "available": True,
+            "predicted_result": shadow_pick,
+            "probabilities": shadow_probs,
+            "confidence": confidence,
+            "odds": {shadow_pick: odds},
+            "market": "1x2",
+        },
+        "comparison": {
+            "production_pick": production_pick,
+            "shadow_pick": shadow_pick,
+            "same_pick": production_pick == shadow_pick,
+            "disagreement_level": "none" if production_pick == shadow_pick else "medium",
+        },
+        "created_at": "2026-05-10T10:00:00+00:00",
     }
 
 
@@ -399,6 +444,117 @@ class LearningEngineTests(unittest.TestCase):
         self.assertEqual(report["storage"], "postgresql")
         self.assertEqual(report["latest_candidate_model_version"], "ml-monitor-v1")
         self.assertIn("next_best_action", report)
+
+    def test_shadow_backtesting_no_predictions(self):
+        report = calculate_shadow_backtest_report([], [])
+
+        self.assertEqual(report["shadow_predictions_total"], 0)
+        self.assertEqual(report["evaluable_predictions"], 0)
+        self.assertEqual(report["recommendation"]["status"], "collect_more_data")
+
+    def test_shadow_backtesting_pending_predictions(self):
+        report = calculate_shadow_backtest_report(
+            [{"id": "m1", "match_id": "m1", "status": "SCHEDULED"}],
+            [shadow_record("m1")],
+        )
+
+        self.assertEqual(report["shadow_predictions_total"], 1)
+        self.assertEqual(report["pending_predictions"], 1)
+        self.assertEqual(report["metrics"]["accuracy"], None)
+
+    def test_shadow_backtesting_evaluable_metrics_and_roi(self):
+        report = calculate_shadow_backtest_report(
+            [finished_match("m1", "home"), finished_match("m2", "away", competition="Serie A")],
+            [
+                shadow_record("m1", shadow_pick="home", production_pick="draw", odds=2.0),
+                shadow_record(
+                    "m2",
+                    shadow_pick="home",
+                    production_pick="away",
+                    shadow_probs={"home": 55, "draw": 25, "away": 20},
+                    production_probs={"home": 20, "draw": 20, "away": 60},
+                    odds=1.9,
+                ),
+            ],
+        )
+
+        self.assertEqual(report["evaluable_predictions"], 2)
+        self.assertEqual(report["metrics"]["accuracy"], 50)
+        self.assertIsNotNone(report["metrics"]["log_loss"])
+        self.assertIsNotNone(report["metrics"]["brier_score"])
+        self.assertEqual(report["metrics"]["roi_theoretical"], 0.0)
+        self.assertEqual(report["comparison"]["delta_accuracy"], 0)
+        self.assertEqual(report["by_market"][0]["market"], "1x2")
+        self.assertGreaterEqual(len(report["by_competition"]), 1)
+        self.assertGreaterEqual(len(report["by_confidence"]), 1)
+
+    def test_shadow_backtesting_endpoint(self):
+        records = [shadow_record("m1")]
+        with patch.object(main, "_available_matches", return_value=[finished_match("m1", "home")]), patch.object(
+            main.repository,
+            "get_ml_shadow_predictions",
+            return_value=records,
+        ):
+            report = main.shadow_backtesting_report()
+
+        self.assertEqual(report["status"], "ok")
+        self.assertEqual(report["candidate_model_version"], "ml-shadow-v1")
+        self.assertEqual(report["evaluable_predictions"], 1)
+
+    def test_workflow_status_after_shadow_predictions_pending(self):
+        with patch.object(main, "_feature_summary", return_value={"snapshots_count": 10, "with_target_count": 8, "target_coverage": 80, "storage": "postgresql"}), patch.object(
+            main,
+            "_refresh_status",
+            return_value={"storage": "postgresql", "matches_imported": 10},
+        ), patch.object(main, "_ml_status_compact", return_value={"latest_candidate_model": {"model_version": "ml-v1", "status": "candidate", "rows_used": 50}}), patch.object(
+            main,
+            "_shadow_summary_compact",
+            return_value={"shadow_predictions_count": 1, "disagreement_count": 0},
+        ), patch.object(main, "calculate_shadow_backtest_report", return_value={"evaluable_predictions": 0, "pending_predictions": 1, "shadow_accuracy": 0, "recommendation": {"status": "collect_more_data"}}):
+            workflow = main._workflow_status_compact()
+
+        self.assertFalse(workflow["shadow_backtesting"]["ready"])
+        self.assertEqual(workflow["shadow_backtesting"]["pending_predictions"], 1)
+        self.assertEqual(workflow["next_step"], "review_shadow_backtesting")
+
+    def test_workflow_status_after_shadow_predictions_evaluable(self):
+        with patch.object(main, "_feature_summary", return_value={"snapshots_count": 10, "with_target_count": 8, "target_coverage": 80, "storage": "postgresql"}), patch.object(
+            main,
+            "_refresh_status",
+            return_value={"storage": "postgresql", "matches_imported": 10},
+        ), patch.object(main, "_ml_status_compact", return_value={"latest_candidate_model": {"model_version": "ml-v1", "status": "candidate", "rows_used": 50}}), patch.object(
+            main,
+            "_shadow_summary_compact",
+            return_value={"shadow_predictions_count": 35, "disagreement_count": 3},
+        ), patch.object(main, "calculate_shadow_backtest_report", return_value={"evaluable_predictions": 35, "pending_predictions": 0, "shadow_accuracy": 55, "recommendation": {"status": "promotion_ready_manual_review"}}):
+            workflow = main._workflow_status_compact()
+
+        self.assertTrue(workflow["shadow_backtesting"]["ready"])
+        self.assertEqual(workflow["next_step"], "review_governance")
+
+    def test_governance_blocks_insufficient_shadow_data(self):
+        report = build_model_governance_report(
+            {"current_model_version": "elo-poisson-calibrated-v1"},
+            {"latest_candidate": {"status": "candidate", "model_version": "ml-v1", "rows_used": 60, "accuracy": 58, "brier_score": 0.5, "log_loss": 0.9}},
+            {"safe_for_training": True, "recommendation": "safe_to_train"},
+            {"trend_summary": {"monitoring_status": "healthy"}},
+            {"evaluable_predictions": 1, "metrics": {"accuracy": 100}, "recommendation": {"status": "collect_more_data"}},
+            {"recommendation": "insufficient_shadow_data"},
+            {"evaluated_matches": 20, "accuracy": 50, "log_loss": 1.0, "brier_score": 0.6, "theoretical_roi": 0.1},
+        )
+
+        self.assertEqual(report["promotion_readiness"]["level"], "blocked_insufficient_data")
+        self.assertFalse(report["promotion_rules"]["tested_matches"]["passed"])
+
+    def test_learning_monitoring_includes_shadow_backtesting(self):
+        self.use_sqlite_registry()
+        repository.save_model_version({"model_version": "ml-monitor-shadow-v1", "status": "candidate", "rows_used": 80, "metrics": {"accuracy": 51}})
+        with patch.object(main, "calculate_shadow_backtest_report", return_value={"shadow_predictions_total": 1, "evaluable_predictions": 0, "pending_predictions": 1, "backtesting_status": "pending", "recommendation": {"status": "collect_more_data"}}):
+            report = main.learning_monitoring()
+
+        self.assertEqual(report["shadow_predictions_total"], 1)
+        self.assertEqual(report["shadow_evaluable_predictions"], 0)
+        self.assertEqual(report["next_best_action"]["label"], "Attendre les résultats des matchs")
 
     def test_governance_blocks_promotion_when_strict_rules_fail(self):
         report = build_model_governance_report(

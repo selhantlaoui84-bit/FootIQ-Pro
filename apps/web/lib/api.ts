@@ -624,13 +624,11 @@ export async function buildFeatureStore(options?: { limit?: number; force?: bool
 export async function getMlShadowBacktesting(limit = 500) {
   if (IS_BUILD) return mockMlShadowBacktesting;
 
-  const data = await fetchBackendJson<typeof mockMlShadowBacktesting>(
-    `/ml/shadow-backtesting?limit=${encodeURIComponent(String(limit))}`,
+  return fetchProxyJson<typeof mockMlShadowBacktesting>(
+    `/api/admin/shadow-backtesting?limit=${encodeURIComponent(String(limit))}`,
     undefined,
-    3000,
+    60000,
   );
-
-  return data ?? mockMlShadowBacktesting;
 }
 
 export async function getModelGovernance(): Promise<ModelGovernanceReport> {

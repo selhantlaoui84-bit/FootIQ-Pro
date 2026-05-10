@@ -15,6 +15,7 @@ import {
   getFeatureStoreJobStatus,
   getLearningFeedback,
   getLearningMonitoring,
+  getMlShadowBacktesting,
   getModelVersionsRegistry,
   getShadowPredictionJobStatus,
   getModelGovernance,
@@ -39,6 +40,7 @@ import type {
   LearningFeedbackReport,
   LearningMonitoringReport,
   MatchView,
+  MlShadowBacktesting,
   ModelGovernanceReport,
   ModelVersionsResponse,
   RefreshJobStatus,
@@ -56,6 +58,7 @@ type AdminLoadErrors = {
   qualityReportError: string | null;
   governanceError: string | null;
   learningMonitoringError: string | null;
+  shadowBacktestingError: string | null;
 };
 
 type AdminLoadResult<T> = {
@@ -72,6 +75,7 @@ const emptyAdminLoadErrors: AdminLoadErrors = {
   qualityReportError: null,
   governanceError: null,
   learningMonitoringError: null,
+  shadowBacktestingError: null,
 };
 
 const adminLoadErrorLabels: Record<keyof AdminLoadErrors, string> = {
@@ -83,6 +87,7 @@ const adminLoadErrorLabels: Record<keyof AdminLoadErrors, string> = {
   qualityReportError: 'Rapport qualité',
   governanceError: 'Gouvernance modèle',
   learningMonitoringError: 'Monitoring learning',
+  shadowBacktestingError: 'Backtesting shadow',
 };
 
 function valueBadge(value?: string | null) {
@@ -169,6 +174,7 @@ export default function AdminPage() {
   const [modelGovernance, setModelGovernance] = useState<ModelGovernanceReport | null>(null);
   const [learningFeedback, setLearningFeedback] = useState<LearningFeedbackReport | null>(null);
   const [learningMonitoring, setLearningMonitoring] = useState<LearningMonitoringReport | null>(null);
+  const [shadowBacktesting, setShadowBacktesting] = useState<MlShadowBacktesting | null>(null);
   const [calibrationReport, setCalibrationReport] = useState<CalibrationReport | null>(null);
   const [modelVersions, setModelVersions] = useState<ModelVersionsResponse | null>(null);
   const [adminAlerts, setAdminAlerts] = useState<AdminAlertsReport | null>(null);
@@ -288,6 +294,7 @@ export default function AdminPage() {
       governanceResult,
       feedbackResult,
       monitoringResult,
+      shadowBacktestingResult,
       calibrationResult,
       modelVersionsResult,
       alertsResult,
@@ -301,6 +308,7 @@ export default function AdminPage() {
       captureAdminLoad(getModelGovernance(), 'Impossible de charger /models/governance'),
       captureAdminLoad(getLearningFeedback(), 'Impossible de charger /learning/feedback'),
       captureAdminLoad(getLearningMonitoring(), 'Impossible de charger /learning/monitoring'),
+      captureAdminLoad(getMlShadowBacktesting(2000), 'Impossible de charger /shadow/backtesting'),
       captureAdminLoad(getCalibrationReport(), 'Impossible de charger /learning/calibration'),
       captureAdminLoad(getModelVersionsRegistry(), 'Impossible de charger /models/versions'),
       captureAdminLoad(getAdminAlerts(), 'Impossible de charger /admin/alerts'),
@@ -315,6 +323,7 @@ export default function AdminPage() {
       qualityReportError: qualityResult.error,
       governanceError: governanceResult.error,
       learningMonitoringError: monitoringResult.error,
+      shadowBacktestingError: shadowBacktestingResult.error,
       alertsError: alertsResult.error,
       dashboardSummaryError: dashboardResult.error,
     });
@@ -338,6 +347,7 @@ export default function AdminPage() {
     if (governanceResult.data) setModelGovernance(governanceResult.data);
     if (feedbackResult.data) setLearningFeedback(feedbackResult.data);
     if (monitoringResult.data) setLearningMonitoring(monitoringResult.data);
+    if (shadowBacktestingResult.data) setShadowBacktesting(shadowBacktestingResult.data);
     if (calibrationResult.data) setCalibrationReport(calibrationResult.data);
     if (modelVersionsResult.data) setModelVersions(modelVersionsResult.data);
     if (alertsResult.data) setAdminAlerts(alertsResult.data);
@@ -936,6 +946,49 @@ export default function AdminPage() {
               )}
             </article>
           </div>
+
+          <article className="sectionAnchor" id="shadow-backtesting">
+            <h3>Backtesting shadow</h3>
+            <div className="compactDataGrid four">
+              <div className="metric"><span>Candidat</span><strong>{shadowBacktesting?.candidate_model_version ?? modelVersions?.latest_candidate_model?.model_version ?? 'N/A'}</strong></div>
+              <div className="metric"><span>Production</span><strong>{shadowBacktesting?.production_model_version ?? 'elo-poisson-calibrated-v1'}</strong></div>
+              <div className="metric"><span>Shadow total</span><strong>{shadowBacktesting?.shadow_predictions_total ?? workflowStatus?.shadow_predictions.count ?? 0}</strong></div>
+              <div className="metric"><span>Évaluables</span><strong>{shadowBacktesting?.evaluable_predictions ?? shadowBacktesting?.evaluated_matches ?? 0}</strong></div>
+              <div className="metric"><span>En attente</span><strong>{shadowBacktesting?.pending_predictions ?? workflowStatus?.shadow_backtesting.pending_predictions ?? 0}</strong></div>
+              <div className="metric"><span>Accuracy candidat</span><strong>{shadowBacktesting?.metrics?.accuracy ?? (shadowBacktesting?.evaluated_matches ? shadowBacktesting.shadow_accuracy : 'N/A')}</strong></div>
+              <div className="metric"><span>Log loss candidat</span><strong>{shadowBacktesting?.metrics?.log_loss ?? 'N/A'}</strong></div>
+              <div className="metric"><span>Brier candidat</span><strong>{shadowBacktesting?.metrics?.brier_score ?? shadowBacktesting?.shadow_average_brier ?? 'N/A'}</strong></div>
+              <div className="metric"><span>ROI théorique</span><strong>{shadowBacktesting?.metrics?.roi_theoretical ?? 'N/A'}</strong></div>
+              <div className="metric"><span>Delta accuracy</span><strong>{shadowBacktesting?.comparison?.delta_accuracy ?? 'N/A'}</strong></div>
+              <div className="metric"><span>Delta log loss</span><strong>{shadowBacktesting?.comparison?.delta_log_loss ?? 'N/A'}</strong></div>
+              <div className="metric"><span>Statut gouvernance</span><strong>{shadowBacktesting?.recommendation?.status ?? shadowBacktesting?.activation_recommendation ?? 'collect_more_data'}</strong></div>
+            </div>
+            {(shadowBacktesting?.evaluable_predictions ?? shadowBacktesting?.evaluated_matches ?? 0) === 0 ? (
+              <div className="banner info">
+                Les prédictions shadow sont générées, mais aucun match n'est encore évaluable. Attendez des résultats terminés pour calculer le backtesting.
+              </div>
+            ) : (
+              <div className="metricTable">
+                <div className="metricTableRow header">
+                  <span>Match</span>
+                  <span>Réel</span>
+                  <span>Candidat</span>
+                  <span>Production</span>
+                </div>
+                {(shadowBacktesting?.evaluated_match_rows ?? shadowBacktesting?.recent_evaluations ?? []).slice(0, 5).map((item) => (
+                  <div className="metricTableRow bucketRow" key={item.match_id}>
+                    <span>{item.home_team ?? item.match_id} {item.away_team ? `- ${item.away_team}` : ''}</span>
+                    <strong>{item.actual_result}</strong>
+                    <strong>{item.shadow_pick ?? 'N/A'}</strong>
+                    <strong>{item.production_pick ?? 'N/A'}</strong>
+                  </div>
+                ))}
+              </div>
+            )}
+            {shadowBacktesting?.recommendation?.reason && (
+              <div className="banner warning">{shadowBacktesting.recommendation.reason}</div>
+            )}
+          </article>
         </section>
 
         <section className="card sectionAnchor" id="learning-engine">

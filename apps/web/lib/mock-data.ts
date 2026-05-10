@@ -606,6 +606,11 @@ export type LearningMonitoringReport = {
   model_versions_count?: number;
   production_model_version?: string | null;
   latest_candidate_model_version?: string | null;
+  shadow_backtesting_status?: string;
+  shadow_predictions_total?: number;
+  shadow_evaluable_predictions?: number;
+  latest_shadow_backtesting_at?: string | null;
+  governance_recommendation?: Record<string, unknown>;
   alerts: string[];
   next_best_action?: {
     label: string;
@@ -912,7 +917,15 @@ export type AdminWorkflowStatus = {
   feature_engineering?: { feature_set_version?: string | null; advanced_feature_coverage: number };
   candidate_model: { trained: boolean; status: string; model_version: string | null; accuracy: number | null };
   shadow_predictions: { generated: boolean; count: number; disagreement_count: number };
-  shadow_backtesting: { ready: boolean; evaluated_matches: number; shadow_accuracy: number; activation_recommendation: string };
+  shadow_backtesting: {
+    ready: boolean;
+    evaluated_matches: number;
+    evaluable_predictions?: number;
+    pending_predictions?: number;
+    shadow_accuracy: number;
+    activation_recommendation: string;
+    recommendation?: Record<string, unknown>;
+  };
   hybrid: { mode: string; recommendation: string };
   dataset_quality?: {
     safe_for_training: boolean;
@@ -927,7 +940,7 @@ export type AdminWorkflowStatus = {
     hourly_refresh_last_run?: { ran_at?: string; result?: unknown } | null;
     match_finished_check_last_run?: { ran_at?: string; result?: unknown } | null;
   };
-  next_step: 'refresh_data' | 'build_feature_store' | 'train_candidate_model' | 'generate_shadow_predictions' | 'review_shadow_backtesting' | 'ready_for_hybrid_review' | string;
+  next_step: 'refresh_data' | 'build_feature_store' | 'train_candidate_model' | 'generate_shadow_predictions' | 'review_shadow_backtesting' | 'review_governance' | 'ready_for_hybrid_review' | string;
   admin_alerts?: {
   overall_status: string;
   alerts_count: number;
@@ -1903,6 +1916,13 @@ export type MlShadowBacktestingEvaluation = {
   disagreement_level: 'none' | 'low' | 'medium' | 'high' | 'unknown' | string;
   production_brier_score: number | null;
   shadow_brier_score: number | null;
+  production_log_loss?: number | null;
+  shadow_log_loss?: number | null;
+  production_profit?: number | null;
+  shadow_profit?: number | null;
+  market?: string;
+  confidence?: number | null;
+  confidence_bucket?: string;
   competition?: string;
   home_team?: string;
   away_team?: string;
@@ -1911,9 +1931,49 @@ export type MlShadowBacktestingEvaluation = {
 
 export type MlShadowBacktesting = {
   status: 'ok' | 'empty' | string;
+  storage?: string;
+  backtesting_status?: string;
+  candidate_model_version?: string | null;
+  production_model_version?: string | null;
+  shadow_predictions_total?: number;
+  evaluable_predictions?: number;
+  pending_predictions?: number;
+  metrics?: {
+    accuracy: number | null;
+    log_loss: number | null;
+    brier_score: number | null;
+    roi_theoretical: number | null;
+    profit_theoretical?: number | null;
+    average_confidence?: number | null;
+    calibration_gap?: number | null;
+  };
+  comparison?: {
+    candidate_vs_production: string;
+    delta_accuracy: number | null;
+    delta_log_loss: number | null;
+    delta_brier_score: number | null;
+    delta_roi: number | null;
+    production_accuracy?: number;
+    production_log_loss?: number | null;
+    production_brier_score?: number | null;
+    production_roi?: number | null;
+  };
+  by_market?: Array<Record<string, unknown>>;
+  by_competition?: Array<Record<string, unknown>>;
+  by_confidence?: Array<Record<string, unknown>>;
+  evaluated_match_rows?: MlShadowBacktestingEvaluation[];
+  pending_matches?: Array<Record<string, unknown>>;
+  recommendation?: {
+    status: string;
+    reason: string;
+    minimum_required: number;
+    current: number;
+  };
   evaluated_matches: number;
   production_accuracy: number;
   shadow_accuracy: number;
+  production_average_log_loss?: number | null;
+  shadow_average_log_loss?: number | null;
   production_average_brier: number | null;
   shadow_average_brier: number | null;
   same_pick_count: number;
@@ -1937,7 +1997,41 @@ export type MlShadowBacktesting = {
 };
 
 export const mockMlShadowBacktesting = {
-  status: 'empty',
+  status: 'ok',
+  storage: 'postgresql',
+  backtesting_status: 'empty',
+  candidate_model_version: null,
+  production_model_version: 'elo-poisson-calibrated-v1',
+  shadow_predictions_total: 0,
+  evaluable_predictions: 0,
+  pending_predictions: 0,
+  metrics: {
+    accuracy: null,
+    log_loss: null,
+    brier_score: null,
+    roi_theoretical: null,
+    profit_theoretical: null,
+    average_confidence: null,
+    calibration_gap: null,
+  },
+  comparison: {
+    candidate_vs_production: 'insufficient_data',
+    delta_accuracy: null,
+    delta_log_loss: null,
+    delta_brier_score: null,
+    delta_roi: null,
+  },
+  by_market: [],
+  by_competition: [],
+  by_confidence: [],
+  evaluated_match_rows: [],
+  pending_matches: [],
+  recommendation: {
+    status: 'collect_more_data',
+    reason: 'Pas assez de prédictions shadow évaluables.',
+    minimum_required: 30,
+    current: 0,
+  },
   evaluated_matches: 0,
   production_accuracy: 0,
   shadow_accuracy: 0,
