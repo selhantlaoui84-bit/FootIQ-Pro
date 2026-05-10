@@ -6,6 +6,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     backendPath: '/learning/monitoring',
     method: 'GET',
     requireAdminKey: true,
-    timeoutMs: 15000,
+    timeoutMs: 45000,
   });
 }
