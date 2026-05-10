@@ -32,6 +32,7 @@ import {
   mockCalibrationReport,
   mockModelVersionsResponse,
   mockLearningMonitoringReport,
+  mockModelPromotionAudit,
   type AdminAlertsReport,
   type AdminDiagnosticsResponse,
   type ModelGovernanceReport,
@@ -68,6 +69,9 @@ import {
   type CalibrationReport,
   type ModelVersionsResponse,
   type LearningMonitoringReport,
+  type ModelPromotionAuditResponse,
+  type PromoteCandidateModelResponse,
+  type RollbackProductionModelResponse,
 } from '~/lib/mock-data';
 
 
@@ -444,6 +448,44 @@ export async function getLearningMonitoring(): Promise<LearningMonitoringReport>
   if (IS_BUILD) return mockLearningMonitoringReport;
 
   return fetchProxyJson<LearningMonitoringReport>('/api/admin/learning-monitoring', undefined, 45000);
+}
+
+export async function promoteCandidateModel(options: { modelVersion: string; confirm: boolean }): Promise<PromoteCandidateModelResponse> {
+  if (IS_BUILD) {
+    return { status: 'blocked', detail: 'Promotion indisponible pendant le build.' };
+  }
+
+  return fetchProxyJson<PromoteCandidateModelResponse>(
+    '/api/admin/promote-candidate-model',
+    {
+      method: 'POST',
+      body: JSON.stringify({ model_version: options.modelVersion, confirm: options.confirm }),
+      headers: { 'Content-Type': 'application/json' },
+    },
+    60000,
+  );
+}
+
+export async function rollbackProductionModel(options: { targetModelVersion: string; confirm: boolean }): Promise<RollbackProductionModelResponse> {
+  if (IS_BUILD) {
+    return { status: 'blocked', detail: 'Rollback indisponible pendant le build.' };
+  }
+
+  return fetchProxyJson<RollbackProductionModelResponse>(
+    '/api/admin/rollback-production-model',
+    {
+      method: 'POST',
+      body: JSON.stringify({ target_model_version: options.targetModelVersion, confirm: options.confirm }),
+      headers: { 'Content-Type': 'application/json' },
+    },
+    60000,
+  );
+}
+
+export async function getModelPromotionAudit(): Promise<ModelPromotionAuditResponse> {
+  if (IS_BUILD) return mockModelPromotionAudit;
+
+  return fetchProxyJson<ModelPromotionAuditResponse>('/api/admin/model-promotion-audit', undefined, 45000);
 }
 
 export async function getPublicDashboardSummary(): Promise<DashboardSummary> {

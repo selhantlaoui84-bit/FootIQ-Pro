@@ -45,6 +45,189 @@ def _gate(passed: bool, reason: str) -> dict[str, Any]:
     }
 
 
+def _first_number(*values: Any) -> float | None:
+    for value in values:
+        try:
+            if value is None or value == "":
+                continue
+            return float(value)
+        except Exception:
+            continue
+    return None
+
+
+def _candidate_from_versions(
+    candidate_model_version: str | None,
+    versions_report: dict[str, Any] | None,
+    governance_report: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    versions_report = versions_report or {}
+    versions = versions_report.get("versions") or []
+    if candidate_model_version:
+        for item in versions:
+            if item.get("model_version") == candidate_model_version:
+                return item
+    candidate = versions_report.get("latest_candidate_model")
+    if candidate:
+        return candidate
+    if governance_report:
+        governance_candidate = governance_report.get("candidate_model") or {}
+        version = governance_candidate.get("version")
+        if version:
+            return {
+                "model_version": version,
+                "status": governance_candidate.get("status") or "candidate",
+                "rows_used": governance_candidate.get("rows_used") or 0,
+                "accuracy": governance_candidate.get("accuracy"),
+                "log_loss": governance_candidate.get("log_loss"),
+                "brier_score": governance_candidate.get("brier_score_1x2"),
+            }
+    return None
+
+
+def evaluate_model_promotion(
+    candidate_model_version: str | None = None,
+    *,
+    versions_report: dict[str, Any] | None = None,
+    governance_report: dict[str, Any] | None = None,
+    shadow_backtesting_report: dict[str, Any] | None = None,
+    minimum_evaluable_predictions: int = 30,
+) -> dict[str, Any]:
+    """Return a strict manual-promotion decision. It never promotes by itself."""
+    versions_report = versions_report or {}
+    governance_report = governance_report or {}
+    shadow_backtesting_report = shadow_backtesting_report or {}
+
+    candidate = _candidate_from_versions(candidate_model_version, versions_report, governance_report)
+    production = versions_report.get("current_production_model") or {}
+    production_from_governance = governance_report.get("production_model") or {}
+    production_locked = bool(
+        production.get("locked")
+        or production_from_governance.get("locked")
+        or (governance_report.get("policy") or {}).get("production_model_locked")
+    )
+
+    reasons: list[str] = []
+    warnings: list[str] = []
+    readiness = "promotion_ready"
+    promotion_allowed = True
+
+    if not candidate:
+        reasons.append("Aucun modèle candidat disponible.")
+        readiness = "blocked_no_candidate"
+        promotion_allowed = False
+    else:
+        candidate_status = str(candidate.get("status") or "").lower()
+        if candidate_status != "candidate":
+            reasons.append(f"Le modèle {candidate.get('model_version')} n'est pas en status candidate.")
+            readiness = "blocked_no_candidate"
+            promotion_allowed = False
+        if int(candidate.get("rows_used") or 0) <= 0:
+            reasons.append("Le modèle candidat n'a aucune ligne d'entraînement validée.")
+            readiness = "blocked_no_candidate"
+            promotion_allowed = False
+        if _first_number(candidate.get("accuracy"), (candidate.get("metrics") or {}).get("accuracy")) is None:
+            reasons.append("Le modèle candidat n'a pas de métrique accuracy.")
+            readiness = "manual_review_required"
+            promotion_allowed = False
+
+    shadow_total = int(shadow_backtesting_report.get("shadow_predictions_total") or 0)
+    current_evaluable = int(
+        shadow_backtesting_report.get("evaluable_predictions")
+        or shadow_backtesting_report.get("evaluated_matches")
+        or 0
+    )
+    metrics = shadow_backtesting_report.get("metrics") or {}
+    comparison = shadow_backtesting_report.get("comparison") or {}
+
+    if shadow_total <= 0:
+        reasons.append("Aucune prédiction shadow disponible.")
+        readiness = "blocked_no_shadow_backtesting"
+        promotion_allowed = False
+    elif current_evaluable < minimum_evaluable_predictions:
+        reasons.append(
+            f"Promotion bloquée : {current_evaluable} prédiction évaluable sur {minimum_evaluable_predictions} requises."
+        )
+        readiness = "blocked_insufficient_data"
+        promotion_allowed = False
+
+    delta_accuracy = _first_number(comparison.get("delta_accuracy"))
+    delta_log_loss = _first_number(comparison.get("delta_log_loss"))
+    delta_brier = _first_number(comparison.get("delta_brier_score"), comparison.get("delta_brier"))
+    delta_roi = _first_number(comparison.get("delta_roi"))
+    candidate_brier = _first_number(metrics.get("brier_score"), candidate.get("brier_score") if candidate else None)
+    candidate_log_loss = _first_number(metrics.get("log_loss"), candidate.get("log_loss") if candidate else None)
+    candidate_roi = _first_number(metrics.get("roi_theoretical"), candidate.get("roi_theoretical") if candidate else None)
+
+    worse_accuracy = delta_accuracy is not None and delta_accuracy < 0
+    worse_log_loss = delta_log_loss is not None and delta_log_loss > 0
+    worse_brier = delta_brier is not None and delta_brier > 0
+    worse_roi = delta_roi is not None and delta_roi < 0
+    if current_evaluable >= minimum_evaluable_predictions and (worse_accuracy or worse_log_loss or worse_brier or worse_roi):
+        reasons.append("Le candidat est inférieur à la production sur au moins une métrique clé.")
+        readiness = "blocked_worse_than_production"
+        promotion_allowed = False
+
+    if candidate_brier is not None and candidate_brier > 0.8:
+        reasons.append(f"Brier score candidat trop élevé ({candidate_brier}).")
+        readiness = "blocked_worse_than_production"
+        promotion_allowed = False
+    if candidate_log_loss is not None and candidate_log_loss > 1.5:
+        reasons.append(f"Log loss candidat trop élevé ({candidate_log_loss}).")
+        readiness = "blocked_worse_than_production"
+        promotion_allowed = False
+    if candidate_roi is not None and candidate_roi < 0:
+        reasons.append(f"ROI théorique candidat négatif ({candidate_roi}).")
+        readiness = "blocked_worse_than_production"
+        promotion_allowed = False
+
+    governance_readiness = governance_report.get("promotion_readiness") or {}
+    governance_level = str(governance_readiness.get("level") or "")
+    if governance_level.startswith("blocked") or governance_level == "blocked":
+        warnings.extend(governance_readiness.get("blocking_reasons") or [])
+        if promotion_allowed:
+            reasons.append("La gouvernance courante bloque la promotion.")
+            readiness = governance_level
+            promotion_allowed = False
+
+    if production_locked:
+        reasons.append("Le modèle production est verrouillé.")
+        readiness = "blocked_production_locked"
+        promotion_allowed = False
+
+    if not reasons and not production:
+        warnings.append("Aucune entrée production PostgreSQL n'existe encore; revue manuelle recommandée.")
+        readiness = "manual_review_required"
+        promotion_allowed = False
+
+    if not reasons and promotion_allowed:
+        readiness = "promotion_ready"
+
+    return {
+        "status": "ok",
+        "promotion_allowed": promotion_allowed,
+        "readiness": readiness,
+        "candidate_model_version": (candidate or {}).get("model_version"),
+        "production_model_version": production.get("model_version") or production_from_governance.get("version"),
+        "reasons": reasons,
+        "warnings": warnings,
+        "requirements": {
+            "minimum_evaluable_predictions": minimum_evaluable_predictions,
+            "current_evaluable_predictions": current_evaluable,
+            "shadow_predictions_total": shadow_total,
+        },
+        "metrics": {
+            "delta_accuracy": delta_accuracy,
+            "delta_log_loss": delta_log_loss,
+            "delta_brier_score": delta_brier,
+            "delta_roi": delta_roi,
+            "candidate_log_loss": candidate_log_loss,
+            "candidate_brier_score": candidate_brier,
+            "candidate_roi_theoretical": candidate_roi,
+        },
+    }
+
+
 def build_model_governance_report(
     model_metadata: dict[str, Any] | None,
     ml_status: dict[str, Any] | None,

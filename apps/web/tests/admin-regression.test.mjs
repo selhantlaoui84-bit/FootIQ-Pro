@@ -12,6 +12,9 @@ const trainCandidateProxy = new URL('../pages/api/admin/train-candidate-model.ts
 const shadowProxy = new URL('../pages/api/admin/generate-shadow-predictions.ts', import.meta.url);
 const shadowJobStatusProxy = new URL('../pages/api/admin/shadow-prediction-job-status.ts', import.meta.url);
 const shadowBacktestingProxy = new URL('../pages/api/admin/shadow-backtesting.ts', import.meta.url);
+const promoteProxy = new URL('../pages/api/admin/promote-candidate-model.ts', import.meta.url);
+const rollbackProxy = new URL('../pages/api/admin/rollback-production-model.ts', import.meta.url);
+const promotionAuditProxy = new URL('../pages/api/admin/model-promotion-audit.ts', import.meta.url);
 const hourlyCron = new URL('../pages/api/cron/hourly-refresh.ts', import.meta.url);
 const matchFinishedCron = new URL('../pages/api/cron/match-finished-check.ts', import.meta.url);
 const adminPage = new URL('../pages/admin.tsx', import.meta.url);
@@ -54,6 +57,7 @@ async function run() {
   assert.match(adminProxySource, /NEXT_PUBLIC_API_URL missing on Vercel environment/);
   assert.match(adminProxySource, /ADMIN_API_KEY missing on Vercel server environment/);
   assert.match(adminProxySource, /headers\['X-Admin-Key'\] = adminKey/);
+  assert.match(adminProxySource, /JSON\.stringify\(req\.body\)/);
   assert.match(adminProxySource, /export const proxyAdminRequest = proxyBackendRequest/);
   assert.doesNotMatch(adminProxySource, /footiq-pro-production\.up\.railway\.app/);
   assert.doesNotMatch(adminProxySource, publicAdminKeyPattern);
@@ -78,6 +82,21 @@ async function run() {
   assert.match(shadowBacktestingSource, /method: 'GET'/);
   assert.match(shadowBacktestingSource, /requireAdminKey: true/);
   assert.match(shadowBacktestingSource, /timeoutMs: 60000/);
+
+  const promoteProxySource = await readFile(promoteProxy, 'utf8');
+  assert.match(promoteProxySource, /\/models\/promote-candidate/);
+  assert.match(promoteProxySource, /method: 'POST'/);
+  assert.match(promoteProxySource, /requireAdminKey: true/);
+
+  const rollbackProxySource = await readFile(rollbackProxy, 'utf8');
+  assert.match(rollbackProxySource, /\/models\/rollback-production/);
+  assert.match(rollbackProxySource, /method: 'POST'/);
+  assert.match(rollbackProxySource, /requireAdminKey: true/);
+
+  const promotionAuditProxySource = await readFile(promotionAuditProxy, 'utf8');
+  assert.match(promotionAuditProxySource, /\/models\/promotion-audit/);
+  assert.match(promotionAuditProxySource, /method: 'GET'/);
+  assert.match(promotionAuditProxySource, /requireAdminKey: true/);
 
   const buildFeatureStoreSource = await readFile(buildFeatureStoreProxy, 'utf8');
   assert.match(buildFeatureStoreSource, /\/admin\/build-feature-store/);
@@ -192,6 +211,9 @@ async function run() {
   assert.match(adminPageSource, /shadowJobId/);
   assert.match(adminPageSource, /Job shadow/);
   assert.match(adminPageSource, /Backtesting shadow/);
+  assert.match(adminPageSource, /Promotion modèle/);
+  assert.match(adminPageSource, /Raisons de blocage/);
+  assert.match(adminPageSource, /disabled=\{!isAdmin \|\| !promotionAllowed \|\| isPromotingModel\}/);
   assert.match(adminPageSource, /evaluable_predictions/);
   assert.match(adminPageSource, /pending_predictions/);
   assert.match(adminPageSource, /Les prédictions shadow sont générées, mais aucun match n'est encore évaluable/);
@@ -258,6 +280,9 @@ async function run() {
   assert.match(apiClientSource, /fetchProxyJson<LearningMonitoringReport>\('\/api\/admin\/learning-monitoring', undefined, 45000\)/);
   assert.match(apiClientSource, /fetchProxyJson<CalibrationReport>\('\/api\/admin\/calibration', undefined, 15000\)/);
   assert.match(apiClientSource, /fetchProxyJson<ModelVersionsResponse>\('\/api\/admin\/model-versions', undefined, 15000\)/);
+  assert.match(apiClientSource, /\/api\/admin\/promote-candidate-model/);
+  assert.match(apiClientSource, /\/api\/admin\/rollback-production-model/);
+  assert.match(apiClientSource, /\/api\/admin\/model-promotion-audit/);
   assert.match(apiClientSource, /fetchProxyJson<DashboardSummary>\('\/api\/admin\/dashboard-summary', undefined, 45000\)/);
   assert.match(apiClientSource, /\/api\/admin\/shadow-backtesting\?limit=/);
   assert.match(apiClientSource, /fetchProxyJson<RefreshJobStatus>\(`\/api\/admin\/shadow-prediction-job-status/);

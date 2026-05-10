@@ -610,6 +610,68 @@ export type ModelVersionsResponse = {
   note?: string;
 };
 
+export type ModelPromotionEvaluation = {
+  status: string;
+  promotion_allowed: boolean;
+  readiness: string;
+  candidate_model_version?: string | null;
+  production_model_version?: string | null;
+  reasons: string[];
+  warnings?: string[];
+  requirements: {
+    minimum_evaluable_predictions: number;
+    current_evaluable_predictions: number;
+    shadow_predictions_total?: number;
+  };
+  metrics?: {
+    delta_accuracy?: number | null;
+    delta_log_loss?: number | null;
+    delta_brier_score?: number | null;
+    delta_roi?: number | null;
+    candidate_log_loss?: number | null;
+    candidate_brier_score?: number | null;
+    candidate_roi_theoretical?: number | null;
+  };
+};
+
+export type ModelPromotionAuditEvent = {
+  id: string;
+  action: 'promote' | 'rollback' | 'blocked' | string;
+  candidate_model_version?: string | null;
+  previous_production_model_version?: string | null;
+  new_production_model_version?: string | null;
+  requested_by?: string | null;
+  governance?: Record<string, unknown>;
+  result?: string | null;
+  detail?: string | null;
+  created_at?: string | null;
+};
+
+export type ModelPromotionAuditResponse = {
+  status: string;
+  storage?: string;
+  events_count: number;
+  events: ModelPromotionAuditEvent[];
+};
+
+export type PromoteCandidateModelResponse = {
+  status: 'success' | 'blocked' | string;
+  promoted_model_version?: string;
+  previous_production_model_version?: string | null;
+  archived_previous_production?: boolean;
+  audit_id?: string | null;
+  detail?: string;
+  governance?: ModelPromotionEvaluation;
+};
+
+export type RollbackProductionModelResponse = {
+  status: 'success' | 'blocked' | string;
+  production_model_version?: string;
+  previous_production_model_version?: string | null;
+  audit_id?: string | null;
+  detail?: string;
+};
+
 export type LearningMonitoringReport = {
   status: string;
   storage?: string;
@@ -628,6 +690,11 @@ export type LearningMonitoringReport = {
   shadow_evaluable_predictions?: number;
   latest_shadow_backtesting_at?: string | null;
   governance_recommendation?: Record<string, unknown>;
+  promotion_readiness?: string;
+  promotion_allowed?: boolean;
+  promotion_blocking_reasons?: string[];
+  last_promotion_at?: string | null;
+  last_rollback_at?: string | null;
   alerts: string[];
   next_best_action?: {
     label: string;
@@ -1607,6 +1674,7 @@ export type ModelGovernanceReport = {
     brier_score: number | null;
     theoretical_roi: number | null;
   };
+  promotion_evaluation?: ModelPromotionEvaluation;
   promotion_readiness: {
     ready: boolean;
     level: string;
@@ -1671,6 +1739,19 @@ export const mockModelGovernance: ModelGovernanceReport = {
     log_loss: null,
     brier_score: null,
     theoretical_roi: null,
+  },
+  promotion_evaluation: {
+    status: 'ok',
+    promotion_allowed: false,
+    readiness: 'blocked_insufficient_data',
+    candidate_model_version: 'ml-candidate-v1',
+    production_model_version: 'elo-poisson-calibrated-v1',
+    reasons: ['Promotion bloquée : 0 prédiction évaluable sur 30 requises.'],
+    requirements: {
+      minimum_evaluable_predictions: 30,
+      current_evaluable_predictions: 0,
+      shadow_predictions_total: 0,
+    },
   },
   promotion_readiness: {
     ready: false,
@@ -1747,8 +1828,20 @@ export const mockLearningMonitoringReport: LearningMonitoringReport = {
   model_versions_count: 0,
   production_model_version: 'elo-poisson-calibrated-v1',
   latest_candidate_model_version: null,
+  promotion_readiness: 'blocked_insufficient_data',
+  promotion_allowed: false,
+  promotion_blocking_reasons: ['Promotion bloquée : 0 prédiction évaluable sur 30 requises.'],
+  last_promotion_at: null,
+  last_rollback_at: null,
   alerts: ['Aucun modèle candidat enregistré.'],
   next_best_action: { label: 'Entraîner un modèle candidat', href: '/admin' },
+};
+
+export const mockModelPromotionAudit: ModelPromotionAuditResponse = {
+  status: 'ok',
+  storage: 'postgresql',
+  events_count: 0,
+  events: [],
 };
 
 export const performanceMetrics: PerformanceMetrics = {
