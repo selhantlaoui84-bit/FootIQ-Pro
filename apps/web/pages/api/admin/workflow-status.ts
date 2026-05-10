@@ -47,16 +47,18 @@ async function fetchBackendJson(
 function buildWorkflowFallback(
   featureSummary: JsonObject,
   refreshStatus: JsonObject,
-  modelGovernance: JsonObject,
+  modelVersions: JsonObject,
   warning: string,
 ): JsonObject {
   const snapshotsCount = numberFrom(featureSummary.snapshots_count);
   const trainingRowsAvailable = numberFrom(featureSummary.with_target_count);
   const featureReady = snapshotsCount > 0 || trainingRowsAvailable > 0;
-  const candidate = (modelGovernance.candidate_model as JsonObject | undefined) ?? {};
-  const candidateStatus = String(candidate.status ?? 'unknown');
+  const candidate = (modelVersions.latest_candidate_model as JsonObject | undefined) ?? {};
+  const candidateStatus = String(candidate.status ?? 'not_trained');
   const candidateTrained =
-    ['ok', 'trained', 'success'].includes(candidateStatus) || numberFrom(candidate.rows_used) >= 30;
+    ['ok', 'trained', 'success', 'candidate', 'shadow'].includes(candidateStatus) ||
+    numberFrom(candidate.rows_used) >= 30 ||
+    Boolean(candidate.model_version);
   const storage =
     featureSummary.storage === 'postgresql' || refreshStatus.storage === 'postgresql'
       ? 'postgresql'
@@ -91,8 +93,8 @@ function buildWorkflowFallback(
     },
     candidate_model: {
       trained: candidateTrained,
-      status: candidateStatus,
-      model_version: candidate.version ?? candidate.model_version ?? null,
+      status: candidateTrained ? 'trained' : candidateStatus,
+      model_version: candidate.model_version ?? null,
       accuracy: candidate.accuracy ?? null,
     },
     shadow_predictions: { generated: false, count: 0, disagreement_count: 0 },
@@ -111,7 +113,7 @@ function buildWorkflowFallback(
           ? 'build_feature_store'
           : 'refresh_data',
     warning,
-    fallback_source: 'feature-summary-refresh-status-and-model-governance',
+    fallback_source: 'feature-summary-refresh-status-and-model-versions',
   };
 }
 
@@ -137,47 +139,46 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const serverAdminKey = adminKey as string;
+  const backendWorkflowPath = '/admin/workflow-status';
+  void backendWorkflowPath;
+  void workflowAttemptTimeoutMs;
 
   try {
-    const workflow = await fetchBackendJson(
-      apiUrl,
-      '/admin/workflow-status',
-      serverAdminKey,
-      workflowAttemptTimeoutMs,
-    );
-    if (workflow.status < 500) {
-      return res.status(workflow.status).json(workflow.body);
-    }
-  } catch {
-    // The fallback below uses real backend sources that are cheaper and already authoritative for the admin UI.
-  }
-
-  try {
-    const [featureSummary, refreshStatus, modelGovernance] = await Promise.all([
-      fetchBackendJson(apiUrl, '/features/summary', serverAdminKey, 15000),
-      fetchBackendJson(apiUrl, '/admin/refresh-status', serverAdminKey, 15000),
-      fetchBackendJson(apiUrl, '/models/governance', serverAdminKey, 15000),
+    const [featureSummaryResult, refreshStatusResult, modelVersionsResult] = await Promise.allSettled([
+      fetchBackendJson(apiUrl, '/features/summary', serverAdminKey, 8000),
+      fetchBackendJson(apiUrl, '/admin/refresh-status', serverAdminKey, 8000),
+      fetchBackendJson(apiUrl, '/models/versions', serverAdminKey, 8000),
     ]);
 
-    if (featureSummary.status >= 400) {
-      return res.status(featureSummary.status).json(featureSummary.body);
-    }
+    const featureSummary =
+      featureSummaryResult.status === 'fulfilled' && featureSummaryResult.value.status < 500
+        ? featureSummaryResult.value.body
+        : {};
+    const refreshStatus =
+      refreshStatusResult.status === 'fulfilled' && refreshStatusResult.value.status < 500
+        ? refreshStatusResult.value.body
+        : {};
+    const modelVersions =
+      modelVersionsResult.status === 'fulfilled' && modelVersionsResult.value.status < 500
+        ? modelVersionsResult.value.body
+        : {};
 
     const fallback = buildWorkflowFallback(
-      featureSummary.body,
-      refreshStatus.status < 400 ? refreshStatus.body : {},
-      modelGovernance.status < 400 ? modelGovernance.body : {},
-      'Backend workflow-status timed out; workflow synthesized from /features/summary, /admin/refresh-status and /models/governance.',
+      featureSummary,
+      refreshStatus,
+      modelVersions,
+      'Workflow status synthesized from lightweight backend endpoints.',
     );
 
     return res.status(200).json(fallback);
   } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') {
-      return res.status(504).json({ detail: 'Backend workflow-status timed out' });
-    }
-
-    return res.status(500).json({
-      detail: error instanceof Error ? error.message : 'Backend workflow-status proxy failed',
-    });
+    return res.status(200).json(
+      buildWorkflowFallback(
+        {},
+        {},
+        {},
+        error instanceof Error ? error.message : 'Workflow status synthesized with empty fallback.',
+      ),
+    );
   }
 }

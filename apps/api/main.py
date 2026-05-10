@@ -36,7 +36,7 @@ from services.model_versioning import get_versions_report, list_model_versions, 
 from services.user_learning_engine import analyze_user_bets
 from services.prediction_engine import generate_prediction_from_match
 from services.prediction_engine import MODEL_VERSION
-from services.ml_training import load_latest_candidate_metadata, train_candidate_model
+from services.ml_training import load_latest_candidate_metadata, load_training_rows_from_feature_snapshots, train_candidate_model
 from services.ml_shadow import compare_shadow_to_production, generate_shadow_prediction
 
 
@@ -262,14 +262,14 @@ def _workflow_status_compact():
     shadow_generated = shadow_summary.get("shadow_predictions_count", 0) > 0
     shadow_backtesting_ready = shadow_backtesting.get("evaluated_matches", 0) > 0
 
-    if not data_imported:
+    if candidate_trained and not shadow_generated:
+        next_step = "generate_shadow_predictions"
+    elif not data_imported:
         next_step = "refresh_data"
     elif not feature_ready:
         next_step = "build_feature_store" if finished_with_scores > 0 else "import_historical_results"
     elif not candidate_trained:
         next_step = "train_candidate_model"
-    elif not shadow_generated:
-        next_step = "generate_shadow_predictions"
     elif not shadow_backtesting_ready:
         next_step = "review_shadow_backtesting"
     else:
@@ -928,11 +928,11 @@ def learning_monitoring():
         alerts.append("Aucun modèle candidat enregistré.")
 
     next_best_action = (
-        {"label": "Construire le Feature Store", "href": "/admin"}
+        {"label": "Générer les prédictions shadow", "href": "/admin"}
+        if candidate_model
+        else {"label": "Construire le Feature Store", "href": "/admin"}
         if feature_store_status in {"empty", "error"}
         else {"label": "Entraîner un modèle candidat", "href": "/admin"}
-        if not candidate_model
-        else {"label": "Comparer candidat et production", "href": "/admin#learning-engine"}
     )
 
     return {
@@ -1574,32 +1574,58 @@ def train_candidate_model_admin(
     bypass_quality_gate: bool = Query(default=False),
 ) -> dict[str, Any]:
     _require_admin_key(x_admin_key)
+    try:
+        safe_limit = max(1, min(int(limit or 5000), 10000))
+    except Exception:
+        safe_limit = 5000
+    safe_model_type = model_type if isinstance(model_type, str) else "random_forest"
+    safe_bypass_quality_gate = bool(bypass_quality_gate) if isinstance(bypass_quality_gate, bool) else False
 
-    rows = _training_dataset(limit=limit)
-    quality = build_dataset_quality_report(rows, limit=limit)
+    load_report = load_training_rows_from_feature_snapshots(limit=safe_limit)
+    rows = load_report.get("rows") or []
+    if not rows:
+        rows = _training_dataset(limit=safe_limit)
+        load_report = {
+            **load_report,
+            "storage": load_report.get("storage") or "fallback",
+            "rows_loaded": load_report.get("rows_loaded", len(rows)),
+            "rows_after_validation": len(rows),
+            "fallback_used": True,
+        }
+    quality = build_dataset_quality_report(rows, limit=safe_limit)
 
-    if not bypass_quality_gate and quality.get("safe_for_training") is False:
+    if not safe_bypass_quality_gate and quality.get("safe_for_training") is False:
         return {
-            "status": "blocked",
+            "status": "error",
+            "storage": load_report.get("storage", "postgresql"),
             "detail": quality.get("recommendation")
             or "Dataset quality gate blocked candidate model training.",
-            "rows_loaded": len(rows),
+            "rows_loaded": load_report.get("rows_loaded", len(rows)),
             "rows_used": 0,
+            "rows_after_validation": load_report.get("rows_after_validation", 0),
             "invalid_rows": len(rows),
+            "invalid_feature_rows": load_report.get("invalid_feature_rows", 0),
+            "invalid_target_rows": load_report.get("invalid_target_rows", 0),
             "features_used": [],
+            "feature_names": [],
             "target_distribution": {},
             "accuracy": 0,
             "log_loss": None,
             "brier_score": None,
             "brier_score_1x2": None,
+            "errors": [quality.get("recommendation_reason") or quality.get("recommendation") or "Dataset quality gate blocked"],
+            "warnings": [],
             "training_rows_available": len(rows),
+            "load_diagnostics": {key: value for key, value in load_report.items() if key != "rows"},
             "dataset_quality": quality,
             "next_step": "review_dataset_quality",
         }
 
-    report = train_candidate_model(rows, model_type=model_type)
+    report = train_candidate_model(rows, model_type=safe_model_type)
     report["brier_score"] = report.get("brier_score_1x2")
+    report["storage"] = load_report.get("storage", report.get("storage", "postgresql"))
     report["training_rows_available"] = len(rows)
+    report["load_diagnostics"] = {key: value for key, value in load_report.items() if key != "rows"}
     report["dataset_quality"] = quality
     report["next_step"] = (
         "generate_shadow_predictions"

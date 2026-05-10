@@ -236,11 +236,15 @@ export default function PerformancePage({
   const modelRows = Object.entries(performance.model_versions ?? comparison.model_versions ?? {});
   const bestByBrier = performance.best_model_by_brier ?? comparison.best_model_by_brier;
   const bestByAccuracy = performance.best_model_by_accuracy ?? comparison.best_model_by_accuracy;
+  const performanceSnapshots = Number(performance.feature_snapshots_count ?? performance.snapshots_count ?? 0);
+  const summarySnapshots = Number(featureSummary.snapshots_count ?? 0);
+  const performanceTrainableRows = Number(performance.training_rows_available ?? 0);
+  const summaryTrainableRows = Number(featureSummary.with_target_count ?? 0);
   const featureStore = {
     ...featureSummary,
-    snapshots_count: performance.feature_snapshots_count ?? featureSummary.snapshots_count,
-    with_target_count: performance.training_rows_available ?? featureSummary.with_target_count,
-    target_coverage: performance.target_coverage ?? featureSummary.target_coverage,
+    snapshots_count: Math.max(performanceSnapshots, summarySnapshots),
+    with_target_count: Math.max(performanceTrainableRows, summaryTrainableRows),
+    target_coverage: Math.max(Number(performance.target_coverage ?? 0), Number(featureSummary.target_coverage ?? 0)),
   };
   const featureStoreReady = performance.feature_store_ready ?? featureStore.snapshots_count > 0;
   const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ?? 'https://footiq-pro-production.up.railway.app';
@@ -335,7 +339,7 @@ export default function PerformancePage({
               <span>Précédent <strong>{models.previous_model_version}</strong></span>
               <span>Famille <strong>{models.family}</strong></span>
               <span>Calibration <strong>{models.calibration ? 'active' : 'inactive'}</strong></span>
-              <span>Snapshots <strong>{performance.snapshots_count ?? 0}</strong></span>
+              <span>Snapshots <strong>{featureStore.snapshots_count ?? 0}</strong></span>
             </div>
             <p>{models.description}</p>
           </article>
