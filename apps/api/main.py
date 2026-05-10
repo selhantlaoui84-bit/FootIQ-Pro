@@ -251,7 +251,14 @@ def _workflow_status_compact():
     structure = _matches_structure_report(_available_matches())
     finished_with_scores = structure.get("finished_with_scores", 0)
     feature_ready = feature.get("snapshots_count", 0) > 0
-    candidate_trained = ml_status.get("status") in {"ok", "trained", "success"}
+    latest_candidate_model = ml_status.get("latest_candidate_model") or {}
+    candidate_rows_used = int(
+        latest_candidate_model.get("rows_used")
+        or (ml_status.get("latest_candidate") or {}).get("rows_used")
+        or 0
+    )
+    candidate_status = str(ml_status.get("status") or latest_candidate_model.get("status") or "not_trained")
+    candidate_trained = candidate_status in {"ok", "trained", "success", "candidate"} or candidate_rows_used >= 30
     shadow_generated = shadow_summary.get("shadow_predictions_count", 0) > 0
     shadow_backtesting_ready = shadow_backtesting.get("evaluated_matches", 0) > 0
 
@@ -300,9 +307,9 @@ def _workflow_status_compact():
         },
         "candidate_model": {
             "trained": candidate_trained,
-            "status": ml_status.get("status", "not_trained"),
-            "model_version": (ml_status.get("latest_candidate") or {}).get("model_version"),
-            "accuracy": (ml_status.get("latest_candidate") or {}).get("accuracy"),
+            "status": "trained" if candidate_trained else candidate_status,
+            "model_version": latest_candidate_model.get("model_version") or (ml_status.get("latest_candidate") or {}).get("model_version"),
+            "accuracy": latest_candidate_model.get("accuracy") or (ml_status.get("latest_candidate") or {}).get("accuracy"),
         },
         "shadow_predictions": {
             "generated": shadow_generated,
@@ -901,10 +908,10 @@ def learning_monitoring():
     versions_report = get_versions_report()
     feedback_report = build_feedback_report(_available_matches(), _available_predictions(), model_version=MODEL_VERSION)
     calibration_report = build_calibration_profile(_available_matches(), _available_predictions(), model_version=MODEL_VERSION)
-    governance_report = _model_governance_report()
+    ml_status = _ml_status_compact()
 
     try:
-        feature_summary = _feature_summary()
+        feature_summary = _feature_summary_fast()
         feature_store_status = "ok" if feature_summary.get("snapshots_count", 0) > 0 else "empty"
         if feature_store_status == "empty":
             alerts.append("Feature Store vide ou non disponible.")
@@ -934,7 +941,7 @@ def learning_monitoring():
         "feedback_status": feedback_report.get("status"),
         "calibration_status": calibration_report.get("status"),
         "model_versions_status": versions_report.get("status"),
-        "governance_status": governance_report.get("status"),
+        "governance_status": "candidate_available" if candidate_model or ml_status.get("candidate_model_exists") else "no_candidate",
         "feature_store_status": feature_store_status,
         "latest_feedback_at": feedback_report.get("generated_at"),
         "latest_calibration_version": calibration_report.get("calibration_version"),

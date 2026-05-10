@@ -149,7 +149,7 @@ async function fetchProxyJson<T>(path: string, init?: RequestInit, timeoutMs = 1
 export async function getAdminAlerts(): Promise<AdminAlertsReport> {
   if (IS_BUILD) return mockAdminAlertsReport;
 
-  return fetchProxyJson<AdminAlertsReport>('/api/admin/alerts', undefined, 15000);
+  return fetchProxyJson<AdminAlertsReport>('/api/admin/alerts', undefined, 45000);
 }
 
 export async function getBackendHealth(): Promise<HealthResponse | null> {
@@ -418,7 +418,7 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
     return buildDashboardSummary();
   }
 
-  return fetchProxyJson<DashboardSummary>('/api/admin/dashboard-summary', undefined, 15000);
+  return fetchProxyJson<DashboardSummary>('/api/admin/dashboard-summary', undefined, 45000);
 }
 
 export async function getLearningFeedback(): Promise<LearningFeedbackReport> {
@@ -442,7 +442,7 @@ export async function getModelVersionsRegistry(): Promise<ModelVersionsResponse>
 export async function getLearningMonitoring(): Promise<LearningMonitoringReport> {
   if (IS_BUILD) return mockLearningMonitoringReport;
 
-  return fetchProxyJson<LearningMonitoringReport>('/api/admin/learning-monitoring', undefined, 15000);
+  return fetchProxyJson<LearningMonitoringReport>('/api/admin/learning-monitoring', undefined, 45000);
 }
 
 export async function getPublicDashboardSummary(): Promise<DashboardSummary> {

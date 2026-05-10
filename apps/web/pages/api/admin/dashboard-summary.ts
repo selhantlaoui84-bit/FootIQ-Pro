@@ -6,6 +6,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     backendPath: '/dashboard/summary',
     method: 'GET',
     requireAdminKey: true,
-    timeoutMs: 15000,
+    timeoutMs: 45000,
   });
 }

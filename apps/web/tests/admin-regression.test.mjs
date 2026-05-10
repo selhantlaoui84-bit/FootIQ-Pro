@@ -99,23 +99,23 @@ async function run() {
     assert.doesNotMatch(mutationSource, publicAdminKeyPattern);
   }
 
-  const readProxyFiles = [
-    '../pages/api/admin/refresh-status.ts',
-    '../pages/api/admin/alerts.ts',
-    '../pages/api/admin/feature-summary.ts',
-    '../pages/api/admin/feature-quality-report.ts',
-    '../pages/api/admin/learning-feedback.ts',
-    '../pages/api/admin/learning-monitoring.ts',
-    '../pages/api/admin/calibration.ts',
-    '../pages/api/admin/model-versions.ts',
-    '../pages/api/admin/dashboard-summary.ts',
-  ];
+  const readProxyFiles = {
+    '../pages/api/admin/refresh-status.ts': 15000,
+    '../pages/api/admin/alerts.ts': 45000,
+    '../pages/api/admin/feature-summary.ts': 15000,
+    '../pages/api/admin/feature-quality-report.ts': 15000,
+    '../pages/api/admin/learning-feedback.ts': 15000,
+    '../pages/api/admin/learning-monitoring.ts': 45000,
+    '../pages/api/admin/calibration.ts': 15000,
+    '../pages/api/admin/model-versions.ts': 15000,
+    '../pages/api/admin/dashboard-summary.ts': 45000,
+  };
 
-  for (const proxyPath of readProxyFiles) {
+  for (const [proxyPath, timeoutMs] of Object.entries(readProxyFiles)) {
     const proxySource = await readFile(new URL(proxyPath, import.meta.url), 'utf8');
     assert.match(proxySource, /method: 'GET'/);
     assert.match(proxySource, /requireAdminKey: true/);
-    assert.match(proxySource, /timeoutMs: 15000/);
+    assert.match(proxySource, new RegExp(`timeoutMs: ${timeoutMs}`));
     assert.doesNotMatch(proxySource, /footiq-pro-production\.up\.railway\.app/);
     assert.doesNotMatch(proxySource, publicAdminKeyPattern);
   }
@@ -228,15 +228,15 @@ async function run() {
   assert.match(apiClientSource, /const response = await fetch\(path, \{/);
   assert.match(apiClientSource, /fetchProxyJson<RefreshResponse>\('\/api\/admin\/refresh-status', undefined, 15000\)/);
   assert.match(apiClientSource, /fetchProxyJson<AdminWorkflowStatus>\('\/api\/admin\/workflow-status', undefined, 45000\)/);
-  assert.match(apiClientSource, /fetchProxyJson<AdminAlertsReport>\('\/api\/admin\/alerts', undefined, 15000\)/);
+  assert.match(apiClientSource, /fetchProxyJson<AdminAlertsReport>\('\/api\/admin\/alerts', undefined, 45000\)/);
   assert.match(apiClientSource, /fetchProxyJson<FeatureSummary>\('\/api\/admin\/feature-summary', undefined, 15000\)/);
   assert.match(apiClientSource, /fetchProxyJson<DatasetQualityReport>\(`\/api\/admin\/feature-quality-report\?limit=\$\{safeLimit\}`, undefined, 15000\)/);
   assert.match(apiClientSource, /fetchProxyJson<ModelGovernanceReport>\('\/api\/admin\/model-governance', undefined, 45000\)/);
   assert.match(apiClientSource, /fetchProxyJson<LearningFeedbackReport>\('\/api\/admin\/learning-feedback', undefined, 15000\)/);
-  assert.match(apiClientSource, /fetchProxyJson<LearningMonitoringReport>\('\/api\/admin\/learning-monitoring', undefined, 15000\)/);
+  assert.match(apiClientSource, /fetchProxyJson<LearningMonitoringReport>\('\/api\/admin\/learning-monitoring', undefined, 45000\)/);
   assert.match(apiClientSource, /fetchProxyJson<CalibrationReport>\('\/api\/admin\/calibration', undefined, 15000\)/);
   assert.match(apiClientSource, /fetchProxyJson<ModelVersionsResponse>\('\/api\/admin\/model-versions', undefined, 15000\)/);
-  assert.match(apiClientSource, /fetchProxyJson<DashboardSummary>\('\/api\/admin\/dashboard-summary', undefined, 15000\)/);
+  assert.match(apiClientSource, /fetchProxyJson<DashboardSummary>\('\/api\/admin\/dashboard-summary', undefined, 45000\)/);
   assert.match(apiClientSource, /fetchProxyJson<RefreshJobStatus>\(`\/api\/admin\/shadow-prediction-job-status/);
   assert.match(apiClientSource, /Impossible de charger \/features\/summary depuis le backend\./);
   assert.doesNotMatch(apiClientSource, /safeFetchJson/);
