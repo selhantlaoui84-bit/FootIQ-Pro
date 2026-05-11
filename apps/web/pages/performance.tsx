@@ -23,6 +23,8 @@ import {
   getModels,
   getModelGovernance,
   getModelVersionsRegistry,
+  getPipelineJobs,
+  getPipelineStatus,
   getPerformance,
 } from '~/lib/api';
 import type {
@@ -46,6 +48,8 @@ import type {
   LearningMonitoringReport,
   ModelsMetadata,
   PerformanceMetrics,
+  PipelineJobsResponse,
+  PipelineStatus,
   TrainingReport,
 } from '~/lib/mock-data';
 import {
@@ -67,6 +71,8 @@ import {
   mockLearningFeedbackReport,
   mockLearningMonitoringReport,
   mockModelsMetadata,
+  mockPipelineJobs,
+  mockPipelineStatus,
   performanceMetrics,
 } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
@@ -104,6 +110,11 @@ type LearningPageState = Pick<
   | 'modelVersions'
   | 'learningMonitoring'
 >;
+
+type PipelinePageState = {
+  pipelineStatus: PipelineStatus;
+  pipelineJobs: PipelineJobsResponse;
+};
 
 export const getStaticProps: GetStaticProps<PerformanceProps> = async () => {
   const fallback = {
@@ -236,6 +247,10 @@ export default function PerformancePage({
     modelVersions: initialModelVersions,
     learningMonitoring: initialLearningMonitoring,
   });
+  const [pipelineState, setPipelineState] = useState<PipelinePageState>({
+    pipelineStatus: mockPipelineStatus,
+    pipelineJobs: mockPipelineJobs,
+  });
 
   useEffect(() => {
     let active = true;
@@ -250,6 +265,8 @@ export default function PerformancePage({
         calibrationResult,
         modelVersionsResult,
         monitoringResult,
+        pipelineStatusResult,
+        pipelineJobsResult,
       ] = await Promise.allSettled([
         getFeatureSummary(),
         getFeatureQualityReport(1000),
@@ -259,6 +276,8 @@ export default function PerformancePage({
         getCalibrationReport(),
         getModelVersionsRegistry(),
         getLearningMonitoring(),
+        getPipelineStatus(),
+        getPipelineJobs(8),
       ]);
 
       if (!active) return;
@@ -272,6 +291,10 @@ export default function PerformancePage({
         calibrationReport: valueOrCurrent(calibrationResult, current.calibrationReport),
         modelVersions: valueOrCurrent(modelVersionsResult, current.modelVersions),
         learningMonitoring: valueOrCurrent(monitoringResult, current.learningMonitoring),
+      }));
+      setPipelineState((current) => ({
+        pipelineStatus: valueOrCurrent(pipelineStatusResult, current.pipelineStatus),
+        pipelineJobs: valueOrCurrent(pipelineJobsResult, current.pipelineJobs),
       }));
     }
 
@@ -293,6 +316,28 @@ export default function PerformancePage({
     learningMonitoring,
   } = learningState;
 
+  return (
+    <ProtectedRoute>
+      <Layout>
+        <AnalysisCommandCenter
+          performance={performance}
+          models={models}
+          featureSummary={featureSummary}
+          featureQuality={featureQuality}
+          shadowBacktesting={shadowBacktesting}
+          modelGovernance={modelGovernance}
+          learningFeedback={learningFeedback}
+          calibrationReport={calibrationReport}
+          modelVersions={modelVersions}
+          learningMonitoring={learningMonitoring}
+          pipelineStatus={pipelineState.pipelineStatus}
+          pipelineJobs={pipelineState.pipelineJobs}
+        />
+      </Layout>
+    </ProtectedRoute>
+  );
+
+  /*
   const report = {
     ...backtesting,
     model_version: performance.current_model_version ?? performance.model_version ?? models.current_model_version ?? backtesting.model_version,
@@ -554,7 +599,7 @@ export default function PerformancePage({
     </div>
     <div className="metric">
       <span>Évaluables requis</span>
-      <strong>{governance.promotion_evaluation ? `${governance.promotion_evaluation.requirements.current_evaluable_predictions}/${governance.promotion_evaluation.requirements.minimum_evaluable_predictions}` : 'N/A'}</strong>
+      <strong>{governance.promotion_evaluation?.requirements ? `${governance.promotion_evaluation?.requirements.current_evaluable_predictions}/${governance.promotion_evaluation?.requirements.minimum_evaluable_predictions}` : 'N/A'}</strong>
     </div>
   </div>
 
@@ -1286,6 +1331,441 @@ export default function PerformancePage({
       </Layout>
     </ProtectedRoute>
   );
+  */
+}
+
+function AnalysisCommandCenter({
+  performance,
+  models,
+  featureSummary,
+  featureQuality,
+  shadowBacktesting,
+  modelGovernance,
+  learningFeedback,
+  calibrationReport,
+  modelVersions,
+  learningMonitoring,
+  pipelineStatus,
+  pipelineJobs,
+}: {
+  performance: PerformanceMetrics;
+  models: ModelsMetadata;
+  featureSummary: FeatureSummary;
+  featureQuality: DatasetQualityReport;
+  shadowBacktesting: MlShadowBacktesting;
+  modelGovernance: ModelGovernanceReport;
+  learningFeedback: LearningFeedbackReport;
+  calibrationReport: CalibrationReport;
+  modelVersions: ModelVersionsResponse;
+  learningMonitoring: LearningMonitoringReport;
+  pipelineStatus: PipelineStatus;
+  pipelineJobs: PipelineJobsResponse;
+}) {
+  const productionModel = modelVersions.current_production_model;
+  const candidateModel = modelVersions.latest_candidate_model;
+  const productionVersion =
+    learningMonitoring.production_model_version ??
+    productionModel?.model_version ??
+    modelGovernance.production_model.version ??
+    models.current_model_version;
+  const candidateVersion =
+    learningMonitoring.latest_candidate_model_version ??
+    candidateModel?.model_version ??
+    modelGovernance.candidate_model.version;
+  const evaluable = safeCount(shadowBacktesting.evaluable_predictions ?? shadowBacktesting.evaluated_matches);
+  const pending = safeCount(shadowBacktesting.pending_predictions);
+  const invalid = safeCount(shadowBacktesting.invalid_predictions);
+  const shadowTotal = safeCount(shadowBacktesting.shadow_predictions_total);
+  const minimumRequired = shadowBacktesting.recommendation?.minimum_required ?? 30;
+  const hasShadowMetrics = evaluable > 0;
+  const hasEnoughShadow = evaluable >= minimumRequired;
+  const pipelineLabel = modelGovernance.production_model.locked
+    ? 'Production verrouillée'
+    : shadowTotal > 0 && !hasEnoughShadow
+      ? 'Shadow en observation'
+      : hasEnoughShadow
+        ? 'Revue gouvernance requise'
+        : 'Données insuffisantes';
+  const nextAction =
+    learningMonitoring.next_best_action?.label ??
+    shadowBacktesting.recommendation?.reason ??
+    modelGovernance.promotion_readiness.next_actions[0] ??
+    'Continuer la collecte de données learning';
+  const promotionReasons =
+    learningMonitoring.promotion_blocking_reasons?.length
+      ? learningMonitoring.promotion_blocking_reasons
+      : modelGovernance.promotion_evaluation?.reasons?.length
+        ? modelGovernance.promotion_evaluation.reasons
+        : modelGovernance.promotion_readiness.blocking_reasons;
+  const comparison = shadowBacktesting.comparison;
+  const confidenceBuckets = calibrationReport.buckets ?? [];
+  const marketRows = Object.entries(learningFeedback.performance_by_market ?? {});
+  const competitionRows = Object.entries(learningFeedback.performance_by_competition ?? {});
+  const shadowMarkets = shadowBacktesting.by_market ?? [];
+  const shadowCompetitions = shadowBacktesting.by_competition ?? [];
+  const recentJobs = pipelineJobs.jobs?.slice(0, 6) ?? [];
+  const evaluatedRows = shadowBacktesting.evaluated_match_rows?.length
+    ? shadowBacktesting.evaluated_match_rows
+    : shadowBacktesting.recent_evaluations ?? [];
+  const pendingRows = shadowBacktesting.pending_matches ?? [];
+
+  return (
+    <>
+      <section className="pageHeader premiumPageIntro">
+        <p className="eyebrow">Analyse modèle</p>
+        <h1>Analyse</h1>
+        <p>Suivi intelligent du modèle, du backtesting shadow et de la gouvernance.</p>
+        <div className="sourceStrip">
+          <span>{pipelineLabel}</span>
+          <span>Production : {productionVersion ?? 'Non disponible'}</span>
+          <span>Candidat : {candidateVersion ?? 'Non entraîné'}</span>
+        </div>
+      </section>
+
+      <section className="analyticsShowcase dataOnlyShowcase">
+        <AnalysisKpi
+          title="Feature Store"
+          value={featureSummary.snapshots_count > 0 ? 'Prêt' : 'Données insuffisantes'}
+          detail={`${safeCount(featureSummary.with_target_count)} lignes entraînables`}
+        />
+        <AnalysisKpi title="Modèle production" value={productionVersion ?? 'Non disponible'} detail={modelGovernance.production_model.locked ? 'Verrouillé' : 'Ouvert à revue'} />
+        <AnalysisKpi title="Modèle candidat" value={candidateVersion ?? 'Non entraîné'} detail={`${safeCount(candidateModel?.rows_used ?? modelGovernance.candidate_model.rows_used)} lignes utilisées`} />
+        <AnalysisKpi title="Prédictions shadow" value={shadowTotal > 0 ? String(shadowTotal) : 'Données insuffisantes'} detail={`${pending} en attente, ${invalid} invalides`} />
+        <AnalysisKpi title="Backtesting shadow" value={hasShadowMetrics ? `${evaluable} évaluables` : 'En attente de résultats'} detail={`${evaluable} / ${minimumRequired} minimum`} />
+        <AnalysisKpi title="Gouvernance" value={formatRecommendationStatus(modelGovernance.promotion_evaluation?.readiness ?? modelGovernance.promotion_readiness.level)} detail={modelGovernance.policy.automatic_promotion ? 'Automatique activé' : 'Promotion manuelle uniquement'} />
+      </section>
+
+      <section className="sectionSplit">
+        <article className="card accent">
+          <p className="eyebrow">Modèles</p>
+          <h2>Production vs candidat</h2>
+          <div className="metricTable">
+            <div className="metricTableRow header">
+              <span>Signal</span>
+              <span>Production</span>
+              <span>Candidat</span>
+            </div>
+            <ModelCompareRow label="Version" production={productionVersion} candidate={candidateVersion ?? 'Non entraîné'} />
+            <ModelCompareRow label="Type" production={productionModel?.model_type ?? modelGovernance.production_model.family} candidate={candidateModel?.model_type ?? modelGovernance.candidate_model.family ?? 'Non disponible'} />
+            <ModelCompareRow label="Statut" production={productionModel?.status ?? modelGovernance.production_model.status} candidate={candidateModel?.status ?? modelGovernance.candidate_model.status} />
+            <ModelCompareRow label="Lignes" production={productionModel?.rows_used} candidate={candidateModel?.rows_used ?? modelGovernance.candidate_model.rows_used} />
+            <ModelCompareRow label="Features" production={productionModel?.features_used} candidate={candidateModel?.features_used} />
+            <ModelCompareRow label="Accuracy" production={formatMetricWhenAvailable(productionModel?.accuracy, true)} candidate={formatMetricWhenAvailable(candidateModel?.accuracy ?? modelGovernance.candidate_model.accuracy, true)} />
+            <ModelCompareRow label="Log loss" production={formatMetricWhenAvailable(productionModel?.log_loss)} candidate={formatMetricWhenAvailable(candidateModel?.log_loss)} />
+            <ModelCompareRow label="Brier" production={formatMetricWhenAvailable(productionModel?.brier_score)} candidate={formatMetricWhenAvailable(candidateModel?.brier_score ?? modelGovernance.candidate_model.brier_score_1x2)} />
+          </div>
+        </article>
+
+        <article className="card">
+          <p className="eyebrow">Recommandation IA</p>
+          <h2>{nextAction}</h2>
+          <p>{shadowBacktesting.recommendation?.reason ?? modelGovernance.policy.note}</p>
+          <div className="dataList">
+            <span>Promotion <strong>{learningMonitoring.promotion_allowed ? 'Revue possible' : 'Bloquée'}</strong></span>
+            <span>Readiness <strong>{formatRecommendationStatus(learningMonitoring.promotion_readiness ?? modelGovernance.promotion_readiness.level)}</strong></span>
+            <span>Backtesting <strong>{formatRecommendationStatus(learningMonitoring.shadow_backtesting_status ?? shadowBacktesting.backtesting_status)}</strong></span>
+          </div>
+          {promotionReasons.length > 0 && (
+            <div className="banner warning">
+              Promotion bloquée : {promotionReasons.slice(0, 2).join(' ')}
+            </div>
+          )}
+          {learningMonitoring.next_best_action?.href && (
+            <Link className="button secondary" href={learningMonitoring.next_best_action.href}>Ouvrir l'action admin</Link>
+          )}
+        </article>
+      </section>
+
+      <section className="card sectionAnchor" id="shadow-backtesting">
+        <div className="cardTop">
+          <div>
+            <p className="eyebrow">Backtesting shadow</p>
+            <h2>Évaluation réelle du candidat</h2>
+          </div>
+          <span className={hasEnoughShadow ? 'statusBadge healthy' : 'statusBadge warning'}>
+            {hasEnoughShadow ? 'Seuil atteint' : 'Données insuffisantes'}
+          </span>
+        </div>
+        <div className="compactDataGrid four">
+          <AnalysisKpi title="Shadow total" value={String(shadowTotal)} detail="Prédictions sauvegardées" />
+          <AnalysisKpi title="Évaluables" value={`${evaluable} / ${minimumRequired}`} detail={hasShadowMetrics ? 'Métriques calculables' : 'En attente de résultats'} />
+          <AnalysisKpi title="En attente" value={String(pending)} detail="Matchs non terminés" />
+          <AnalysisKpi title="Invalides" value={String(invalid)} detail="Ignorées du calcul" />
+          <AnalysisKpi title="Accuracy candidat" value={hasShadowMetrics ? formatMetricWhenAvailable(shadowBacktesting.metrics?.accuracy, true) : 'Données insuffisantes'} detail="Seulement sur évaluables" />
+          <AnalysisKpi title="Log loss" value={hasShadowMetrics ? formatMetricWhenAvailable(shadowBacktesting.metrics?.log_loss) : 'En attente'} detail="Probabilités shadow" />
+          <AnalysisKpi title="Brier score" value={hasShadowMetrics ? formatMetricWhenAvailable(shadowBacktesting.metrics?.brier_score) : 'En attente'} detail="Plus bas est meilleur" />
+          <AnalysisKpi title="ROI théorique" value={hasShadowMetrics ? formatMetricWhenAvailable(shadowBacktesting.metrics?.roi_theoretical, true) : 'Non calculable'} detail="Si cotes disponibles" />
+        </div>
+        {!hasShadowMetrics && (
+          <div className="banner warning">
+            Les prédictions shadow sont générées, mais aucun match n'est encore évaluable. Données insuffisantes : {evaluable} / {minimumRequired} prédictions évaluables.
+          </div>
+        )}
+        {hasShadowMetrics && evaluable < minimumRequired && (
+          <div className="banner info">Continuer le shadow testing : {evaluable} / {minimumRequired} prédictions évaluables.</div>
+        )}
+      </section>
+
+      <section className="sectionSplit">
+        <article className="card">
+          <p className="eyebrow">Comparaison candidat</p>
+          <h2>Candidat vs production</h2>
+          <div className="dataList">
+            <span>Statut <strong>{formatComparisonStatus(comparison?.comparison_status ?? comparison?.candidate_vs_production)}</strong></span>
+            <span>Delta accuracy <strong>{hasShadowMetrics ? formatDelta(comparison?.delta_accuracy, true) : 'Données insuffisantes'}</strong></span>
+            <span>Delta log loss <strong>{hasShadowMetrics ? formatDelta(comparison?.delta_log_loss) : 'Données insuffisantes'}</strong></span>
+            <span>Delta Brier <strong>{hasShadowMetrics ? formatDelta(comparison?.delta_brier_score) : 'Données insuffisantes'}</strong></span>
+            <span>Delta ROI <strong>{hasShadowMetrics ? formatDelta(comparison?.delta_roi, true) : 'Non calculable'}</strong></span>
+            <span>Candidat meilleur <strong>{comparison?.candidate_better_than_production == null ? 'Non disponible' : comparison.candidate_better_than_production ? 'Oui' : 'Non'}</strong></span>
+          </div>
+        </article>
+
+        <article className="card">
+          <p className="eyebrow">Calibration & confiance</p>
+          <h2>{calibrationReport.calibration_version ?? 'Calibration'}</h2>
+          <div className="dataList">
+            <span>Échantillon <strong>{calibrationReport.sample_size > 0 ? calibrationReport.sample_size : 'Données insuffisantes'}</strong></span>
+            <span>Facteur global <strong>{calibrationReport.sample_size > 0 ? formatMetricWhenAvailable(calibrationReport.global_calibration_factor) : 'Données insuffisantes'}</strong></span>
+            <span>Feedback <strong>{learningFeedback.status}</strong></span>
+            <span>Erreurs fréquentes <strong>{learningFeedback.frequent_errors?.length ?? 0}</strong></span>
+          </div>
+          {confidenceBuckets.length > 0 ? (
+            <div className="metricTable">
+              <div className="metricTableRow header">
+                <span>Bucket</span>
+                <span>Prédit</span>
+                <span>Réel</span>
+                <span>Facteur</span>
+              </div>
+              {confidenceBuckets.slice(0, 6).map((bucket) => (
+                <div className="metricTableRow bucketRow" key={bucket.bucket}>
+                  <span>{bucket.bucket}</span>
+                  <strong>{formatMetricWhenAvailable(bucket.predicted_probability, true)}</strong>
+                  <strong>{bucket.count > 0 ? formatMetricWhenAvailable(bucket.observed_success_rate, true) : 'Données insuffisantes'}</strong>
+                  <strong>{bucket.count > 0 ? formatMetricWhenAvailable(bucket.calibration_factor) : 'Non disponible'}</strong>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="emptyState">Données insuffisantes pour tracer la calibration.</div>
+          )}
+        </article>
+      </section>
+
+      <section className="sectionSplit">
+        <AnalysisBreakdown title="Marchés fiables" rows={marketRows} shadowRows={shadowMarkets} />
+        <AnalysisBreakdown title="Compétitions fiables" rows={competitionRows} shadowRows={shadowCompetitions} />
+      </section>
+
+      <section className="card">
+        <p className="eyebrow">Journal récent</p>
+        <h2>Pipeline IA</h2>
+        <div className="compactDataGrid four">
+          <AnalysisKpi title="Monitoring" value={learningMonitoring.status} detail={learningMonitoring.storage ?? 'storage inconnu'} />
+          <AnalysisKpi title="Versions modèles" value={String(learningMonitoring.model_versions_count ?? modelVersions.versions_count ?? 0)} detail={modelVersions.storage ?? 'storage inconnu'} />
+          <AnalysisKpi title="Jobs running" value={String(pipelineStatus.running_jobs?.length ?? 0)} detail="Jobs en cours" />
+          <AnalysisKpi title="Jobs bloqués" value={String(pipelineStatus.stale_jobs?.length ?? 0)} detail="Reset depuis /admin" />
+        </div>
+        {recentJobs.length > 0 ? (
+          <div className="metricTable">
+            <div className="metricTableRow header">
+              <span>Job</span>
+              <span>Statut</span>
+              <span>Déclencheur</span>
+              <span>Fin</span>
+            </div>
+            {recentJobs.map((job) => (
+              <div className="metricTableRow bucketRow" key={job.id}>
+                <span>{job.job_type}</span>
+                <strong>{job.status}</strong>
+                <strong>{job.triggered_by ?? 'system'}</strong>
+                <strong>{formatDate(job.finished_at ?? job.updated_at ?? job.created_at)}</strong>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="emptyState">Aucun job pipeline récent disponible.</div>
+        )}
+      </section>
+
+      <section className="card">
+        <p className="eyebrow">Matchs shadow</p>
+        <h2>Évalués et en attente</h2>
+        {evaluatedRows.length > 0 ? (
+          <div className="metricTable">
+            <div className="metricTableRow header">
+              <span>Match</span>
+              <span>Réel</span>
+              <span>Production</span>
+              <span>Shadow</span>
+            </div>
+            {evaluatedRows.slice(0, 6).map((item) => (
+              <div className="metricTableRow bucketRow" key={item.match_id}>
+                <span>
+                  <TeamIdentity teamName={item.home_team ?? 'Domicile'} size="sm" />
+                  <span className="muted">vs</span>
+                  <TeamIdentity teamName={item.away_team ?? 'Extérieur'} size="sm" align="right" />
+                </span>
+                <strong>{item.actual_result}</strong>
+                <strong>{item.production_pick ?? 'N/A'}</strong>
+                <strong>{item.shadow_pick ?? 'N/A'}</strong>
+              </div>
+            ))}
+          </div>
+        ) : pendingRows.length > 0 ? (
+          <div className="dataList">
+            {pendingRows.slice(0, 6).map((item, index) => (
+              <span key={String(item.match_id ?? index)}>
+                {String(item.home_team ?? 'Domicile')} vs {String(item.away_team ?? 'Extérieur')}
+                <strong>En attente de résultats</strong>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <div className="emptyState">Aucun match shadow exploitable pour le moment.</div>
+        )}
+      </section>
+
+      <section className="card">
+        <p className="eyebrow">Limites actuelles</p>
+        <h2>Ce que le modèle ne sait pas encore conclure</h2>
+        <div className="dataList">
+          <span>Feature Store <strong>{featureSummary.with_target_count > 0 ? `${featureSummary.with_target_count} lignes prêtes` : 'Données insuffisantes'}</strong></span>
+          <span>Qualité dataset <strong>{featureQuality.safe_for_training ? 'Exploitable' : formatRecommendationStatus(featureQuality.recommendation)}</strong></span>
+          <span>Shadow minimum <strong>{evaluable} / {minimumRequired}</strong></span>
+          <span>Promotion auto <strong>Jamais automatique</strong></span>
+        </div>
+      </section>
+    </>
+  );
+}
+
+function AnalysisKpi({ title, value, detail }: { title: string; value: string; detail: string }) {
+  return (
+    <article className="premiumPanel">
+      <div className="panelHeading"><span>{title}</span></div>
+      <strong className="landingMetric">{value}</strong>
+      <span className="muted">{detail}</span>
+    </article>
+  );
+}
+
+function ModelCompareRow({ label, production, candidate }: { label: string; production: unknown; candidate: unknown }) {
+  return (
+    <div className="metricTableRow bucketRow">
+      <span>{label}</span>
+      <strong>{formatTableValue(production)}</strong>
+      <strong>{formatTableValue(candidate)}</strong>
+    </div>
+  );
+}
+
+function AnalysisBreakdown({
+  title,
+  rows,
+  shadowRows,
+}: {
+  title: string;
+  rows: Array<[string, { count: number; accuracy: number; theoretical_roi?: number | null }]>;
+  shadowRows: Array<Record<string, unknown>>;
+}) {
+  const normalizedRows = rows.length
+    ? rows.map(([label, row]) => ({
+        label,
+        count: row.count,
+        accuracy: row.accuracy,
+        roi: row.theoretical_roi,
+      }))
+    : shadowRows.map((row, index) => ({
+        label: String(row.market ?? row.competition ?? row.bucket ?? `Segment ${index + 1}`),
+        count: safeCount(row.evaluable_count ?? row.count),
+        accuracy: metricNumber(row.accuracy),
+        roi: metricNumber(row.roi ?? row.roi_theoretical),
+      }));
+
+  return (
+    <article className="card">
+      <p className="eyebrow">{title}</p>
+      <h2>{normalizedRows.length > 0 ? 'Segments observés' : 'Données insuffisantes'}</h2>
+      {normalizedRows.length > 0 ? (
+        <div className="metricTable">
+          <div className="metricTableRow header">
+            <span>Segment</span>
+            <span>Évaluables</span>
+            <span>Accuracy</span>
+            <span>ROI</span>
+          </div>
+          {normalizedRows.slice(0, 6).map((row) => (
+            <div className="metricTableRow bucketRow" key={row.label}>
+              <span>{row.label}</span>
+              <strong>{row.count > 0 ? row.count : 'Insuffisant'}</strong>
+              <strong>{row.count > 0 ? formatMetricWhenAvailable(row.accuracy, true) : 'Données insuffisantes'}</strong>
+              <strong>{row.count > 0 ? formatMetricWhenAvailable(row.roi, true) : 'Non calculable'}</strong>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="emptyState">Aucun segment fiable tant que le backtesting manque de matchs évaluables.</div>
+      )}
+    </article>
+  );
+}
+
+function safeCount(value: unknown): number {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? Math.round(numeric) : 0;
+}
+
+function metricNumber(value: unknown): number | null {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function formatTableValue(value: unknown): string {
+  if (value === null) return 'Données insuffisantes';
+  if (value === undefined || value === '') return 'Non disponible';
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : 'Non disponible';
+  return String(value);
+}
+
+function formatMetricWhenAvailable(value: unknown, percent = false): string {
+  const numeric = metricNumber(value);
+  if (numeric === null) return 'Données insuffisantes';
+  if (percent) return `${normalizePercent(numeric)}%`;
+  return Number.isInteger(numeric) ? String(numeric) : numeric.toFixed(3);
+}
+
+function normalizePercent(value: number): string {
+  const percent = Math.abs(value) <= 1 ? value * 100 : value;
+  return Number.isInteger(percent) ? String(percent) : percent.toFixed(1);
+}
+
+function formatDelta(value: unknown, percent = false): string {
+  const numeric = metricNumber(value);
+  if (numeric === null) return 'Données insuffisantes';
+  const sign = numeric > 0 ? '+' : '';
+  return `${sign}${percent ? `${normalizePercent(numeric)}%` : numeric.toFixed(3)}`;
+}
+
+function formatRecommendationStatus(status?: string | null): string {
+  if (!status) return 'Non disponible';
+  return status.replace(/_/g, ' ');
+}
+
+function formatComparisonStatus(status?: string | null): string {
+  if (!status || status === 'insufficient_data') return 'Données insuffisantes';
+  if (status === 'no_production_reference') return 'Référence production non disponible';
+  if (status === 'candidate_better') return 'Candidat meilleur';
+  if (status === 'candidate_equivalent') return 'Candidat équivalent';
+  if (status === 'candidate_worse') return 'Candidat inférieur';
+  return formatRecommendationStatus(status);
+}
+
+function formatDate(value?: string | null): string {
+  if (!value) return 'Non disponible';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Non disponible';
+  return date.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
 function buildEffectiveDatasetQuality(report: DatasetQualityReport, featureStore: FeatureSummary): DatasetQualityReport {

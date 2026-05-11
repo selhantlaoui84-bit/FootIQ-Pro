@@ -393,6 +393,11 @@ async function run() {
   assert.match(performancePageSource, /En attente de résultats/);
   assert.match(performancePageSource, /Données insuffisantes/);
   assert.match(performancePageSource, /Shadow backtesting|Backtesting shadow/);
+  assert.match(performancePageSource, /Comparaison candidat/);
+  assert.match(performancePageSource, /Calibration & confiance/);
+  assert.match(performancePageSource, /Gouvernance/);
+  assert.match(performancePageSource, /Pipeline IA/);
+  assert.match(performancePageSource, /formatMetricWhenAvailable/);
   assert.match(performancePageSource, /invalid_predictions/);
   assert.match(performancePageSource, /production_metrics/);
   assert.match(performancePageSource, /shadowHasMetrics/);
