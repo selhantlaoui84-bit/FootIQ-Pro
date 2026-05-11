@@ -33,6 +33,7 @@ from services.model_governance import build_model_governance_report, evaluate_mo
 from services.feedback_engine import build_feedback_report
 from services.calibration_engine import CALIBRATION_VERSION, build_calibration_profile
 from services.model_versioning import get_versions_report, list_model_versions, record_model_version
+from services.pipeline_orchestrator import run_after_match_finished_pipeline, run_daily_learning_pipeline, run_hourly_data_pipeline, run_pipeline_step
 from services.user_learning_engine import analyze_user_bets
 from services.prediction_engine import generate_prediction_from_match
 from services.prediction_engine import MODEL_VERSION
@@ -351,11 +352,10 @@ def _admin_alerts_report():
     workflow_status = {
         "latest_refresh_job": runtime_store.get_refresh_job_status(),
         "latest_feature_store_job": runtime_store.get_feature_store_job_status(),
+        "pipeline_stale_jobs": [job for job in repository.list_pipeline_jobs(limit=50) if job.get("status") == "stale"],
+        "pipeline_running_jobs": repository.get_running_pipeline_jobs(),
     }
     dataset_quality = _dataset_quality_report(500)
-    shadow_backtesting = {
-        "evaluated_matches": shadow_summary.get("shadow_predictions_count", 0),
-    }
     monitoring_report = {
         "trend_summary": {"monitoring_status": "healthy"},
         "alerts": [],
@@ -1808,7 +1808,13 @@ def reset_stale_jobs(
     force: bool = Query(default=False),
 ):
     _require_admin_key(x_admin_key)
-    return runtime_store.reset_stale_jobs(force=force, stale_seconds=5 * 60 if force else runtime_store.JOB_STALE_SECONDS)
+    runtime_reset = runtime_store.reset_stale_jobs(force=force, stale_seconds=5 * 60 if force else runtime_store.JOB_STALE_SECONDS)
+    pipeline_reset = repository.reset_stale_pipeline_jobs(max_age_minutes=5 if force else 15)
+    return {
+        **runtime_reset,
+        "pipeline_jobs": pipeline_reset,
+        "pipeline_reset_count": pipeline_reset.get("reset_count", 0),
+    }
 
 
 @app.post("/admin/train-candidate-model")
@@ -2064,6 +2070,165 @@ def shadow_prediction_job_status(job_id: str | None = None):
     return runtime_store.get_shadow_prediction_job(job_id)
 
 
+def _pipeline_handlers(controlled_auto_train: bool = False) -> dict[str, Any]:
+    def refresh_step():
+        if not runtime_store.acquire_refresh_lock():
+            return {"status": "skipped", "detail": "Refresh already running."}
+        return run_refresh_data_job(None)
+
+    def feature_step():
+        if not runtime_store.acquire_feature_store_lock():
+            return {"status": "skipped", "detail": "Feature Store build already running."}
+        return run_build_feature_store_job(None, limit=2000, force=False)
+
+    def train_step():
+        if not controlled_auto_train:
+            return {"status": "skipped", "detail": "Auto training is disabled by default."}
+        rows = load_training_rows_from_feature_snapshots(limit=5000)
+        if len(rows) < 50:
+            return {"status": "skipped", "detail": "Not enough training rows for controlled auto train.", "rows_loaded": len(rows)}
+        return train_candidate_model(rows, model_type="random_forest")
+
+    def shadow_step():
+        workflow = _workflow_status_compact()
+        if not workflow.get("candidate_model", {}).get("trained"):
+            return {"status": "skipped", "detail": "No trained candidate model available."}
+        if not runtime_store.acquire_shadow_prediction_lock():
+            return {"status": "skipped", "detail": "Shadow prediction generation already running."}
+        return run_generate_shadow_predictions_job(None, limit=500, force=False, view="upcoming")
+
+    def shadow_backtesting_step():
+        return calculate_shadow_backtest_report(_available_matches(), repository.get_ml_shadow_predictions(limit=2000))
+
+    def feedback_step():
+        return build_feedback_report(_available_predictions(), _available_matches())
+
+    def calibration_step():
+        return build_calibration_profile(_available_predictions(), _available_matches())
+
+    def monitoring_step():
+        return learning_monitoring()
+
+    return {
+        "refresh_data": refresh_step,
+        "build_feature_store": feature_step,
+        "train_candidate_model": train_step,
+        "generate_shadow_predictions": shadow_step,
+        "shadow_backtesting": shadow_backtesting_step,
+        "feedback": feedback_step,
+        "calibration": calibration_step,
+        "monitoring": monitoring_step,
+    }
+
+
+def _pipeline_status_report() -> dict[str, Any]:
+    repository.init_pipeline_jobs_schema()
+    job_types = [
+        "refresh_data",
+        "build_feature_store",
+        "train_candidate_model",
+        "generate_shadow_predictions",
+        "shadow_backtesting",
+        "learning_monitoring",
+        "match_finished_check",
+        "calibration",
+        "feedback",
+    ]
+    latest_jobs = {job_type: repository.get_latest_pipeline_job(job_type) for job_type in job_types}
+    running_jobs = repository.get_running_pipeline_jobs()
+    stale_jobs = [job for job in running_jobs if str(job.get("status")) == "stale"]
+    workflow = _workflow_status_compact()
+    monitoring = learning_monitoring()
+    feature = workflow.get("feature_store", {})
+    candidate = workflow.get("candidate_model", {})
+    shadow_predictions = workflow.get("shadow_predictions", {})
+    shadow_backtesting = workflow.get("shadow_backtesting", {})
+    health = {
+        "data_refresh": "ok" if workflow.get("refresh", {}).get("data_imported") else "warning",
+        "feature_store": "ok" if feature.get("ready") else "empty",
+        "candidate_model": "ok" if candidate.get("trained") else "missing",
+        "shadow_predictions": "ok" if shadow_predictions.get("generated") else "missing",
+        "shadow_backtesting": "ok" if shadow_backtesting.get("ready") else "insufficient_data",
+        "learning_monitoring": monitoring.get("status", "unknown"),
+    }
+    next_step = workflow.get("next_step") or "refresh_data"
+    labels = {
+        "refresh_data": "Actualiser les données",
+        "build_feature_store": "Construire le Feature Store",
+        "train_candidate_model": "Entraîner un modèle candidat",
+        "generate_shadow_predictions": "Générer les prédictions shadow",
+        "wait_for_results": "Attendre les résultats des matchs",
+        "continue_shadow_testing": "Continuer le shadow testing",
+        "review_governance": "Revoir la gouvernance",
+    }
+    return {
+        "status": "ok",
+        "storage": "postgresql" if repository.db_available() else "memory",
+        "latest_jobs": latest_jobs,
+        "running_jobs": running_jobs,
+        "stale_jobs": stale_jobs,
+        "health": health,
+        "next_best_action": {
+            "label": labels.get(next_step, next_step),
+            "action": next_step,
+        },
+    }
+
+
+@app.get("/pipeline/status")
+def pipeline_status(x_admin_key: str | None = Header(default=None, alias="X-Admin-Key")):
+    _require_admin_key(x_admin_key)
+    return _pipeline_status_report()
+
+
+@app.get("/pipeline/jobs")
+def pipeline_jobs(
+    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
+    limit: int = Query(default=100, ge=1, le=500),
+    job_type: str | None = None,
+):
+    _require_admin_key(x_admin_key)
+    jobs = repository.list_pipeline_jobs(limit=limit, job_type=job_type)
+    return {"status": "ok", "storage": "postgresql" if repository.db_available() else "memory", "jobs_count": len(jobs), "jobs": jobs}
+
+
+@app.post("/pipeline/run-step")
+async def pipeline_run_step(request: Request, x_admin_key: str | None = Header(default=None, alias="X-Admin-Key")):
+    _require_admin_key(x_admin_key)
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    step = payload.get("step") or payload.get("job_type") or payload.get("jobType")
+    controlled_auto_train = payload.get("controlled_auto_train") is True
+    return run_pipeline_step(str(step or ""), {"handlers": _pipeline_handlers(controlled_auto_train), "triggered_by": "admin"})
+
+
+@app.post("/pipeline/run-hourly")
+def pipeline_run_hourly(x_admin_key: str | None = Header(default=None, alias="X-Admin-Key")):
+    _require_admin_key(x_admin_key)
+    result = run_hourly_data_pipeline(_pipeline_handlers(controlled_auto_train=False), triggered_by="admin")
+    runtime_store.set_cron_run("hourly_refresh", result)
+    return result
+
+
+@app.post("/pipeline/run-daily")
+def pipeline_run_daily(x_admin_key: str | None = Header(default=None, alias="X-Admin-Key")):
+    _require_admin_key(x_admin_key)
+    return run_daily_learning_pipeline(_pipeline_handlers(controlled_auto_train=False), triggered_by="admin")
+
+
+@app.post("/pipeline/reset-stale-jobs")
+def pipeline_reset_stale_jobs(
+    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
+    max_age_minutes: int = Query(default=15, ge=1, le=120),
+):
+    _require_admin_key(x_admin_key)
+    runtime_reset = runtime_store.reset_stale_jobs(force=max_age_minutes <= 5, stale_seconds=max_age_minutes * 60)
+    pipeline_reset = repository.reset_stale_pipeline_jobs(max_age_minutes=max_age_minutes)
+    return {"status": "ok", "runtime_jobs": runtime_reset, "pipeline_jobs": pipeline_reset, "reset_count": pipeline_reset.get("reset_count", 0)}
+
+
 def _cron_next_step() -> str:
     return _workflow_status_compact().get("next_step", "refresh_data")
 
@@ -2071,30 +2236,8 @@ def _cron_next_step() -> str:
 @app.post("/admin/cron/hourly-refresh")
 def cron_hourly_refresh(x_admin_key: str | None = Header(default=None, alias="X-Admin-Key")):
     _require_admin_key(x_admin_key)
-
-    refresh_result = refresh_data_sync(x_admin_key)
-    feature_result: dict[str, Any]
-
-    if refresh_result.get("status") == "ok":
-        try:
-            feature_result = build_feature_store_sync(x_admin_key, limit=2000, force=False)
-        except HTTPException as exc:
-            feature_result = {"status": "error", "detail": exc.detail}
-        except Exception as exc:
-            feature_result = {"status": "error", "detail": str(exc)}
-    else:
-        feature_result = {"status": "skipped", "detail": "Refresh did not complete successfully."}
-
-    result = {
-        "status": "ok",
-        "refresh": {"status": refresh_result.get("status"), **refresh_result},
-        "feature_store": {"status": feature_result.get("status"), **feature_result},
-        "source": refresh_result.get("source"),
-        "storage": refresh_result.get("storage"),
-        "matches_imported": refresh_result.get("matches_imported", 0),
-        "feature_snapshots_saved": feature_result.get("feature_snapshots_saved", 0),
-        "next_step": _cron_next_step(),
-    }
+    result = run_hourly_data_pipeline(_pipeline_handlers(controlled_auto_train=False), triggered_by="cron")
+    result["next_step"] = _cron_next_step()
     runtime_store.set_cron_run("hourly_refresh", result)
     return result
 
@@ -2115,7 +2258,7 @@ def cron_match_finished_check(x_admin_key: str | None = Header(default=None, ali
     _require_admin_key(x_admin_key)
 
     before = runtime_store.get_last_finished_match_ids()
-    refresh_result = refresh_data_sync(x_admin_key)
+    refresh_result = run_pipeline_step("refresh_data", {"handlers": _pipeline_handlers(False), "triggered_by": "cron"}).get("result") or {}
     current = _finished_match_ids()
     detected = sorted(current - before)
 
@@ -2132,21 +2275,7 @@ def cron_match_finished_check(x_admin_key: str | None = Header(default=None, ali
         runtime_store.set_cron_run("match_finished_check", result)
         return result
 
-    feature_result: dict[str, Any]
-
-    try:
-        feature_result = build_feature_store_sync(x_admin_key, limit=2000, force=False)
-    except HTTPException as exc:
-        feature_result = {"status": "error", "detail": exc.detail}
-    except Exception as exc:
-        feature_result = {"status": "error", "detail": str(exc)}
-
-    try:
-        backtesting = calculate_backtest_report(_available_matches(), _available_predictions())
-        backtesting_status = "ok"
-    except Exception as exc:
-        backtesting = {"detail": str(exc)}
-        backtesting_status = "error"
+    pipeline = run_after_match_finished_pipeline(_pipeline_handlers(False), triggered_by="cron")
 
     runtime_store.set_last_finished_match_ids(_finished_match_ids())
     result = {
@@ -2154,9 +2283,9 @@ def cron_match_finished_check(x_admin_key: str | None = Header(default=None, ali
         "finished_matches_detected": len(detected),
         "finished_match_ids": detected,
         "refresh_status": refresh_result.get("status"),
-        "feature_store_status": feature_result.get("status"),
-        "backtesting_status": backtesting_status,
-        "backtesting": backtesting,
+        "pipeline": pipeline,
+        "feature_store_status": "ok" if pipeline.get("status") == "ok" else pipeline.get("status"),
+        "backtesting_status": "ok" if pipeline.get("status") == "ok" else pipeline.get("status"),
         "next_step": _cron_next_step(),
     }
     runtime_store.set_cron_run("match_finished_check", result)

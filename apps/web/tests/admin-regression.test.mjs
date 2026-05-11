@@ -15,8 +15,14 @@ const shadowBacktestingProxy = new URL('../pages/api/admin/shadow-backtesting.ts
 const promoteProxy = new URL('../pages/api/admin/promote-candidate-model.ts', import.meta.url);
 const rollbackProxy = new URL('../pages/api/admin/rollback-production-model.ts', import.meta.url);
 const promotionAuditProxy = new URL('../pages/api/admin/model-promotion-audit.ts', import.meta.url);
+const pipelineStatusProxy = new URL('../pages/api/admin/pipeline-status.ts', import.meta.url);
+const pipelineJobsProxy = new URL('../pages/api/admin/pipeline-jobs.ts', import.meta.url);
+const runPipelineStepProxy = new URL('../pages/api/admin/run-pipeline-step.ts', import.meta.url);
+const runHourlyPipelineProxy = new URL('../pages/api/admin/run-hourly-pipeline.ts', import.meta.url);
+const runDailyPipelineProxy = new URL('../pages/api/admin/run-daily-pipeline.ts', import.meta.url);
 const hourlyCron = new URL('../pages/api/cron/hourly-refresh.ts', import.meta.url);
 const matchFinishedCron = new URL('../pages/api/cron/match-finished-check.ts', import.meta.url);
+const dailyLearningCron = new URL('../pages/api/cron/daily-learning.ts', import.meta.url);
 const adminPage = new URL('../pages/admin.tsx', import.meta.url);
 const loginPage = new URL('../pages/login.tsx', import.meta.url);
 const protectedRoute = new URL('../components/ProtectedRoute.tsx', import.meta.url);
@@ -102,6 +108,23 @@ async function run() {
   assert.match(promotionAuditProxySource, /\/models\/promotion-audit/);
   assert.match(promotionAuditProxySource, /method: 'GET'/);
   assert.match(promotionAuditProxySource, /requireAdminKey: true/);
+
+  const pipelineProxyChecks = [
+    [await readFile(pipelineStatusProxy, 'utf8'), /\/pipeline\/status/, /method: 'GET'/],
+    [await readFile(pipelineJobsProxy, 'utf8'), /\/pipeline\/jobs/, /method: 'GET'/],
+    [await readFile(runPipelineStepProxy, 'utf8'), /\/pipeline\/run-step/, /method: 'POST'/],
+    [await readFile(runHourlyPipelineProxy, 'utf8'), /\/pipeline\/run-hourly/, /method: 'POST'/],
+    [await readFile(runDailyPipelineProxy, 'utf8'), /\/pipeline\/run-daily/, /method: 'POST'/],
+  ];
+
+  for (const [source, pathPattern, methodPattern] of pipelineProxyChecks) {
+    assert.match(source, /proxyAdminRequest/);
+    assert.match(source, pathPattern);
+    assert.match(source, methodPattern);
+    assert.match(source, /requireAdminKey: true/);
+    assert.doesNotMatch(source, publicAdminKeyPattern);
+    assert.doesNotMatch(source, /footiq-pro-production\.up\.railway\.app/);
+  }
 
   const buildFeatureStoreSource = await readFile(buildFeatureStoreProxy, 'utf8');
   assert.match(buildFeatureStoreSource, /\/admin\/build-feature-store/);
@@ -219,6 +242,12 @@ async function run() {
   assert.match(adminPageSource, /Promotion modèle/);
   assert.match(adminPageSource, /Raisons de blocage/);
   assert.match(adminPageSource, /disabled=\{!isAdmin \|\| !promotionAllowed \|\| isPromotingModel\}/);
+  assert.match(adminPageSource, /Automatisation pipeline/);
+  assert.match(adminPageSource, /Lancer pipeline horaire/);
+  assert.match(adminPageSource, /Lancer pipeline quotidien/);
+  assert.match(adminPageSource, /Réinitialiser les jobs bloqués/);
+  assert.match(adminPageSource, /getPipelineStatus/);
+  assert.match(adminPageSource, /getPipelineJobs/);
   assert.match(adminPageSource, /evaluable_predictions/);
   assert.match(adminPageSource, /pending_predictions/);
   assert.match(adminPageSource, /Les prédictions shadow sont générées, mais aucun match n'est encore évaluable/);
@@ -290,6 +319,11 @@ async function run() {
   assert.match(apiClientSource, /\/api\/admin\/model-promotion-audit/);
   assert.match(apiClientSource, /fetchProxyJson<DashboardSummary>\('\/api\/admin\/dashboard-summary', undefined, 45000\)/);
   assert.match(apiClientSource, /\/api\/admin\/shadow-backtesting\?limit=/);
+  assert.match(apiClientSource, /\/api\/admin\/pipeline-status/);
+  assert.match(apiClientSource, /\/api\/admin\/pipeline-jobs/);
+  assert.match(apiClientSource, /\/api\/admin\/run-pipeline-step/);
+  assert.match(apiClientSource, /\/api\/admin\/run-hourly-pipeline/);
+  assert.match(apiClientSource, /\/api\/admin\/run-daily-pipeline/);
   assert.match(apiClientSource, /fetchProxyJson<RefreshJobStatus>\(`\/api\/admin\/shadow-prediction-job-status/);
   assert.match(apiClientSource, /Impossible de charger \/features\/summary depuis le backend\./);
   assert.doesNotMatch(apiClientSource, /safeFetchJson/);
@@ -425,7 +459,7 @@ async function run() {
   assert.match(runtimeSource, /JOB_STALE_SECONDS = 15 \* 60/);
   assert.match(runtimeSource, /failed_timeout/);
 
-  for (const cronSource of [await readFile(hourlyCron, 'utf8'), await readFile(matchFinishedCron, 'utf8')]) {
+  for (const cronSource of [await readFile(hourlyCron, 'utf8'), await readFile(matchFinishedCron, 'utf8'), await readFile(dailyLearningCron, 'utf8')]) {
     assert.match(cronSource, /CRON_SECRET missing on Vercel server environment/);
     assert.match(cronSource, /Invalid cron authorization/);
     assert.match(cronSource, /process\.env\.ADMIN_API_KEY/);

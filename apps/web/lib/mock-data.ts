@@ -992,12 +992,37 @@ export type AdminWorkflowStatus = {
     predictions_failed?: number;
   };
   feature_store: {
-  ready: boolean;
-  snapshots_count: number;
-  training_rows_available: number;
-  target_coverage: number;
-  storage?: string;
+    ready: boolean;
+    snapshots_count: number;
+    training_rows_available: number;
+    target_coverage: number;
+    storage?: string;
+  };
+
+/* export const mockPipelineStatus: PipelineStatus = {
+  status: 'ok',
+  storage: 'postgresql',
+  latest_jobs: {},
+  running_jobs: [],
+  stale_jobs: [],
+  health: {
+    data_refresh: 'unknown',
+    feature_store: 'unknown',
+    candidate_model: 'unknown',
+    shadow_predictions: 'unknown',
+    shadow_backtesting: 'insufficient_data',
+    learning_monitoring: 'unknown',
+  },
+  next_best_action: { label: 'Actualiser les données', action: 'refresh_data' },
 };
+
+export const mockPipelineJobs: PipelineJobsResponse = {
+  status: 'ok',
+  storage: 'postgresql',
+  jobs_count: 0,
+  jobs: [],
+};
+*/
   feature_engineering?: { feature_set_version?: string | null; advanced_feature_coverage: number };
   candidate_model: { trained: boolean; status: string; model_version: string | null; accuracy: number | null };
   shadow_predictions: { generated: boolean; count: number; disagreement_count: number };
@@ -1027,16 +1052,80 @@ export type AdminWorkflowStatus = {
   };
   next_step: 'refresh_data' | 'build_feature_store' | 'train_candidate_model' | 'generate_shadow_predictions' | 'review_shadow_backtesting' | 'review_governance' | 'ready_for_hybrid_review' | string;
   admin_alerts?: {
-  overall_status: string;
-  alerts_count: number;
-  critical_count: number;
-  warning_count: number;
-  next_best_action?: {
-    label: string;
-    href: string;
-    priority: string;
+    overall_status: string;
+    alerts_count: number;
+    critical_count: number;
+    warning_count: number;
+    next_best_action?: {
+      label: string;
+      href: string;
+      priority: string;
+    };
   };
 };
+
+export type PipelineJob = {
+  id: string;
+  job_type: string;
+  status: 'queued' | 'running' | 'success' | 'error' | 'skipped' | 'stale' | string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  duration_ms?: number | null;
+  result_json?: Record<string, unknown>;
+  error?: string | null;
+  triggered_by?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type PipelineStatus = {
+  status: string;
+  storage?: string;
+  latest_jobs: Record<string, PipelineJob | null>;
+  running_jobs: PipelineJob[];
+  stale_jobs: PipelineJob[];
+  health: Record<string, string>;
+  next_best_action?: { label: string; action: string };
+};
+
+export type PipelineJobsResponse = {
+  status: string;
+  storage?: string;
+  jobs_count: number;
+  jobs: PipelineJob[];
+};
+
+export type PipelineRunResponse = {
+  status: string;
+  step?: string;
+  steps?: Array<Record<string, unknown>>;
+  job?: PipelineJob | null;
+  result?: Record<string, unknown>;
+  detail?: string;
+};
+
+export const mockPipelineStatus: PipelineStatus = {
+  status: 'ok',
+  storage: 'postgresql',
+  latest_jobs: {},
+  running_jobs: [],
+  stale_jobs: [],
+  health: {
+    data_refresh: 'unknown',
+    feature_store: 'unknown',
+    candidate_model: 'unknown',
+    shadow_predictions: 'unknown',
+    shadow_backtesting: 'insufficient_data',
+    learning_monitoring: 'unknown',
+  },
+  next_best_action: { label: 'Actualiser les données', action: 'refresh_data' },
+};
+
+export const mockPipelineJobs: PipelineJobsResponse = {
+  status: 'ok',
+  storage: 'postgresql',
+  jobs_count: 0,
+  jobs: [],
 };
 
 export const predictions: Prediction[] = [

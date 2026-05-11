@@ -18,6 +18,8 @@ import {
   getMlShadowBacktesting,
   getModelPromotionAudit,
   getModelVersionsRegistry,
+  getPipelineJobs,
+  getPipelineStatus,
   getShadowPredictionJobStatus,
   getModelGovernance,
   getRefreshJobStatus,
@@ -26,6 +28,9 @@ import {
   promoteCandidateModel,
   rollbackProductionModel,
   resetStaleJobs,
+  runDailyPipeline,
+  runHourlyPipeline,
+  runPipelineStep,
   trainCandidateModel,
 } from '~/lib/api';
 import { useAuth } from '~/lib/auth';
@@ -49,6 +54,9 @@ import type {
   PromoteCandidateModelResponse,
   RollbackProductionModelResponse,
   ModelVersionsResponse,
+  PipelineJobsResponse,
+  PipelineRunResponse,
+  PipelineStatus,
   RefreshJobStatus,
   RefreshResponse,
   TrainingReport,
@@ -66,6 +74,8 @@ type AdminLoadErrors = {
   learningMonitoringError: string | null;
   shadowBacktestingError: string | null;
   promotionAuditError: string | null;
+  pipelineStatusError: string | null;
+  pipelineJobsError: string | null;
 };
 
 type AdminLoadResult<T> = {
@@ -84,6 +94,8 @@ const emptyAdminLoadErrors: AdminLoadErrors = {
   learningMonitoringError: null,
   shadowBacktestingError: null,
   promotionAuditError: null,
+  pipelineStatusError: null,
+  pipelineJobsError: null,
 };
 
 const adminLoadErrorLabels: Record<keyof AdminLoadErrors, string> = {
@@ -97,6 +109,8 @@ const adminLoadErrorLabels: Record<keyof AdminLoadErrors, string> = {
   learningMonitoringError: 'Monitoring learning',
   shadowBacktestingError: 'Backtesting shadow',
   promotionAuditError: 'Audit promotion',
+  pipelineStatusError: 'Pipeline status',
+  pipelineJobsError: 'Pipeline jobs',
 };
 
 function valueBadge(value?: string | null) {
@@ -190,6 +204,10 @@ export default function AdminPage() {
   const [promotionResult, setPromotionResult] = useState<PromoteCandidateModelResponse | RollbackProductionModelResponse | null>(null);
   const [isPromotingModel, setIsPromotingModel] = useState(false);
   const [isRollingBackModel, setIsRollingBackModel] = useState(false);
+  const [pipelineStatus, setPipelineStatus] = useState<PipelineStatus | null>(null);
+  const [pipelineJobs, setPipelineJobs] = useState<PipelineJobsResponse | null>(null);
+  const [pipelineResult, setPipelineResult] = useState<PipelineRunResponse | null>(null);
+  const [isRunningPipeline, setIsRunningPipeline] = useState(false);
   const [adminAlerts, setAdminAlerts] = useState<AdminAlertsReport | null>(null);
   const [modelType, setModelType] = useState('random_forest');
   const [trainingLimit, setTrainingLimit] = useState(5000);
@@ -320,6 +338,8 @@ export default function AdminPage() {
       calibrationResult,
       modelVersionsResult,
       promotionAuditResult,
+      pipelineStatusResult,
+      pipelineJobsResult,
       alertsResult,
       dashboardResult,
     ] = await Promise.all([
@@ -335,6 +355,8 @@ export default function AdminPage() {
       captureAdminLoad(getCalibrationReport(), 'Impossible de charger /learning/calibration'),
       captureAdminLoad(getModelVersionsRegistry(), 'Impossible de charger /models/versions'),
       captureAdminLoad(getModelPromotionAudit(), 'Impossible de charger /models/promotion-audit'),
+      captureAdminLoad(getPipelineStatus(), 'Impossible de charger /pipeline/status'),
+      captureAdminLoad(getPipelineJobs(30), 'Impossible de charger /pipeline/jobs'),
       captureAdminLoad(getAdminAlerts(), 'Impossible de charger /admin/alerts'),
       captureAdminLoad(getDashboardSummary(), 'Impossible de charger /dashboard/summary'),
     ]);
@@ -349,6 +371,8 @@ export default function AdminPage() {
       learningMonitoringError: monitoringResult.error,
       shadowBacktestingError: shadowBacktestingResult.error,
       promotionAuditError: promotionAuditResult.error,
+      pipelineStatusError: pipelineStatusResult.error,
+      pipelineJobsError: pipelineJobsResult.error,
       alertsError: alertsResult.error,
       dashboardSummaryError: dashboardResult.error,
     });
@@ -376,6 +400,8 @@ export default function AdminPage() {
     if (calibrationResult.data) setCalibrationReport(calibrationResult.data);
     if (modelVersionsResult.data) setModelVersions(modelVersionsResult.data);
     if (promotionAuditResult.data) setPromotionAudit(promotionAuditResult.data);
+    if (pipelineStatusResult.data) setPipelineStatus(pipelineStatusResult.data);
+    if (pipelineJobsResult.data) setPipelineJobs(pipelineJobsResult.data);
     if (alertsResult.data) setAdminAlerts(alertsResult.data);
     if (dashboardResult.data) setDashboardSummary(dashboardResult.data);
   }
@@ -418,6 +444,31 @@ export default function AdminPage() {
     setFeatureStoreJob(null);
     setFeatureStoreJobId(null);
     await handleReloadState();
+  }
+
+  async function handleRunPipeline(action: 'hourly' | 'daily' | 'step', step?: string) {
+    if (!isAdmin) return;
+    setIsRunningPipeline(true);
+    setError(null);
+    setPipelineResult(null);
+
+    try {
+      const result =
+        action === 'hourly'
+          ? await runHourlyPipeline()
+          : action === 'daily'
+            ? await runDailyPipeline()
+            : await runPipelineStep(step || 'shadow_backtesting');
+      setPipelineResult(result);
+      if (result.status === 'error') {
+        setError(result.detail ?? 'Pipeline impossible.');
+      }
+      await reloadAdminState();
+    } catch (runError) {
+      setError(runError instanceof Error ? runError.message : 'Pipeline impossible.');
+    } finally {
+      setIsRunningPipeline(false);
+    }
   }
 
   useEffect(() => {
@@ -831,6 +882,68 @@ export default function AdminPage() {
             <div className="metric"><span>Hourly refresh</span><strong>{workflowStatus?.cron?.hourly_refresh_last_run?.ran_at ?? 'jamais'}</strong></div>
             <div className="metric"><span>Fins de match</span><strong>{workflowStatus?.cron?.match_finished_check_last_run?.ran_at ?? 'jamais'}</strong></div>
           </div>
+        </section>
+
+        <section className="card sectionAnchor" id="pipeline-automation">
+          <div className="cardTop">
+            <div>
+              <p className="eyebrow">Automatisation pipeline</p>
+              <h2>Jobs production et surveillance</h2>
+            </div>
+            <span className={valueBadge(pipelineStatus?.storage)}>{formatStorage(pipelineStatus?.storage)}</span>
+          </div>
+          <p>Chaîne contrôlée : refresh, Feature Store, shadow non destructif, backtesting et monitoring. La promotion modèle reste manuelle.</p>
+          <div className="compactDataGrid four">
+            <div className="metric"><span>Refresh données</span><strong>{pipelineStatus?.health.data_refresh ?? 'inconnu'}</strong></div>
+            <div className="metric"><span>Feature Store</span><strong>{pipelineStatus?.health.feature_store ?? 'inconnu'}</strong></div>
+            <div className="metric"><span>Modèle candidat</span><strong>{pipelineStatus?.health.candidate_model ?? 'inconnu'}</strong></div>
+            <div className="metric"><span>Prédictions shadow</span><strong>{pipelineStatus?.health.shadow_predictions ?? 'inconnu'}</strong></div>
+            <div className="metric"><span>Backtesting shadow</span><strong>{pipelineStatus?.health.shadow_backtesting ?? 'Données insuffisantes'}</strong></div>
+            <div className="metric"><span>Monitoring learning</span><strong>{pipelineStatus?.health.learning_monitoring ?? 'inconnu'}</strong></div>
+            <div className="metric"><span>Jobs running</span><strong>{pipelineStatus?.running_jobs.length ?? 0}</strong></div>
+            <div className="metric"><span>Jobs bloqués</span><strong>{pipelineStatus?.stale_jobs.length ?? 0}</strong></div>
+            <div className="metric"><span>Prochaine action</span><strong>{pipelineStatus?.next_best_action?.label ?? 'Actualiser les données'}</strong></div>
+            <div className="metric"><span>Dernier refresh</span><strong>{pipelineStatus?.latest_jobs.refresh_data?.status ?? 'jamais'}</strong></div>
+            <div className="metric"><span>Dernier Feature Store</span><strong>{pipelineStatus?.latest_jobs.build_feature_store?.status ?? 'jamais'}</strong></div>
+            <div className="metric"><span>Dernier shadow</span><strong>{pipelineStatus?.latest_jobs.generate_shadow_predictions?.status ?? 'jamais'}</strong></div>
+          </div>
+          <div className="quickActions">
+            <button className="button secondary" type="button" disabled={!isAdmin || isRunningPipeline} onClick={() => void handleRunPipeline('hourly')}>
+              {isRunningPipeline ? 'Pipeline en cours...' : 'Lancer pipeline horaire'}
+            </button>
+            <button className="button secondary" type="button" disabled={!isAdmin || isRunningPipeline} onClick={() => void handleRunPipeline('daily')}>
+              Lancer pipeline quotidien
+            </button>
+            <button className="button secondary" type="button" disabled={!isAdmin || isRunningPipeline} onClick={() => void handleRunPipeline('step', 'shadow_backtesting')}>
+              Lancer une étape spécifique
+            </button>
+            <button className="button secondary" type="button" disabled={!isAdmin || isRunningPipeline} onClick={handleResetStaleJobs}>
+              Réinitialiser les jobs bloqués
+            </button>
+          </div>
+          {pipelineResult && (
+            <div className={`banner ${pipelineResult.status === 'error' ? 'error' : 'info'}`}>
+              Pipeline {pipelineResult.status} {pipelineResult.step ? `- ${pipelineResult.step}` : ''}
+            </div>
+          )}
+          {(pipelineJobs?.jobs ?? []).length > 0 && (
+            <div className="metricTable">
+              <div className="metricTableRow header">
+                <span>Job</span>
+                <span>Statut</span>
+                <span>Déclencheur</span>
+                <span>Début</span>
+              </div>
+              {(pipelineJobs?.jobs ?? []).slice(0, 6).map((job) => (
+                <div className="metricTableRow bucketRow" key={job.id}>
+                  <span>{job.job_type}</span>
+                  <strong>{job.status}</strong>
+                  <span>{job.triggered_by ?? 'system'}</span>
+                  <span>{job.started_at ?? job.created_at ?? 'N/A'}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         <section className="card accent">

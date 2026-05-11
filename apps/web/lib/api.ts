@@ -33,6 +33,8 @@ import {
   mockModelVersionsResponse,
   mockLearningMonitoringReport,
   mockModelPromotionAudit,
+  mockPipelineJobs,
+  mockPipelineStatus,
   type AdminAlertsReport,
   type AdminDiagnosticsResponse,
   type ModelGovernanceReport,
@@ -72,6 +74,9 @@ import {
   type ModelPromotionAuditResponse,
   type PromoteCandidateModelResponse,
   type RollbackProductionModelResponse,
+  type PipelineJobsResponse,
+  type PipelineRunResponse,
+  type PipelineStatus,
 } from '~/lib/mock-data';
 
 
@@ -597,6 +602,47 @@ export async function getAdminWorkflowStatus(): Promise<AdminWorkflowStatus> {
   if (IS_BUILD) return mockAdminWorkflowStatus;
 
   return fetchProxyJson<AdminWorkflowStatus>('/api/admin/workflow-status', undefined, 45000);
+}
+
+export async function getPipelineStatus(): Promise<PipelineStatus> {
+  if (IS_BUILD) return mockPipelineStatus;
+
+  return fetchProxyJson<PipelineStatus>('/api/admin/pipeline-status', undefined, 45000);
+}
+
+export async function getPipelineJobs(limit = 50): Promise<PipelineJobsResponse> {
+  if (IS_BUILD) return mockPipelineJobs;
+  const safeLimit = Math.min(Math.max(Math.round(limit), 1), 500);
+
+  return fetchProxyJson<PipelineJobsResponse>(`/api/admin/pipeline-jobs?limit=${safeLimit}`, undefined, 45000);
+}
+
+export async function runPipelineStep(step: string): Promise<PipelineRunResponse> {
+  return fetchProxyJson<PipelineRunResponse>(
+    '/api/admin/run-pipeline-step',
+    {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ step }),
+    },
+    60000,
+  );
+}
+
+export async function runHourlyPipeline(): Promise<PipelineRunResponse> {
+  return fetchProxyJson<PipelineRunResponse>(
+    '/api/admin/run-hourly-pipeline',
+    { method: 'POST', headers: { Accept: 'application/json' } },
+    60000,
+  );
+}
+
+export async function runDailyPipeline(): Promise<PipelineRunResponse> {
+  return fetchProxyJson<PipelineRunResponse>(
+    '/api/admin/run-daily-pipeline',
+    { method: 'POST', headers: { Accept: 'application/json' } },
+    60000,
+  );
 }
 
 

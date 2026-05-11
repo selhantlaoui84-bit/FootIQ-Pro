@@ -18,6 +18,7 @@ from services.ml_training import (
 )
 from services.model_governance import build_model_governance_report, evaluate_model_promotion
 from services.model_versioning import get_versions_report, record_model_version, list_model_versions
+from services.pipeline_orchestrator import run_hourly_data_pipeline, run_pipeline_step
 from services.shadow_backtesting import calculate_shadow_backtest_report
 
 
@@ -773,6 +774,106 @@ class LearningEngineTests(unittest.TestCase):
 
         self.assertIn("promotion_readiness", report)
         self.assertFalse(report["promotion_allowed"])
+
+    def test_pipeline_job_lifecycle_success(self):
+        self.use_sqlite_registry()
+        job = repository.create_pipeline_job("refresh_data", triggered_by="test")
+        repository.mark_pipeline_job_running(job["id"])
+        done = repository.mark_pipeline_job_success(job["id"], {"status": "ok"})
+
+        self.assertEqual(done["status"], "success")
+        self.assertEqual(done["result_json"]["status"], "ok")
+        self.assertEqual(repository.get_latest_pipeline_job("refresh_data")["id"], job["id"])
+
+    def test_pipeline_job_lifecycle_error(self):
+        self.use_sqlite_registry()
+        job = repository.create_pipeline_job("build_feature_store", triggered_by="test")
+        repository.mark_pipeline_job_running(job["id"])
+        done = repository.mark_pipeline_job_error(job["id"], "boom", {"status": "error"})
+
+        self.assertEqual(done["status"], "error")
+        self.assertEqual(done["error"], "boom")
+
+    def test_reset_stale_pipeline_jobs(self):
+        self.use_sqlite_registry()
+        job = repository.create_pipeline_job("shadow_backtesting", triggered_by="test")
+        repository.mark_pipeline_job_running(job["id"])
+        with self.engine.begin() as connection:
+            connection.execute(text("UPDATE pipeline_jobs SET started_at = '2020-01-01 00:00:00' WHERE id = :id"), {"id": job["id"]})
+
+        report = repository.reset_stale_pipeline_jobs(max_age_minutes=1)
+
+        self.assertEqual(report["reset_count"], 1)
+        self.assertEqual(report["jobs"][0]["status"], "stale")
+
+    def test_run_hourly_pipeline_skips_when_no_new_data(self):
+        self.use_sqlite_registry()
+        report = run_hourly_data_pipeline(
+            {
+                "refresh_data": lambda: {"status": "skipped", "detail": "No new data."},
+                "build_feature_store": lambda: {"status": "ok"},
+            },
+            triggered_by="test",
+        )
+
+        self.assertEqual(report["status"], "ok")
+        self.assertEqual(report["steps"][0]["status"], "skipped")
+
+    def test_run_hourly_pipeline_does_not_promote_model(self):
+        self.use_sqlite_registry()
+        report = run_hourly_data_pipeline(
+            {
+                "refresh_data": lambda: {"status": "ok"},
+                "build_feature_store": lambda: {"status": "ok"},
+                "generate_shadow_predictions": lambda: {"status": "skipped", "detail": "No candidate."},
+                "shadow_backtesting": lambda: {"status": "ok"},
+                "monitoring": lambda: {"status": "ok"},
+            },
+            triggered_by="test",
+        )
+
+        self.assertEqual(report["status"], "ok")
+        self.assertEqual(repository.list_model_versions(), [])
+
+    def test_pipeline_status_returns_latest_jobs(self):
+        self.use_sqlite_registry()
+        repository.create_pipeline_job("refresh_data", triggered_by="test")
+        with patch.object(main, "_workflow_status_compact", return_value={"refresh": {"data_imported": False}, "feature_store": {}, "candidate_model": {}, "shadow_predictions": {}, "shadow_backtesting": {}, "next_step": "refresh_data"}), patch.object(
+            main, "learning_monitoring", return_value={"status": "ok"}
+        ):
+            report = main.pipeline_status(x_admin_key="test")
+
+        self.assertIn("refresh_data", report["latest_jobs"])
+        self.assertEqual(report["next_best_action"]["action"], "refresh_data")
+
+    def test_run_daily_pipeline_updates_monitoring(self):
+        self.use_sqlite_registry()
+        report = main.pipeline_run_daily(x_admin_key="test")
+
+        self.assertIn(report["status"], {"ok", "error"})
+        self.assertTrue(repository.list_pipeline_jobs(limit=10))
+
+    def test_pipeline_status_includes_next_best_action(self):
+        self.use_sqlite_registry()
+        with patch.object(main, "_workflow_status_compact", return_value={"refresh": {"data_imported": True}, "feature_store": {"ready": True}, "candidate_model": {"trained": False}, "shadow_predictions": {}, "shadow_backtesting": {}, "next_step": "train_candidate_model"}), patch.object(
+            main, "learning_monitoring", return_value={"status": "ok"}
+        ):
+            report = main.pipeline_status(x_admin_key="test")
+
+        self.assertEqual(report["next_best_action"]["action"], "train_candidate_model")
+
+    def test_admin_alerts_include_stale_jobs(self):
+        self.use_sqlite_registry()
+        job = repository.create_pipeline_job("refresh_data", triggered_by="test")
+        repository.mark_pipeline_job_running(job["id"])
+        with self.engine.begin() as connection:
+            connection.execute(text("UPDATE pipeline_jobs SET started_at = '2020-01-01 00:00:00' WHERE id = :id"), {"id": job["id"]})
+        repository.reset_stale_pipeline_jobs(max_age_minutes=1)
+
+        with patch.object(main, "_refresh_status", return_value={"last_refresh_at": "2026-05-10T00:00:00Z"}), patch.object(main, "_feature_summary_fast", return_value={"snapshots_count": 1, "with_target_count": 1}), patch.object(main, "_ml_status_compact", return_value={"status": "ok", "latest_candidate": {"status": "ok"}}), patch.object(main, "_dataset_quality_report", return_value={"safe_for_training": True, "recommendation": "safe_to_train"}):
+            report = main._admin_alerts_report()
+
+        self.assertTrue(any(item["id"] == "pipeline_jobs_stale" for item in report["alerts"]))
 
 
 if __name__ == "__main__":
