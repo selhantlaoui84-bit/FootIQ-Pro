@@ -74,6 +74,34 @@ def build_admin_alerts_report(
 
     latest_refresh_job = workflow_status.get("latest_refresh_job") or {}
     latest_feature_job = workflow_status.get("latest_feature_store_job") or {}
+    pipeline_stale_jobs = workflow_status.get("pipeline_stale_jobs") or []
+    pipeline_running_jobs = workflow_status.get("pipeline_running_jobs") or []
+
+    if pipeline_stale_jobs:
+        _add_alert(
+            alerts,
+            seen,
+            "pipeline_jobs_stale",
+            "critical",
+            "Jobs pipeline bloqués",
+            f"{len(pipeline_stale_jobs)} job(s) pipeline sont bloqués.",
+            "pipeline",
+            "Réinitialiser les jobs bloqués depuis l'admin.",
+            "/admin#pipeline-automation",
+            True,
+        )
+    elif len(pipeline_running_jobs) > 3:
+        _add_alert(
+            alerts,
+            seen,
+            "pipeline_jobs_running",
+            "warning",
+            "Plusieurs jobs pipeline en cours",
+            f"{len(pipeline_running_jobs)} job(s) pipeline sont actuellement running.",
+            "pipeline",
+            "Surveiller le statut pipeline.",
+            "/admin#pipeline-automation",
+        )
 
     if not refresh_status.get("last_refresh_at"):
         _add_alert(

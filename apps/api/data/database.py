@@ -96,6 +96,26 @@ ml_shadow_predictions_table = Table(
     Column("created_at", TIMESTAMP(timezone=True)),
 )
 
+pipeline_jobs_table = Table(
+    "pipeline_jobs",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("job_type", Text, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("started_at", TIMESTAMP(timezone=True), nullable=True),
+    Column("finished_at", TIMESTAMP(timezone=True), nullable=True),
+    Column("duration_ms", Integer, nullable=True),
+    Column("result_json", Text, nullable=True),
+    Column("error", Text, nullable=True),
+    Column("triggered_by", Text, nullable=True),
+    Column("created_at", TIMESTAMP(timezone=True)),
+    Column("updated_at", TIMESTAMP(timezone=True)),
+)
+Index("ix_pipeline_jobs_job_type", pipeline_jobs_table.c.job_type)
+Index("ix_pipeline_jobs_status", pipeline_jobs_table.c.status)
+Index("ix_pipeline_jobs_started_at", pipeline_jobs_table.c.started_at)
+Index("ix_pipeline_jobs_created_at", pipeline_jobs_table.c.created_at)
+
 refresh_logs_table = Table(
     "refresh_logs",
     metadata,
@@ -228,6 +248,10 @@ def _ensure_runtime_columns_and_indexes(engine: Engine) -> None:
             "CREATE INDEX IF NOT EXISTS ix_model_versions_trained_at ON model_versions(trained_at)",
             "CREATE INDEX IF NOT EXISTS ix_model_promotion_audit_created_at ON model_promotion_audit(created_at)",
             "CREATE INDEX IF NOT EXISTS ix_model_promotion_audit_action ON model_promotion_audit(action)",
+            "CREATE INDEX IF NOT EXISTS ix_pipeline_jobs_job_type ON pipeline_jobs(job_type)",
+            "CREATE INDEX IF NOT EXISTS ix_pipeline_jobs_status ON pipeline_jobs(status)",
+            "CREATE INDEX IF NOT EXISTS ix_pipeline_jobs_started_at ON pipeline_jobs(started_at)",
+            "CREATE INDEX IF NOT EXISTS ix_pipeline_jobs_created_at ON pipeline_jobs(created_at)",
         ]
     elif engine.dialect.name == "sqlite":
         statements = [
@@ -239,6 +263,10 @@ def _ensure_runtime_columns_and_indexes(engine: Engine) -> None:
             "CREATE INDEX IF NOT EXISTS ix_model_versions_trained_at ON model_versions(trained_at)",
             "CREATE INDEX IF NOT EXISTS ix_model_promotion_audit_created_at ON model_promotion_audit(created_at)",
             "CREATE INDEX IF NOT EXISTS ix_model_promotion_audit_action ON model_promotion_audit(action)",
+            "CREATE INDEX IF NOT EXISTS ix_pipeline_jobs_job_type ON pipeline_jobs(job_type)",
+            "CREATE INDEX IF NOT EXISTS ix_pipeline_jobs_status ON pipeline_jobs(status)",
+            "CREATE INDEX IF NOT EXISTS ix_pipeline_jobs_started_at ON pipeline_jobs(started_at)",
+            "CREATE INDEX IF NOT EXISTS ix_pipeline_jobs_created_at ON pipeline_jobs(created_at)",
         ]
         with engine.connect() as connection:
             columns = {row._mapping["name"] for row in connection.execute(text("PRAGMA table_info(feature_snapshots)"))}

@@ -1433,3 +1433,167 @@ def get_ml_shadow_summary() -> dict:
         "high_disagreement_count": len(high),
         "candidate_model_version": candidate_versions[0] if candidate_versions else None,
     }
+
+
+PIPELINE_JOB_TYPES = {
+    "refresh_data",
+    "build_feature_store",
+    "train_candidate_model",
+    "generate_shadow_predictions",
+    "shadow_backtesting",
+    "learning_monitoring",
+    "match_finished_check",
+    "calibration",
+    "feedback",
+}
+
+
+def init_pipeline_jobs_schema() -> bool:
+    return init_db()
+
+
+def _pipeline_job_from_row(row: dict | None):
+    if not row:
+        return None
+    item = dict(row)
+    item["result_json"] = _loads(item.get("result_json")) or {}
+    for key in ("started_at", "finished_at", "created_at", "updated_at"):
+        item[key] = _iso(item.get(key))
+    return item
+
+
+def create_pipeline_job(job_type: str, triggered_by: str = "system", status: str = "queued", job_id: str | None = None) -> dict | None:
+    if not db_available():
+        return None
+    now = _now()
+    job_id = job_id or str(uuid.uuid4())
+    execute_safe(
+        text(
+            """
+            INSERT INTO pipeline_jobs (id, job_type, status, started_at, finished_at, duration_ms, result_json, error, triggered_by, created_at, updated_at)
+            VALUES (:id, :job_type, :status, NULL, NULL, NULL, :result_json, NULL, :triggered_by, :created_at, :updated_at)
+            """
+        ),
+        {
+            "id": job_id,
+            "job_type": str(job_type or "unknown"),
+            "status": status,
+            "result_json": _json({}),
+            "triggered_by": triggered_by,
+            "created_at": now,
+            "updated_at": now,
+        },
+    )
+    return _pipeline_job_from_row(fetch_one_safe(text("SELECT * FROM pipeline_jobs WHERE id = :id"), {"id": job_id}))
+
+
+def mark_pipeline_job_running(job_id: str) -> dict | None:
+    if not job_id or not db_available():
+        return None
+    now = _now()
+    execute_safe(
+        text("UPDATE pipeline_jobs SET status = 'running', started_at = COALESCE(started_at, :now), updated_at = :now WHERE id = :id"),
+        {"id": job_id, "now": now},
+    )
+    return _pipeline_job_from_row(fetch_one_safe(text("SELECT * FROM pipeline_jobs WHERE id = :id"), {"id": job_id}))
+
+
+def _finish_pipeline_job(job_id: str, status: str, result: dict | None = None, error: str | None = None) -> dict | None:
+    if not job_id or not db_available():
+        return None
+    now = _now()
+    row = fetch_one_safe(text("SELECT started_at FROM pipeline_jobs WHERE id = :id"), {"id": job_id})
+    started_at = _parse_datetime((row or {}).get("started_at"))
+    duration_ms = None
+    if started_at:
+        duration_ms = max(0, round((now - started_at.replace(tzinfo=None)).total_seconds() * 1000))
+    execute_safe(
+        text(
+            """
+            UPDATE pipeline_jobs
+            SET status = :status,
+                finished_at = :finished_at,
+                duration_ms = :duration_ms,
+                result_json = :result_json,
+                error = :error,
+                updated_at = :updated_at
+            WHERE id = :id
+            """
+        ),
+        {
+            "id": job_id,
+            "status": status,
+            "finished_at": now,
+            "duration_ms": duration_ms,
+            "result_json": _json(result or {}),
+            "error": error,
+            "updated_at": now,
+        },
+    )
+    return _pipeline_job_from_row(fetch_one_safe(text("SELECT * FROM pipeline_jobs WHERE id = :id"), {"id": job_id}))
+
+
+def mark_pipeline_job_success(job_id: str, result: dict | None = None) -> dict | None:
+    return _finish_pipeline_job(job_id, "success", result=result)
+
+
+def mark_pipeline_job_error(job_id: str, error: str, result: dict | None = None) -> dict | None:
+    return _finish_pipeline_job(job_id, "error", result=result, error=error)
+
+
+def mark_pipeline_job_skipped(job_id: str, reason: str, result: dict | None = None) -> dict | None:
+    return _finish_pipeline_job(job_id, "skipped", result={"reason": reason, **(result or {})})
+
+
+def list_pipeline_jobs(limit: int = 100, job_type: str | None = None) -> list[dict]:
+    if not db_available():
+        return []
+    safe_limit = max(1, min(_int_or_zero(limit) or 100, 500))
+    if job_type:
+        rows = fetch_all_safe(
+            text("SELECT * FROM pipeline_jobs WHERE job_type = :job_type ORDER BY created_at DESC LIMIT :limit"),
+            {"job_type": job_type, "limit": safe_limit},
+        )
+    else:
+        rows = fetch_all_safe(text("SELECT * FROM pipeline_jobs ORDER BY created_at DESC LIMIT :limit"), {"limit": safe_limit})
+    return [item for item in (_pipeline_job_from_row(row) for row in rows) if item]
+
+
+def get_latest_pipeline_job(job_type: str) -> dict | None:
+    if not job_type or not db_available():
+        return None
+    row = fetch_one_safe(
+        text("SELECT * FROM pipeline_jobs WHERE job_type = :job_type ORDER BY created_at DESC LIMIT 1"),
+        {"job_type": job_type},
+    )
+    return _pipeline_job_from_row(row)
+
+
+def get_running_pipeline_jobs() -> list[dict]:
+    if not db_available():
+        return []
+    rows = fetch_all_safe(text("SELECT * FROM pipeline_jobs WHERE status = 'running' ORDER BY started_at ASC LIMIT 100"), {})
+    return [item for item in (_pipeline_job_from_row(row) for row in rows) if item]
+
+
+def reset_stale_pipeline_jobs(max_age_minutes: int = 15) -> dict:
+    if not db_available():
+        return {"status": "unavailable", "storage": "memory", "reset_count": 0, "jobs": []}
+    now = _now()
+    reset = []
+    max_age_seconds = max(1, int(max_age_minutes or 15)) * 60
+    for job in get_running_pipeline_jobs():
+        started_at = _parse_datetime(job.get("started_at"))
+        if not started_at:
+            continue
+        age_seconds = (now - started_at.replace(tzinfo=None)).total_seconds()
+        if age_seconds >= max_age_seconds:
+            updated = _finish_pipeline_job(
+                job["id"],
+                "stale",
+                result={"reason": f"Job running for more than {max_age_minutes} minutes.", "stale_after_minutes": max_age_minutes},
+                error="stale_pipeline_job",
+            )
+            if updated:
+                reset.append(updated)
+    return {"status": "ok", "storage": "postgresql", "reset_count": len(reset), "jobs": reset}
