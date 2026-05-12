@@ -76,7 +76,7 @@ def build_hybrid_decision(production_prediction: dict[str, Any], shadow_block: d
         message = "Le candidat ML confirme le signal officiel. Le modèle officiel reste prioritaire."
         explanation = [
             "Elo/Poisson et ML shadow pointent vers la même issue principale.",
-            "Ce consensus renforce la lisibilité statistique, sans garantir le résultat.",
+            "Ce consensus renforce la lisibilité statistique, avec une part d'incertitude.",
             "Le ML reste un signal d'observation, pas un moteur de production.",
         ]
     else:

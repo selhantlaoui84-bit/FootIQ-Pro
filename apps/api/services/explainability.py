@@ -4,7 +4,7 @@ from collections import Counter
 from typing import Any
 
 VERSION = "explainability-v1"
-DISCLAIMER = "Modèle probabiliste. Aucune garantie de résultat."
+DISCLAIMER = "Modèle probabiliste. Résultat incertain."
 
 FACTOR_LABELS = {
     "elo_delta": "Écart Elo",
@@ -264,5 +264,5 @@ def build_explainability_summary(predictions: list[dict[str, Any]], limit: int =
         "trap_risk_count": trap_risk,
         "most_common_positive_factors": dict(positive_counter.most_common(8)),
         "most_common_negative_factors": dict(negative_counter.most_common(8)),
-        "note": "L'explicabilité décrit les signaux du modèle sans garantir le résultat.",
+        "note": "L'explicabilité décrit les signaux du modèle sans certifier le résultat.",
     }

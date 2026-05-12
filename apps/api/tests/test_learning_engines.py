@@ -27,6 +27,13 @@ from services.ml_training import (
 )
 from services.model_governance import build_model_governance_report, evaluate_model_promotion
 from services.model_versioning import get_versions_report, record_model_version, list_model_versions
+from services.odds_engine import (
+    calculate_expected_value,
+    classify_value_bet,
+    implied_probability_from_odds,
+    select_reference_odds,
+)
+from services.betting_assistant import analyze_prediction
 from services.pipeline_orchestrator import run_hourly_data_pipeline, run_pipeline_step
 from services.shadow_backtesting import calculate_shadow_backtest_report
 
@@ -981,6 +988,107 @@ class LearningEngineTests(unittest.TestCase):
             report = main._admin_alerts_report()
 
         self.assertTrue(any(item["id"] == "pipeline_jobs_stale" for item in report["alerts"]))
+
+    def test_implied_probability_from_decimal_odds(self):
+        self.assertEqual(implied_probability_from_odds(2.1), 0.4762)
+
+    def test_expected_value_positive(self):
+        self.assertEqual(calculate_expected_value(0.60, 2.10), 0.26)
+        self.assertEqual(classify_value_bet(0.124, 0.26), "strong_value")
+
+    def test_expected_value_negative(self):
+        self.assertLess(calculate_expected_value(0.40, 1.80), 0)
+        self.assertEqual(classify_value_bet(-0.1556, -0.28), "avoid")
+
+    def test_value_status_no_odds(self):
+        self.assertEqual(classify_value_bet(None, None), "no_odds")
+
+    def test_value_status_insufficient_data(self):
+        result = analyze_prediction({"match_id": "no-probability", "probabilities": {}, "confidence": {"score": 40}}, {})
+        self.assertIn(result["value_status"], {"no_odds", "insufficient_data"})
+        self.assertIn(result["recommendation_type"], {"wait", "insufficient_data"})
+
+    def test_reference_odds_selection(self):
+        selected = select_reference_odds(
+            [
+                {"bookmaker": "a", "odds_decimal": 1.9},
+                {"bookmaker": "b", "odds_decimal": 2.1},
+            ]
+        )
+        self.assertEqual(selected["bookmaker"], "b")
+        self.assertEqual(selected["implied_probability"], 0.4762)
+
+    def test_assistant_recommendation_recommended(self):
+        result = analyze_prediction(
+            prediction("assistant-rec", 65, 20, 15),
+            {"odds_lookup": {"assistant-rec": [{"market": "1X2", "selection": "HOME_WIN", "odds_decimal": 2.2}]}, "calibration_status": "mostly_calibrated"},
+        )
+        self.assertEqual(result["value_status"], "strong_value")
+        self.assertIn(result["recommendation_type"], {"recommended", "cautious"})
+
+    def test_assistant_recommendation_cautious(self):
+        item = prediction("assistant-cautious", 62, 23, 15)
+        item["risk_score"] = 75
+        result = analyze_prediction(
+            item,
+            {"odds_lookup": {"assistant-cautious": [{"market": "1X2", "selection": "HOME_WIN", "odds_decimal": 2.15}]}, "calibration_status": "overconfident"},
+        )
+        self.assertEqual(result["recommendation_type"], "cautious")
+        self.assertIn(result["risk_level"], {"high", "very_high"})
+
+    def test_assistant_recommendation_avoid(self):
+        result = analyze_prediction(
+            prediction("assistant-avoid", 45, 30, 25),
+            {"odds_lookup": {"assistant-avoid": [{"market": "1X2", "selection": "HOME_WIN", "odds_decimal": 1.5}]}, "calibration_status": "mostly_calibrated"},
+        )
+        self.assertEqual(result["recommendation_type"], "avoid")
+
+    def test_assistant_handles_missing_odds(self):
+        result = analyze_prediction(prediction("assistant-no-odds", 70, 20, 10), {})
+        self.assertEqual(result["value_status"], "no_odds")
+        self.assertEqual(result["recommendation_label"], "Cote non disponible")
+
+    def test_assistant_handles_missing_calibration(self):
+        result = analyze_prediction(
+            prediction("assistant-no-calib", 60, 25, 15),
+            {"odds_lookup": {"assistant-no-calib": [{"market": "1X2", "selection": "HOME_WIN", "odds_decimal": 2.0}]}}
+        )
+        self.assertIsNone(result["calibrated_probability"])
+        self.assertIsNotNone(result["expected_value"])
+
+    def test_assistant_predictions_endpoint(self):
+        with patch.object(main, "_available_predictions", return_value=[prediction("assistant-endpoint", 65, 20, 15)]), patch.object(main, "_odds_lookup_for_predictions", return_value={"assistant-endpoint": [{"market": "1X2", "selection": "HOME_WIN", "odds_decimal": 2.1}]}):
+            report = main.assistant_predictions(limit=10)
+
+        self.assertEqual(report["status"], "ok")
+        self.assertEqual(report["items_count"], 1)
+        self.assertIn("expected_value", report["items"][0])
+
+    def test_assistant_match_endpoint(self):
+        match = {"id": "assistant-match", "match_id": "assistant-match", "home_team": "PSG", "away_team": "Lyon"}
+        with patch.object(main, "_find_match", return_value=match), patch.object(main, "_available_predictions", return_value=[prediction("assistant-match", 65, 20, 15)]), patch.object(main, "_odds_lookup_for_predictions", return_value={"assistant-match": [{"market": "1X2", "selection": "HOME_WIN", "odds_decimal": 2.0}]}):
+            report = main.assistant_match("assistant-match")
+
+        self.assertEqual(report["status"], "ok")
+        self.assertEqual(report["match_id"], "assistant-match")
+        self.assertIsNotNone(report["primary_recommendation"])
+
+    def test_assistant_daily_brief_endpoint(self):
+        with patch.object(main, "_available_predictions", return_value=[prediction("assistant-brief", 65, 20, 15)]), patch.object(main, "_odds_lookup_for_predictions", return_value={"assistant-brief": [{"market": "1X2", "selection": "HOME_WIN", "odds_decimal": 2.0}]}):
+            report = main.assistant_daily_brief(limit=10)
+
+        self.assertEqual(report["status"], "ok")
+        self.assertIn("summary", report)
+
+    def test_assistant_never_promises_gain(self):
+        result = analyze_prediction(
+            prediction("assistant-safe", 65, 20, 15),
+            {"odds_lookup": {"assistant-safe": [{"market": "1X2", "selection": "HOME_WIN", "odds_decimal": 2.0}]}, "calibration_status": "mostly_calibrated"},
+        )
+        rendered_text = " ".join(str(value).lower() for value in result.values() if isinstance(value, str))
+        for forbidden in ["pari sûr", "gain garanti", "100% sûr", "100 % sûr", "sans risque"]:
+            self.assertNotIn(forbidden, rendered_text)
+        self.assertEqual(result["promise_check"], "ok")
 
 
 if __name__ == "__main__":

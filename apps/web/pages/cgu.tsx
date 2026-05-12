@@ -6,7 +6,7 @@ export default function CguPage() {
       <section className="pageHeader">
         <p className="eyebrow">Cadre légal</p>
         <h1>Conditions générales d'utilisation</h1>
-        <p>FootIQ Pro est un outil d'aide à l'analyse football. Il ne garantit aucun résultat et ne constitue pas une incitation au jeu.</p>
+        <p>FootIQ Pro est un outil d'aide à l'analyse football. Les résultats restent incertains et l'application ne constitue pas une incitation au jeu.</p>
       </section>
 
       <section className="card">

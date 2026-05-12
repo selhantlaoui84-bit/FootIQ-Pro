@@ -6,8 +6,8 @@ import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { TeamIdentity } from '~/components/TeamIdentity';
 import { ProbabilityRing } from '~/components/ui';
-import { getPredictions } from '~/lib/api';
-import { isAvoidStatus, matchHref, predictions as mockPredictions, statusClass, type ConfidenceStatus, type Prediction } from '~/lib/mock-data';
+import { getAssistantPredictions, getPredictions } from '~/lib/api';
+import { isAvoidStatus, matchHref, predictions as mockPredictions, statusClass, type BettingAssistantItem, type ConfidenceStatus, type Prediction } from '~/lib/mock-data';
 import { resolveMatchTeamLogo } from '~/lib/team-logos';
 import { formatCompetitionLabel, formatKickoffFr, formatRecommendationLabel, formatStatusLabel } from '~/lib/ui-text';
 import { Layout } from '~/src-layout';
@@ -44,6 +44,7 @@ export default function PredictionsPage({ predictions, referenceTime }: Predicti
   const [riskOnly, setRiskOnly] = useState(false);
   const [highConfidence, setHighConfidence] = useState(false);
   const [query, setQuery] = useState('');
+  const [assistantItems, setAssistantItems] = useState<Record<string, BettingAssistantItem>>({});
 
   useEffect(() => {
     if (typeof router.query.status === 'string') {
@@ -52,6 +53,21 @@ export default function PredictionsPage({ predictions, referenceTime }: Predicti
 
     setTrapOnly(router.query.trap === 'true');
   }, [router.query.status, router.query.trap]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getAssistantPredictions(100)
+      .then((report) => {
+        if (cancelled) return;
+        setAssistantItems(Object.fromEntries((report.items ?? []).map((item) => [item.match_id, item])));
+      })
+      .catch(() => {
+        if (!cancelled) setAssistantItems({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const filtered = useMemo(() => {
       const referenceStart = new Date(referenceTime);
@@ -172,7 +188,7 @@ export default function PredictionsPage({ predictions, referenceTime }: Predicti
           </div>
           <div className="premiumPredictionTable">
             {filtered.length > 0 ? (
-              filtered.map((prediction) => <PredictionCard prediction={prediction} key={prediction.match_id} />)
+              filtered.map((prediction) => <PredictionCard assistant={assistantItems[prediction.match_id]} prediction={prediction} key={prediction.match_id} />)
             ) : (
               <div className="emptyState">Aucune prédiction ne correspond aux filtres.</div>
             )}
@@ -184,7 +200,7 @@ export default function PredictionsPage({ predictions, referenceTime }: Predicti
   );
 }
 
-function PredictionCard({ prediction }: { prediction: Prediction }) {
+function PredictionCard({ prediction, assistant }: { prediction: Prediction; assistant?: BettingAssistantItem }) {
   const calibrationApplied = prediction.calibration?.applied === true || Boolean(prediction.calibration_version);
   const rawProbabilities = prediction.original_probabilities;
 
@@ -226,6 +242,32 @@ function PredictionCard({ prediction }: { prediction: Prediction }) {
           {rawProbabilities ? ` - brut 1/N/2 : ${rawProbabilities.home}/${rawProbabilities.draw}/${rawProbabilities.away}%` : ''}
         </div>
       )}
+      <div className="dataList compact">
+        <span>
+          Assistant <strong>{assistant?.recommendation_label ?? 'Données insuffisantes'}</strong>
+        </span>
+        <span>
+          Cote <strong>{assistant?.odds ? assistant.odds.toFixed(2) : 'Cote non disponible'}</strong>
+        </span>
+        <span>
+          Probabilité bookmaker <strong>{assistant?.implied_probability != null ? `${Math.round(assistant.implied_probability * 100)}%` : 'Non disponible'}</strong>
+        </span>
+        <span>
+          Probabilité modèle <strong>{assistant?.used_probability != null ? `${Math.round(assistant.used_probability * 100)}%` : `${prediction.confidence.score}%`}</strong>
+        </span>
+        <span>
+          Edge <strong>{assistant?.edge != null ? `${Math.round(assistant.edge * 1000) / 10}%` : 'Non calculable'}</strong>
+        </span>
+        <span>
+          Expected value <strong>{assistant?.expected_value != null ? assistant.expected_value.toFixed(3) : 'Non calculable'}</strong>
+        </span>
+        <span>
+          Risque assistant <strong>{assistant?.risk_level ?? 'unknown'}</strong>
+        </span>
+      </div>
+      <div className="banner info">
+        {assistant?.recommendation_reason ?? 'Assistant FootIQ : cote non disponible ou données insuffisantes. Aucun pari ne doit être considéré comme certain.'}
+      </div>
       <div className="confidenceLine confidence-bar">
         <span style={{ width: `${prediction.confidence.score}%` }} />
       </div>

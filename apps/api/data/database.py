@@ -202,6 +202,28 @@ Index("ix_model_calibrations_model_version", model_calibrations_table.c.model_ve
 Index("ix_model_calibrations_status", model_calibrations_table.c.status)
 Index("ix_model_calibrations_created_at", model_calibrations_table.c.created_at)
 
+bookmaker_odds_table = Table(
+    "bookmaker_odds",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("match_id", Text, nullable=False),
+    Column("bookmaker", Text, nullable=False),
+    Column("market", Text, nullable=False),
+    Column("selection", Text, nullable=False),
+    Column("odds_decimal", Float, nullable=True),
+    Column("implied_probability", Float, nullable=True),
+    Column("margin", Float, nullable=True),
+    Column("raw_json", Text, nullable=True),
+    Column("collected_at", TIMESTAMP(timezone=True)),
+    Column("source", Text, nullable=True),
+    Column("created_at", TIMESTAMP(timezone=True)),
+)
+Index("ix_bookmaker_odds_match_id", bookmaker_odds_table.c.match_id)
+Index("ix_bookmaker_odds_market", bookmaker_odds_table.c.market)
+Index("ix_bookmaker_odds_selection", bookmaker_odds_table.c.selection)
+Index("ix_bookmaker_odds_bookmaker", bookmaker_odds_table.c.bookmaker)
+Index("ix_bookmaker_odds_collected_at", bookmaker_odds_table.c.collected_at)
+
 
 def get_database_url() -> str | None:
     database_url = os.getenv("DATABASE_URL")
@@ -275,6 +297,11 @@ def _ensure_runtime_columns_and_indexes(engine: Engine) -> None:
             "CREATE INDEX IF NOT EXISTS ix_model_calibrations_model_version ON model_calibrations(model_version)",
             "CREATE INDEX IF NOT EXISTS ix_model_calibrations_status ON model_calibrations(status)",
             "CREATE INDEX IF NOT EXISTS ix_model_calibrations_created_at ON model_calibrations(created_at)",
+            "CREATE INDEX IF NOT EXISTS ix_bookmaker_odds_match_id ON bookmaker_odds(match_id)",
+            "CREATE INDEX IF NOT EXISTS ix_bookmaker_odds_market ON bookmaker_odds(market)",
+            "CREATE INDEX IF NOT EXISTS ix_bookmaker_odds_selection ON bookmaker_odds(selection)",
+            "CREATE INDEX IF NOT EXISTS ix_bookmaker_odds_bookmaker ON bookmaker_odds(bookmaker)",
+            "CREATE INDEX IF NOT EXISTS ix_bookmaker_odds_collected_at ON bookmaker_odds(collected_at)",
             "CREATE INDEX IF NOT EXISTS ix_pipeline_jobs_job_type ON pipeline_jobs(job_type)",
             "CREATE INDEX IF NOT EXISTS ix_pipeline_jobs_status ON pipeline_jobs(status)",
             "CREATE INDEX IF NOT EXISTS ix_pipeline_jobs_started_at ON pipeline_jobs(started_at)",
@@ -294,6 +321,11 @@ def _ensure_runtime_columns_and_indexes(engine: Engine) -> None:
             "CREATE INDEX IF NOT EXISTS ix_model_calibrations_model_version ON model_calibrations(model_version)",
             "CREATE INDEX IF NOT EXISTS ix_model_calibrations_status ON model_calibrations(status)",
             "CREATE INDEX IF NOT EXISTS ix_model_calibrations_created_at ON model_calibrations(created_at)",
+            "CREATE INDEX IF NOT EXISTS ix_bookmaker_odds_match_id ON bookmaker_odds(match_id)",
+            "CREATE INDEX IF NOT EXISTS ix_bookmaker_odds_market ON bookmaker_odds(market)",
+            "CREATE INDEX IF NOT EXISTS ix_bookmaker_odds_selection ON bookmaker_odds(selection)",
+            "CREATE INDEX IF NOT EXISTS ix_bookmaker_odds_bookmaker ON bookmaker_odds(bookmaker)",
+            "CREATE INDEX IF NOT EXISTS ix_bookmaker_odds_collected_at ON bookmaker_odds(collected_at)",
             "CREATE INDEX IF NOT EXISTS ix_pipeline_jobs_job_type ON pipeline_jobs(job_type)",
             "CREATE INDEX IF NOT EXISTS ix_pipeline_jobs_status ON pipeline_jobs(status)",
             "CREATE INDEX IF NOT EXISTS ix_pipeline_jobs_started_at ON pipeline_jobs(started_at)",

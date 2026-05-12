@@ -38,6 +38,8 @@ from services.calibration_engine import (
     calibrate_prediction,
     create_calibration_candidate,
 )
+from services.betting_assistant import analyze_prediction, generate_daily_assistant_brief, generate_match_assistant_summary
+from services.odds_engine import implied_probability_from_odds, select_reference_odds
 from services.model_versioning import get_versions_report, list_model_versions, record_model_version
 from services.pipeline_orchestrator import run_after_match_finished_pipeline, run_daily_learning_pipeline, run_hourly_data_pipeline, run_pipeline_step
 from services.user_learning_engine import analyze_user_bets
@@ -832,6 +834,77 @@ def match_detail(match_id: str):
 def list_predictions():
     return _available_predictions()
 
+
+def _odds_lookup_for_predictions(predictions: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    lookup: dict[str, list[dict[str, Any]]] = {}
+    for prediction in predictions:
+        match_id = str(prediction.get("match_id") or prediction.get("id") or prediction.get("slug") or "")
+        lookup[match_id] = repository.list_match_odds(match_id)
+    return lookup
+
+
+@app.get("/odds/match/{match_id}")
+def match_odds(match_id: str):
+    rows = repository.list_match_odds(match_id)
+    if not rows:
+        return {"status": "missing", "match_id": match_id, "odds": [], "detail": "Cote non disponible pour ce match."}
+    return {"status": "ok", "match_id": match_id, "odds": rows}
+
+
+@app.get("/odds/prediction")
+def prediction_odds(match_id: str, market: str = "1X2", selection: str = "HOME_WIN"):
+    odds = repository.get_reference_odds_for_prediction(match_id, market, selection)
+    if not odds:
+        return {
+            "status": "missing",
+            "match_id": match_id,
+            "market": market,
+            "selection": selection,
+            "detail": "Cote non disponible pour cette sélection.",
+        }
+    return {
+        "status": "ok",
+        "match_id": match_id,
+        "market": market,
+        "selection": selection,
+        "odds": {
+            **odds,
+            "implied_probability": odds.get("implied_probability") or implied_probability_from_odds(odds.get("odds_decimal")),
+        },
+    }
+
+
+@app.get("/assistant/predictions")
+def assistant_predictions(limit: int = Query(default=50, ge=1, le=500)):
+    predictions = _available_predictions()[:limit]
+    calibration = _calibration_report()
+    context = {
+        "odds_lookup": _odds_lookup_for_predictions(predictions),
+        "calibration_status": calibration.get("calibration_status"),
+        "data_quality_explanation": "Les recommandations combinent probabilité, cote, value et risque. Les résultats restent incertains.",
+    }
+    report = generate_daily_assistant_brief(predictions, context)
+    return {**report, "storage": "postgresql" if repository.db_available() else "memory"}
+
+
+@app.get("/assistant/match/{match_id}")
+def assistant_match(match_id: str):
+    match = _find_match(match_id)
+    if match is None:
+        raise HTTPException(status_code=404, detail="Match not found")
+    predictions = _available_predictions()
+    calibration = _calibration_report()
+    context = {
+        "odds_lookup": _odds_lookup_for_predictions(predictions),
+        "calibration_status": calibration.get("calibration_status"),
+        "data_quality_explanation": "Lecture informative : value, cote et risque doivent être vérifiés avant toute décision.",
+    }
+    return generate_match_assistant_summary(match, predictions, context)
+
+
+@app.get("/assistant/daily-brief")
+def assistant_daily_brief(limit: int = Query(default=30, ge=1, le=200)):
+    return assistant_predictions(limit=limit)
 
 
 

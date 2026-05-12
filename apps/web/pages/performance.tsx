@@ -6,6 +6,7 @@ import { TeamIdentity } from '~/components/TeamIdentity';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import {
   getBacktesting,
+  getAssistantDailyBrief,
   getCalibrationReport,
   getFeatureQualityReport,
   getFeatureSummary,
@@ -29,6 +30,7 @@ import {
 } from '~/lib/api';
 import type {
   BacktestingReport,
+  BettingAssistantResponse,
   CalibrationReport,
   DatasetQualityReport,
   FeatureImportanceRow,
@@ -1058,7 +1060,7 @@ export default function PerformancePage({
         <section className="card explainabilityCard sectionAnchor" id="explainability">
           <p className="eyebrow">Explicabilité</p>
           <h2>Explicabilité des prédictions</h2>
-          <p>Cette couche traduit les signaux du modèle en facteurs lisibles. Elle aide à comprendre la prédiction, sans garantir le résultat.</p>
+          <p>Cette couche traduit les signaux du modèle en facteurs lisibles. Elle aide à comprendre la prédiction, sans certifier le résultat.</p>
           <div className="compactDataGrid four">
             <div className="metric"><span>Version</span><strong>{explainability.version}</strong></div>
             <div className="metric"><span>Prédictions analysées</span><strong>{explainability.processed_predictions}</strong></div>
@@ -1361,6 +1363,7 @@ function AnalysisCommandCenter({
   pipelineStatus: PipelineStatus;
   pipelineJobs: PipelineJobsResponse;
 }) {
+  const [assistantReport, setAssistantReport] = useState<BettingAssistantResponse | null>(null);
   const productionModel = modelVersions.current_production_model;
   const candidateModel = modelVersions.latest_candidate_model;
   const productionVersion =
@@ -1408,6 +1411,20 @@ function AnalysisCommandCenter({
     ? shadowBacktesting.evaluated_match_rows
     : shadowBacktesting.recent_evaluations ?? [];
   const pendingRows = shadowBacktesting.pending_matches ?? [];
+
+  useEffect(() => {
+    let cancelled = false;
+    getAssistantDailyBrief()
+      .then((report) => {
+        if (!cancelled) setAssistantReport(report);
+      })
+      .catch(() => {
+        if (!cancelled) setAssistantReport(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <>
@@ -1561,6 +1578,20 @@ function AnalysisCommandCenter({
 
       <section className="card">
         <p className="eyebrow">Journal récent</p>
+        <h2>Qualité des recommandations</h2>
+        <div className="compactDataGrid four">
+          <AnalysisKpi title="Recommandés" value={assistantReport ? String(assistantReport.summary.recommended_count) : 'Données insuffisantes'} detail="Value et risque contenus" />
+          <AnalysisKpi title="Prudence" value={assistantReport ? String(assistantReport.summary.cautious_count) : 'Données insuffisantes'} detail="Value possible, risque à surveiller" />
+          <AnalysisKpi title="À éviter" value={assistantReport ? String(assistantReport.summary.avoid_count) : 'Données insuffisantes'} detail="Value négative ou risque élevé" />
+          <AnalysisKpi title="Cotes manquantes" value={assistantReport ? String(assistantReport.summary.no_odds_count) : 'Cote non disponible'} detail="EV non calculable sans cote" />
+        </div>
+        <div className="banner warning">
+          Les recommandations restent informatives : la value dépend des cotes disponibles, du risque et du volume de données.
+        </div>
+      </section>
+
+      <section className="card">
+        <p className="eyebrow">Assistant parieur</p>
         <h2>Pipeline IA</h2>
         <div className="compactDataGrid four">
           <AnalysisKpi title="Monitoring" value={learningMonitoring.status} detail={learningMonitoring.storage ?? 'storage inconnu'} />

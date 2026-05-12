@@ -27,7 +27,7 @@ export default function NotFoundPage() {
         </Card>
         <Card tone="info">
           <h2>Analyse responsable</h2>
-          <p>FootIQ Pro fournit des signaux probabilistes. Aucune lecture ne garantit un résultat.</p>
+          <p>FootIQ Pro fournit des signaux probabilistes. Les résultats restent incertains.</p>
         </Card>
       </section>
     </Layout>

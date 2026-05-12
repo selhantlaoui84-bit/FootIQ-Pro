@@ -121,7 +121,7 @@ def build_hybrid_engine_decision(
 
         title = _status_text(label)
         if label == "signal_renforce":
-            message = "Le ML shadow confirme le modèle officiel. Le signal Elo/Poisson est renforcé, sans garantie de résultat."
+            message = "Le ML shadow confirme le modèle officiel. Le signal Elo/Poisson est renforcé, avec une part d'incertitude."
         elif label == "prudence_confirmee":
             message = "Le ML shadow va dans le même sens, mais la confiance impose une lecture prudente."
         elif label == "eviter":

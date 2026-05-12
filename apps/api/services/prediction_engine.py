@@ -186,7 +186,7 @@ def generate_prediction_from_match(match: dict, all_matches: list[dict] | None =
         "main_prediction": _main_prediction(home_team, away_team, probabilities),
         "explanation": _explanation(features, elo_features, probabilities, goals),
         "risks": _risks(features, probabilities, risk_score),
-        "disclaimer": "Mod?le probabilistique. Aucune garantie de r?sultat.",
+        "disclaimer": "Modele probabilistique. Resultat incertain.",
     }
 
 

@@ -32,6 +32,8 @@ import {
   mockCalibrationReport,
   mockModelVersionsResponse,
   mockLearningMonitoringReport,
+  mockAssistantResponse,
+  mockAssistantMatchResponse,
   mockModelPromotionAudit,
   mockPipelineJobs,
   mockPipelineStatus,
@@ -77,6 +79,8 @@ import {
   type PipelineJobsResponse,
   type PipelineRunResponse,
   type PipelineStatus,
+  type BettingAssistantResponse,
+  type AssistantMatchResponse,
 } from '~/lib/mock-data';
 
 
@@ -187,6 +191,33 @@ export async function getPredictions(options?: { includeHybridEngine?: boolean; 
   const data = await fetchBackendJson<Prediction[]>(`/predictions${query ? `?${query}` : ''}`, undefined, 15000);
 
   return Array.isArray(data) && data.length > 0 ? data : predictions;
+}
+
+export async function getAssistantPredictions(limit = 50): Promise<BettingAssistantResponse> {
+  if (IS_BUILD) return mockAssistantResponse;
+
+  return fetchProxyJson<BettingAssistantResponse>(`/api/assistant/predictions?limit=${Math.min(Math.max(Math.round(limit), 1), 500)}`, undefined, 15000);
+}
+
+export async function getAssistantDailyBrief(): Promise<BettingAssistantResponse> {
+  if (IS_BUILD) return mockAssistantResponse;
+
+  return fetchProxyJson<BettingAssistantResponse>('/api/assistant/daily-brief', undefined, 15000);
+}
+
+export async function getAssistantMatch(matchId: string): Promise<AssistantMatchResponse> {
+  if (IS_BUILD) return { ...mockAssistantMatchResponse, match_id: matchId };
+
+  return fetchProxyJson<AssistantMatchResponse>(`/api/assistant/match/${encodeURIComponent(matchId)}`, undefined, 15000);
+}
+
+export async function getMatchOdds(matchId: string): Promise<{ status: string; odds?: unknown[]; detail?: string }> {
+  return fetchProxyJson(`/api/odds/match/${encodeURIComponent(matchId)}`, undefined, 10000);
+}
+
+export async function getPredictionOdds(options: { matchId: string; market: string; selection: string }): Promise<{ status: string; odds?: unknown; detail?: string }> {
+  const params = new URLSearchParams({ match_id: options.matchId, market: options.market, selection: options.selection });
+  return fetchProxyJson(`/api/odds/prediction?${params.toString()}`, undefined, 10000);
 }
 
 export async function getPrediction(matchId: string): Promise<Prediction> {

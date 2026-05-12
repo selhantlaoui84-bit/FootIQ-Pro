@@ -1,11 +1,12 @@
 import type { GetStaticPaths, GetStaticProps } from 'next';
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { TeamIdentity } from '~/components/TeamIdentity';
 import { TacticalPitch } from '~/components/ui';
-import { getMatch, getPrediction } from '~/lib/api';
-import { getMockMatch, getMockPrediction, matches, statusClass, teamNameHref, type Match, type Prediction } from '~/lib/mock-data';
+import { getAssistantMatch, getMatch, getPrediction } from '~/lib/api';
+import { getMockMatch, getMockPrediction, matches, statusClass, teamNameHref, type AssistantMatchResponse, type Match, type Prediction } from '~/lib/mock-data';
 import { resolveMatchTeamLogo } from '~/lib/team-logos';
 import { formatCompetitionLabel, formatFinishedMatchSummary, formatKickoffFr, formatMatchStatusLabel, formatScore, formatWinnerLabel } from '~/lib/ui-text';
 import { Layout } from '~/src-layout';
@@ -32,6 +33,7 @@ export const getStaticProps: GetStaticProps<MatchDetailProps> = async ({ params 
 };
 
 export default function MatchDetailPage({ match, prediction }: MatchDetailProps) {
+  const [assistant, setAssistant] = useState<AssistantMatchResponse | null>(null);
   const kickoff = prediction.kickoff || match.kickoff;
   const finished = isFinished(match) || isFinished(prediction);
   const homeScore = match.score_full_time_home ?? prediction.score_full_time_home;
@@ -45,6 +47,20 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
   const explainability = prediction.explainability;
   const homeLogo = resolveMatchTeamLogo({ ...match, ...prediction }, 'home');
   const awayLogo = resolveMatchTeamLogo({ ...match, ...prediction }, 'away');
+
+  useEffect(() => {
+    let cancelled = false;
+    getAssistantMatch(prediction.match_id || prediction.slug || match.slug)
+      .then((report) => {
+        if (!cancelled) setAssistant(report);
+      })
+      .catch(() => {
+        if (!cancelled) setAssistant(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [match.slug, prediction.match_id, prediction.slug]);
 
   return (
     <ProtectedRoute>
@@ -119,6 +135,21 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
           <Probability label={prediction.home_team} value={prediction.probabilities.home} />
           <Probability label="Nul" value={prediction.probabilities.draw} />
           <Probability label={prediction.away_team} value={prediction.probabilities.away} />
+        </section>
+
+        <section className="card accent">
+          <p className="eyebrow">Assistant FootIQ</p>
+          <h2>{assistant?.primary_recommendation?.recommendation_label ?? 'Analyse de pari'}</h2>
+          <p>{assistant?.summary ?? 'Cote non disponible : impossible de calculer une value fiable.'}</p>
+          <div className="compactDataGrid four">
+            <div className="metric"><span>Cote</span><strong>{assistant?.primary_recommendation?.odds ? assistant.primary_recommendation.odds.toFixed(2) : 'Cote non disponible'}</strong></div>
+            <div className="metric"><span>Value</span><strong>{assistant?.primary_recommendation?.expected_value != null ? assistant.primary_recommendation.expected_value.toFixed(3) : 'Non calculable'}</strong></div>
+            <div className="metric"><span>Edge</span><strong>{assistant?.primary_recommendation?.edge != null ? `${Math.round(assistant.primary_recommendation.edge * 1000) / 10}%` : 'Non calculable'}</strong></div>
+            <div className="metric"><span>Risque</span><strong>{assistant?.primary_recommendation?.risk_level ?? 'unknown'}</strong></div>
+          </div>
+          <div className="banner warning">
+            Les recommandations sont informatives, dépendantes des cotes disponibles et du risque. Les résultats restent incertains.
+          </div>
         </section>
 
         <section className="sectionSplit premiumSectionSplit">
