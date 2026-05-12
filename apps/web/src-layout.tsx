@@ -7,7 +7,8 @@ const links = [
   { href: '/matches', label: 'Matchs', icon: 'M' },
   { href: '/predictions', label: 'Prédictions', icon: 'P' },
   { href: '/teams', label: 'Équipes', icon: 'E' },
-  { href: '/performance', label: 'Analyse', icon: 'A' },
+  { href: '/analyse', label: 'Analyse', icon: 'A' },
+  { href: '/performance', label: 'Performance', icon: 'R' },
   { href: '/pricing', label: 'Pricing', icon: '€' },
 ];
 
