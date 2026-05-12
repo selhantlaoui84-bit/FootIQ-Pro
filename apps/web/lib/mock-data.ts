@@ -273,6 +273,40 @@ export type UserBetSummary = {
   learning?: Record<string, unknown>;
 };
 
+export type PlanName = 'free' | 'premium' | 'pro' | 'admin';
+
+export type UsageLimit = {
+  allowed: boolean;
+  plan: PlanName | string;
+  feature: string;
+  used: number;
+  limit: number | null;
+  remaining: number | null;
+  period: string;
+  upgrade_required?: boolean;
+};
+
+export type BillingStatusResponse = {
+  status: string;
+  billing_configured: boolean;
+  plans: PlanName[];
+  price_ids_configured?: Record<string, boolean>;
+  webhook_configured?: boolean;
+  plan_counts?: Record<string, number>;
+  storage?: string;
+};
+
+export type SubscriptionResponse = {
+  status: string;
+  user_id?: string;
+  plan: PlanName | string;
+  subscription_status: string;
+  current_period_end?: string | null;
+  cancel_at_period_end?: boolean;
+  limits: Record<string, UsageLimit>;
+  subscription?: Record<string, unknown>;
+};
+
 export type MatchView = 'all' | 'upcoming' | 'history';
 
 export type MlShadowPrediction = {
@@ -2241,6 +2275,37 @@ export const mockUserBetSummary: UserBetSummary = {
   by_market: [],
   by_competition: [],
   insights: ['Commencez à suivre vos paris pour obtenir des conseils personnalisés.'],
+};
+
+export const mockBillingStatus: BillingStatusResponse = {
+  status: 'ok',
+  billing_configured: false,
+  plans: ['free', 'premium', 'pro'],
+  price_ids_configured: {
+    premium_monthly: false,
+    premium_yearly: false,
+    pro_monthly: false,
+    pro_yearly: false,
+  },
+  webhook_configured: false,
+  plan_counts: { free: 0, premium: 0, pro: 0, admin: 0 },
+  storage: 'memory',
+};
+
+export const mockSubscription: SubscriptionResponse = {
+  status: 'ok',
+  user_id: 'local-user',
+  plan: 'free',
+  subscription_status: 'free',
+  current_period_end: null,
+  cancel_at_period_end: false,
+  limits: {
+    prediction_view: { allowed: true, plan: 'free', feature: 'prediction_view', used: 0, limit: 5, remaining: 5, period: 'day' },
+    value_bet_view: { allowed: true, plan: 'free', feature: 'value_bet_view', used: 0, limit: 2, remaining: 2, period: 'day' },
+    assistant_request: { allowed: true, plan: 'free', feature: 'assistant_request', used: 0, limit: 3, remaining: 3, period: 'day' },
+    bet_created: { allowed: true, plan: 'free', feature: 'bet_created', used: 0, limit: 10, remaining: 10, period: 'day' },
+    performance_view: { allowed: true, plan: 'free', feature: 'performance_view', used: 0, limit: 3, remaining: 3, period: 'day' },
+  },
 };
 
 export const mockModelPromotionAudit: ModelPromotionAuditResponse = {

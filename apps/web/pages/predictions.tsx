@@ -5,9 +5,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { TeamIdentity } from '~/components/TeamIdentity';
+import { UpgradePrompt } from '~/components/UpgradePrompt';
 import { ProbabilityRing } from '~/components/ui';
-import { getAssistantPredictions, getPredictions, getValueBets } from '~/lib/api';
-import { isAvoidStatus, matchHref, predictions as mockPredictions, statusClass, type BettingAssistantItem, type ConfidenceStatus, type Prediction, type ValueBetItem } from '~/lib/mock-data';
+import { getAssistantPredictions, getMySubscription, getPredictions, getValueBets } from '~/lib/api';
+import { canViewValueBets } from '~/lib/feature-access';
+import { isAvoidStatus, matchHref, predictions as mockPredictions, statusClass, type BettingAssistantItem, type ConfidenceStatus, type Prediction, type SubscriptionResponse, type ValueBetItem } from '~/lib/mock-data';
 import { resolveMatchTeamLogo } from '~/lib/team-logos';
 import { formatCompetitionLabel, formatKickoffFr, formatRecommendationLabel, formatStatusLabel } from '~/lib/ui-text';
 import { Layout } from '~/src-layout';
@@ -47,6 +49,7 @@ export default function PredictionsPage({ predictions, referenceTime }: Predicti
   const [query, setQuery] = useState('');
   const [assistantItems, setAssistantItems] = useState<Record<string, BettingAssistantItem>>({});
   const [valueItems, setValueItems] = useState<Record<string, ValueBetItem>>({});
+  const [subscription, setSubscription] = useState<SubscriptionResponse | null>(null);
 
   useEffect(() => {
     if (typeof router.query.status === 'string') {
@@ -59,6 +62,11 @@ export default function PredictionsPage({ predictions, referenceTime }: Predicti
 
   useEffect(() => {
     let cancelled = false;
+    getMySubscription().then((report) => {
+      if (!cancelled) setSubscription(report);
+    }).catch(() => {
+      if (!cancelled) setSubscription(null);
+    });
     getAssistantPredictions(100)
       .then((report) => {
         if (cancelled) return;
@@ -123,6 +131,9 @@ export default function PredictionsPage({ predictions, referenceTime }: Predicti
       ? Math.round(filtered.reduce((total, prediction) => total + prediction.confidence.score, 0) / filtered.length)
       : 0;
   const selectionOfDay = filtered.slice(0, 5);
+  const plan = subscription?.plan ?? 'free';
+  const valueAccess = canViewValueBets(plan);
+  const visiblePredictions = plan === 'free' ? filtered.slice(0, subscription?.limits?.prediction_view?.limit ?? 5) : filtered;
 
   return (
     <ProtectedRoute>
@@ -170,6 +181,13 @@ export default function PredictionsPage({ predictions, referenceTime }: Predicti
       </section>
 
       <section className="predictionsPremiumLayout">
+        {!valueAccess && (
+          <UpgradePrompt
+            feature="value_bets"
+            title="Aperçu Value Bets"
+            description="Le plan gratuit affiche un aperçu. Passez Premium pour voir les value bets avancées, l'assistant complet et les détails EV."
+          />
+        )}
         <div className="predictionMetrics">
           <article className="premiumPanel metricShowcase">
             <h2>Top value picks</h2>
@@ -210,8 +228,8 @@ export default function PredictionsPage({ predictions, referenceTime }: Predicti
             <span>Toutes les prédictions ({filtered.length})</span>
           </div>
           <div className="premiumPredictionTable">
-            {filtered.length > 0 ? (
-              filtered.map((prediction) => <PredictionCard assistant={{ ...assistantItems[prediction.match_id], ...valueItems[prediction.match_id] }} prediction={prediction} key={prediction.match_id} />)
+            {visiblePredictions.length > 0 ? (
+              visiblePredictions.map((prediction) => <PredictionCard locked={!valueAccess} assistant={{ ...assistantItems[prediction.match_id], ...valueItems[prediction.match_id] }} prediction={prediction} key={prediction.match_id} />)
             ) : (
               <div className="emptyState">Aucune prédiction ne correspond aux filtres.</div>
             )}
@@ -223,7 +241,7 @@ export default function PredictionsPage({ predictions, referenceTime }: Predicti
   );
 }
 
-function PredictionCard({ prediction, assistant }: { prediction: Prediction; assistant?: Partial<BettingAssistantItem & ValueBetItem> }) {
+function PredictionCard({ prediction, assistant, locked = false }: { prediction: Prediction; assistant?: Partial<BettingAssistantItem & ValueBetItem>; locked?: boolean }) {
   const calibrationApplied = prediction.calibration?.applied === true || Boolean(prediction.calibration_version);
   const rawProbabilities = prediction.original_probabilities;
 
@@ -306,6 +324,7 @@ function PredictionCard({ prediction, assistant }: { prediction: Prediction; ass
           Risque assistant <strong>{assistant?.risk_level ?? 'unknown'}</strong>
         </span>
       </div>
+      {locked && <div className="banner warning">UpgradePrompt : détails value bet avancés réservés Premium.</div>}
       {(assistant?.warnings ?? []).length > 0 && <div className="banner warning">{assistant?.warnings?.join(' ')}</div>}
       <div className="banner info">
         {assistant?.recommendation_reason ?? 'Assistant FootIQ : cote réelle non disponible ou données insuffisantes. Les résultats restent incertains.'}

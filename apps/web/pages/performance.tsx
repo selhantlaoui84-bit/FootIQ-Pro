@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { InfoTooltip } from '~/components/InfoTooltip';
 import { TeamIdentity } from '~/components/TeamIdentity';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
+import { UpgradePrompt } from '~/components/UpgradePrompt';
 import {
   getBacktesting,
   getAssistantDailyBrief,
@@ -25,6 +26,7 @@ import {
   getModels,
   getModelGovernance,
   getModelVersionsRegistry,
+  getMySubscription,
   getPipelineJobs,
   getPipelineStatus,
   getPerformance,
@@ -34,6 +36,7 @@ import type {
   BacktestingReport,
   BettingAssistantResponse,
   UserBetSummary,
+  SubscriptionResponse,
   ValueBetResponse,
   CalibrationReport,
   DatasetQualityReport,
@@ -1370,6 +1373,7 @@ function AnalysisCommandCenter({
   const [assistantReport, setAssistantReport] = useState<BettingAssistantResponse | null>(null);
   const [userBetSummary, setUserBetSummary] = useState<UserBetSummary | null>(null);
   const [valueBetReport, setValueBetReport] = useState<ValueBetResponse | null>(null);
+  const [subscription, setSubscription] = useState<SubscriptionResponse | null>(null);
   const productionModel = modelVersions.current_production_model;
   const candidateModel = modelVersions.latest_candidate_model;
   const productionVersion =
@@ -1448,6 +1452,11 @@ function AnalysisCommandCenter({
 
   useEffect(() => {
     let cancelled = false;
+    getMySubscription().then((report) => {
+      if (!cancelled) setSubscription(report);
+    }).catch(() => {
+      if (!cancelled) setSubscription(null);
+    });
     getUserBetSummary()
       .then((report) => {
         if (!cancelled) setUserBetSummary(report);
@@ -1485,6 +1494,15 @@ function AnalysisCommandCenter({
         <AnalysisKpi title="Backtesting shadow" value={hasShadowMetrics ? `${evaluable} évaluables` : 'En attente de résultats'} detail={`${evaluable} / ${minimumRequired} minimum`} />
         <AnalysisKpi title="Gouvernance" value={formatRecommendationStatus(modelGovernance.promotion_evaluation?.readiness ?? modelGovernance.promotion_readiness.level)} detail={modelGovernance.policy.automatic_promotion ? 'Automatique activé' : 'Promotion manuelle uniquement'} />
       </section>
+
+      {(subscription?.plan ?? 'free') === 'free' && (
+        <UpgradePrompt
+          feature="advanced_performance"
+          title="Aperçu analyse avancée"
+          description="Le plan gratuit conserve les indicateurs essentiels. Passez Premium ou Pro pour l'analyse value bet, la performance personnelle et le backtesting détaillé."
+          requiredPlan="Pro"
+        />
+      )}
 
       <section className="sectionSplit">
         <article className="card accent">

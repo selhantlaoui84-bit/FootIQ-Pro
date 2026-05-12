@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
-import { createUserBet, getUserBets, getUserBetSummary, settleUserBet } from '~/lib/api';
-import type { UserBet, UserBetSummary } from '~/lib/mock-data';
+import { UpgradePrompt } from '~/components/UpgradePrompt';
+import { createUserBet, getMySubscription, getUserBets, getUserBetSummary, settleUserBet } from '~/lib/api';
+import type { SubscriptionResponse, UserBet, UserBetSummary } from '~/lib/mock-data';
 
 const emptySummary: UserBetSummary = {
   status: 'ok',
@@ -21,6 +22,7 @@ const emptySummary: UserBetSummary = {
 export default function MyBetsPage() {
   const [bets, setBets] = useState<UserBet[]>([]);
   const [summary, setSummary] = useState<UserBetSummary>(emptySummary);
+  const [subscription, setSubscription] = useState<SubscriptionResponse | null>(null);
   const [statusFilter, setStatusFilter] = useState('all');
   const [message, setMessage] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -42,9 +44,13 @@ export default function MyBetsPage() {
 
   useEffect(() => {
     reload().catch(() => setMessage('Impossible de charger vos paris pour le moment.'));
+    getMySubscription().then(setSubscription).catch(() => setSubscription(null));
   }, []);
 
-  const filtered = statusFilter === 'all' ? bets : bets.filter((bet) => bet.status === statusFilter);
+  const freePlan = (subscription?.plan ?? 'free') === 'free';
+  const freeLimit = subscription?.limits?.bet_created?.limit ?? 10;
+  const filteredRaw = statusFilter === 'all' ? bets : bets.filter((bet) => bet.status === statusFilter);
+  const filtered = freePlan ? filteredRaw.slice(0, Number(freeLimit || 10)) : filteredRaw;
   const valuePositive = bets.filter((bet) => ['strong_value', 'positive_value'].includes(String(bet.value_status ?? bet.recommendation_type ?? '')));
   const noValue = bets.filter((bet) => ['no_value', 'avoid'].includes(String(bet.value_status ?? bet.recommendation_type ?? '')));
   const manualBets = bets.filter((bet) => bet.odds_source === 'manual_user_input');
@@ -96,6 +102,14 @@ export default function MyBetsPage() {
         </section>
 
         {message && <section className="banner info">{message}</section>}
+
+        {freePlan && bets.length >= Number(freeLimit || 10) && (
+          <UpgradePrompt
+            feature="my_bets"
+            title="Limite plan gratuit"
+            description="Limite du plan gratuit atteinte. Passez Premium pour suivre plus de paris."
+          />
+        )}
 
         <section className="compactDataGrid four">
           <div className="metric"><span>Paris</span><strong>{summary.total_bets}</strong></div>

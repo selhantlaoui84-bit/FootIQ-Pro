@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { MiniLineChart, TeamComparisonCurve, TeamCrest } from '~/components/ui';
-import { getAssistantDailyBrief, getMatches, getPredictions, getPublicDashboardSummary, getUserBetSummary, getValueBets } from '~/lib/api';
+import { getAssistantDailyBrief, getMatches, getMySubscription, getPredictions, getPublicDashboardSummary, getUserBetSummary, getValueBets } from '~/lib/api';
 import {
   matchHref,
   buildDashboardSummary,
@@ -13,6 +13,7 @@ import {
   type BettingAssistantResponse,
   type ValueBetResponse,
   type UserBetSummary,
+  type SubscriptionResponse,
   type Match,
   type Prediction,
 } from '~/lib/mock-data';
@@ -92,6 +93,7 @@ export default function DashboardPage({ matches, predictions, summary, reference
   const [assistantBrief, setAssistantBrief] = useState<BettingAssistantResponse | null>(null);
   const [userBetSummary, setUserBetSummary] = useState<UserBetSummary | null>(null);
   const [valueBetReport, setValueBetReport] = useState<ValueBetResponse | null>(null);
+  const [subscription, setSubscription] = useState<SubscriptionResponse | null>(null);
   const referenceTimestamp = new Date(referenceTime).getTime();
   const upcoming = [...matches]
     .filter((match) => isUpcoming(match, referenceTimestamp))
@@ -138,6 +140,11 @@ export default function DashboardPage({ matches, predictions, summary, reference
 
   useEffect(() => {
     let cancelled = false;
+    getMySubscription().then((report) => {
+      if (!cancelled) setSubscription(report);
+    }).catch(() => {
+      if (!cancelled) setSubscription(null);
+    });
     getAssistantDailyBrief()
       .then((report) => {
         if (!cancelled) setAssistantBrief(report);
@@ -241,6 +248,16 @@ export default function DashboardPage({ matches, predictions, summary, reference
           </div>
 
           <div className="premiumDashboardGrid">
+            <article className="premiumMiniPanel">
+              <h2>Abonnement</h2>
+              <div className="dataList compact">
+                <span>Plan actuel <strong>{subscription?.plan ?? 'free'}</strong></span>
+                <span>Prédictions <strong>{formatUsage(subscription?.limits?.prediction_view)}</strong></span>
+                <span>Assistant <strong>{formatUsage(subscription?.limits?.assistant_request)}</strong></span>
+              </div>
+              {(subscription?.plan ?? 'free') === 'free' && <p>Accès aperçu actif. Les analyses premium restent disponibles depuis la page pricing.</p>}
+              <Link className="premiumInlineButton" href="/pricing">Voir les plans</Link>
+            </article>
             <article className="premiumMiniPanel">
               <h2>Assistant du jour</h2>
               <div className="dataList compact">
@@ -411,6 +428,12 @@ function Stat({ label, value, href }: { label: string; value: number | string; h
       <strong>{value}</strong>
     </Link>
   );
+}
+
+function formatUsage(limit?: { used: number; limit: number | null }) {
+  if (!limit) return 'Données insuffisantes';
+  if (limit.limit == null) return `${limit.used} / illimité`;
+  return `${limit.used} / ${limit.limit}`;
 }
 
 function Panel({ title, empty, children }: { title: string; empty: string; children: ReactNode }) {

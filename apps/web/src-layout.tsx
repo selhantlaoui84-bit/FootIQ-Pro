@@ -4,10 +4,11 @@ import type { ReactNode } from 'react';
 import { useAuth } from '~/lib/auth';
 
 const links = [
-  { href: '/matches', label: 'Matchs', icon: '▣' },
-  { href: '/predictions', label: 'Prédictions', icon: '◎' },
-  { href: '/teams', label: 'Équipes', icon: '◇' },
-  { href: '/performance', label: 'Analyse', icon: '↗' },
+  { href: '/matches', label: 'Matchs', icon: 'M' },
+  { href: '/predictions', label: 'Prédictions', icon: 'P' },
+  { href: '/teams', label: 'Équipes', icon: 'E' },
+  { href: '/performance', label: 'Analyse', icon: 'A' },
+  { href: '/pricing', label: 'Pricing', icon: '€' },
 ];
 
 function formatToday() {
@@ -42,7 +43,7 @@ export function Layout({ children }: { children: ReactNode }) {
           {loading || hideAuthNavDuringLoginRedirect ? null : user ? (
             <>
               <Link className={isActive('/dashboard') ? 'active' : undefined} href="/dashboard">
-                <span aria-hidden="true">▦</span>
+                <span aria-hidden="true">D</span>
                 Tableau de bord
               </Link>
               {links.map((link) => (
@@ -52,12 +53,16 @@ export function Layout({ children }: { children: ReactNode }) {
                 </Link>
               ))}
               <Link className={isActive('/my-bets') ? 'active' : undefined} href="/my-bets">
-                <span aria-hidden="true">▱</span>
+                <span aria-hidden="true">B</span>
                 Mes paris
+              </Link>
+              <Link className={isActive('/profile') ? 'active' : undefined} href="/profile">
+                <span aria-hidden="true">IQ</span>
+                Abonnement
               </Link>
               {isAdmin && (
                 <Link className={isActive('/admin') ? 'active' : undefined} href="/admin">
-                  <span aria-hidden="true">♢</span>
+                  <span aria-hidden="true">A</span>
                   Admin
                 </Link>
               )}
@@ -65,16 +70,20 @@ export function Layout({ children }: { children: ReactNode }) {
           ) : (
             <>
               <Link className={isActive('/about') ? 'active' : undefined} href="/about">
-                <span aria-hidden="true">◇</span>
+                <span aria-hidden="true">I</span>
                 À propos
               </Link>
               <Link className={isActive('/login') ? 'active' : undefined} href="/login">
-                <span aria-hidden="true">◎</span>
+                <span aria-hidden="true">C</span>
                 Connexion
               </Link>
               <Link className={isActive('/register') ? 'active' : undefined} href="/register">
-                <span aria-hidden="true">＋</span>
+                <span aria-hidden="true">+</span>
                 Créer un compte
+              </Link>
+              <Link className={isActive('/pricing') ? 'active' : undefined} href="/pricing">
+                <span aria-hidden="true">€</span>
+                Pricing
               </Link>
             </>
           )}
@@ -114,9 +123,9 @@ export function Layout({ children }: { children: ReactNode }) {
 
       <div className="contentShell">
         <div className="pageToolbar" aria-label="Commandes rapides">
-          <span className="toolbarDate">▣ {today}</span>
-          <span className="toolbarButton">◇ Alertes</span>
-          <span className="toolbarButton">▽ Filtres</span>
+          <span className="toolbarDate">Date {today}</span>
+          <span className="toolbarButton">Alertes</span>
+          <span className="toolbarButton">Filtres</span>
         </div>
         <main>{children}</main>
         <footer className="siteFooter">

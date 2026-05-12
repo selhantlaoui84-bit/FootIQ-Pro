@@ -39,6 +39,12 @@ from services.calibration_engine import (
     create_calibration_candidate,
 )
 from services.betting_assistant import analyze_prediction, generate_daily_assistant_brief, generate_match_assistant_summary
+from services.billing_service import (
+    billing_status as build_billing_status,
+    create_checkout_session,
+    create_customer_portal_session,
+    handle_stripe_webhook,
+)
 from services.odds_engine import implied_probability_from_odds
 from services.odds_provider import fetch_real_odds_for_matches, is_odds_configured
 from services.value_bet_engine import build_value_bet_summary, evaluate_prediction_opportunity, rank_value_opportunities
@@ -1026,6 +1032,57 @@ def match_value_bets(match_id: str):
 
 def _request_user_id(x_user_id: str | None = Header(default=None, alias="X-User-Id")) -> str:
     return x_user_id or "local-user"
+
+
+@app.get("/billing/status")
+def billing_status():
+    overview = build_billing_status()
+    overview["storage"] = "postgresql" if repository.db_available() else "memory"
+    overview["plan_counts"] = repository.get_subscription_plan_counts()
+    return overview
+
+
+@app.get("/billing/subscription")
+def billing_subscription(x_user_id: str | None = Header(default=None, alias="X-User-Id")):
+    user_id = x_user_id or "local-user"
+    subscription = repository.get_user_subscription(user_id)
+    limits = {
+        feature: repository.check_usage_limit(user_id, feature)
+        for feature in ("prediction_view", "value_bet_view", "assistant_request", "bet_created", "performance_view")
+    }
+    return {
+        "status": "ok",
+        "user_id": user_id,
+        "plan": subscription.get("plan", "free"),
+        "subscription_status": subscription.get("status", "free"),
+        "current_period_end": subscription.get("current_period_end"),
+        "cancel_at_period_end": subscription.get("cancel_at_period_end", False),
+        "limits": limits,
+        "subscription": subscription,
+    }
+
+
+@app.post("/billing/create-checkout-session")
+async def billing_create_checkout_session(request: Request, x_user_id: str | None = Header(default=None, alias="X-User-Id")):
+    body = await request.json()
+    user_id = x_user_id or body.get("user_id") or "local-user"
+    plan = body.get("plan") or "premium"
+    interval = body.get("interval") or "monthly"
+    return create_checkout_session(str(user_id), str(plan), str(interval))
+
+
+@app.post("/billing/create-portal-session")
+def billing_create_portal_session(x_user_id: str | None = Header(default=None, alias="X-User-Id")):
+    return create_customer_portal_session(x_user_id or "local-user")
+
+
+@app.post("/billing/webhook")
+async def billing_webhook(request: Request, stripe_signature: str | None = Header(default=None, alias="Stripe-Signature")):
+    payload = await request.body()
+    result = handle_stripe_webhook(payload, stripe_signature)
+    if result.get("status") == "invalid_signature":
+        raise HTTPException(status_code=400, detail=result.get("detail"))
+    return result
 
 
 @app.get("/user-bets")
