@@ -41,6 +41,7 @@ from services.calibration_engine import (
 from services.betting_assistant import analyze_prediction, generate_daily_assistant_brief, generate_match_assistant_summary
 from services.odds_engine import implied_probability_from_odds
 from services.odds_provider import fetch_real_odds_for_matches, is_odds_configured
+from services.value_bet_engine import build_value_bet_summary, evaluate_prediction_opportunity, rank_value_opportunities
 from services.model_versioning import get_versions_report, list_model_versions, record_model_version
 from services.pipeline_orchestrator import run_after_match_finished_pipeline, run_daily_learning_pipeline, run_hourly_data_pipeline, run_pipeline_step
 from services.user_learning_engine import analyze_user_bets
@@ -942,6 +943,85 @@ def assistant_match(match_id: str):
 @app.get("/assistant/daily-brief")
 def assistant_daily_brief(limit: int = Query(default=30, ge=1, le=200)):
     return assistant_predictions(limit=limit)
+
+
+def _value_bet_context(predictions: list[dict[str, Any]]) -> dict[str, Any]:
+    calibration = _calibration_report()
+    return {
+        "odds_lookup": _odds_lookup_for_predictions(predictions),
+        "calibration_status": calibration.get("calibration_status"),
+    }
+
+
+@app.get("/value-bets")
+def value_bets(
+    market: str | None = None,
+    competition: str | None = None,
+    min_ev: float | None = None,
+    max_risk: int | None = None,
+    include_watchlist: bool = Query(default=True),
+    limit: int = Query(default=50, ge=1, le=500),
+):
+    predictions = _available_predictions()
+    context = _value_bet_context(predictions)
+    ranked = rank_value_opportunities(predictions, context)
+    filtered = []
+    for item in ranked:
+        if market and str(item.get("market") or "").lower() != market.lower():
+            continue
+        if competition and str(item.get("competition") or "").lower() != competition.lower():
+            continue
+        if min_ev is not None and (item.get("expected_value") is None or float(item.get("expected_value")) < min_ev):
+            continue
+        if max_risk is not None and item.get("risk_score") is not None and int(item.get("risk_score")) > max_risk:
+            continue
+        if not include_watchlist and item.get("opportunity_level") == "watchlist":
+            continue
+        if item.get("value_status") in {"strong_value", "positive_value"} or include_watchlist:
+            filtered.append(item)
+        if len(filtered) >= limit:
+            break
+    summary = build_value_bet_summary(ranked)
+    return {
+        "status": "ok",
+        "storage": "postgresql" if repository.db_available() else "memory",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "items_count": len(filtered),
+        "items": filtered,
+        "summary": summary,
+    }
+
+
+@app.get("/value-bets/match/{match_id}")
+def match_value_bets(match_id: str):
+    match = _find_match(match_id)
+    predictions = [item for item in _available_predictions() if str(item.get("match_id") or item.get("id") or item.get("slug")) == match_id or str(item.get("slug")) == match_id]
+    if not predictions and match is None:
+        raise HTTPException(status_code=404, detail="Match not found")
+    context = _value_bet_context(predictions)
+    items = [evaluate_prediction_opportunity(prediction, context) for prediction in predictions]
+    value_items = [item for item in items if item.get("is_value_bet")]
+    avoid_items = [item for item in items if item.get("recommendation_type") == "avoid" or item.get("opportunity_level") == "avoid"]
+    best = max(value_items, key=lambda item: item.get("opportunity_score") or 0, default=None)
+    odds_rows = repository.list_match_real_odds(match_id)
+    detail = "Cote réelle non disponible pour ce match." if not odds_rows else "Aucune value claire détectée sur les cotes disponibles."
+    if best:
+        detail = best.get("reason") or "Value bet détectée avec cote réelle."
+    return {
+        "status": "ok",
+        "match_id": match_id,
+        "home_team": (match or {}).get("home_team") or (predictions[0].get("home_team") if predictions else None),
+        "away_team": (match or {}).get("away_team") or (predictions[0].get("away_team") if predictions else None),
+        "items_count": len(items),
+        "items": items,
+        "best_value": best,
+        "markets_to_watch": [item for item in items if item.get("opportunity_level") in {"excellent", "good", "watchlist"}],
+        "markets_to_avoid": avoid_items,
+        "real_odds_count": len(odds_rows),
+        "missing_odds": [] if odds_rows else ["1X2"],
+        "detail": detail,
+        "summary": build_value_bet_summary(items),
+    }
 
 
 def _request_user_id(x_user_id: str | None = Header(default=None, alias="X-User-Id")) -> str:

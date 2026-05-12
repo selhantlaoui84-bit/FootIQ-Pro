@@ -20,6 +20,24 @@ def implied_probability_from_odds(odds: Any) -> float | None:
     return round(1 / normalized, 4)
 
 
+def fair_odds_from_probability(probability: Any) -> float | None:
+    normalized = _probability_01(probability)
+    if normalized is None or normalized <= 0:
+        return None
+    return round(1 / normalized, 4)
+
+
+def minimum_value_odds(probability: Any, margin: float = 0.02) -> float | None:
+    fair_odds = fair_odds_from_probability(probability)
+    if fair_odds is None:
+        return None
+    try:
+        safe_margin = max(0, float(margin))
+    except (TypeError, ValueError):
+        safe_margin = 0.02
+    return round(fair_odds * (1 + safe_margin), 4)
+
+
 def calculate_bookmaker_margin(odds_list: list[Any]) -> float | None:
     probabilities = [implied_probability_from_odds(item) for item in odds_list]
     clean = [item for item in probabilities if item is not None]
@@ -72,14 +90,50 @@ def calculate_expected_value(model_probability: Any, odds: Any) -> float | None:
     return round(probability * (decimal - 1) - (1 - probability), 4)
 
 
-def classify_value_bet(edge: Any, expected_value: Any, risk_score: Any = None) -> str:
+def calculate_risk_adjusted_value(expected_value: Any, risk_score: Any) -> float | None:
+    try:
+        ev = float(expected_value)
+    except (TypeError, ValueError):
+        return None
+    try:
+        risk = max(0, min(100, float(risk_score if risk_score is not None else 50)))
+    except (TypeError, ValueError):
+        risk = 50
+    return round(ev * (1 - risk / 100), 4)
+
+
+def calculate_value_score(probability: Any, odds_decimal: Any, risk_score: Any = None, reliability_score: Any = None) -> int | None:
+    edge = calculate_edge(probability, odds_decimal)
+    expected_value = calculate_expected_value(probability, odds_decimal)
+    if edge is None or expected_value is None:
+        return None
+    try:
+        risk = max(0, min(100, float(risk_score if risk_score is not None else 50)))
+    except (TypeError, ValueError):
+        risk = 50
+    try:
+        reliability = max(0, min(100, float(reliability_score if reliability_score is not None else 55)))
+    except (TypeError, ValueError):
+        reliability = 55
+    raw = (max(0, expected_value) * 240) + (max(0, edge) * 180) + (reliability * 0.2) - (risk * 0.25)
+    return int(max(0, min(100, round(raw))))
+
+
+def classify_value_opportunity(edge: Any, expected_value: Any, risk_score: Any = None, data_quality: Any = None) -> str:
     try:
         risk = float(risk_score) if risk_score is not None else None
     except (TypeError, ValueError):
         risk = None
     if edge is None or expected_value is None:
         return "no_real_odds"
+    try:
+        quality = float(data_quality) if data_quality is not None else None
+    except (TypeError, ValueError):
+        quality = None
+    if quality is not None and quality < 20:
+        return "insufficient_data"
     ev = float(expected_value)
+    edge_value = float(edge)
     if risk is not None and risk >= 85:
         return "avoid"
     if ev < -0.08:
@@ -88,9 +142,62 @@ def classify_value_bet(edge: Any, expected_value: Any, risk_score: Any = None) -
         return "no_value"
     if ev <= 0.02:
         return "fair_price"
-    if ev > 0.08:
+    if ev >= 0.08 and edge_value >= 0.05 and (risk is None or risk <= 60):
         return "strong_value"
-    return "positive_value"
+    if ev >= 0.02 and edge_value >= 0.02 and (risk is None or risk <= 75):
+        return "positive_value"
+    if risk is not None and risk > 75:
+        return "avoid"
+    if ev > 0.02:
+        return "fair_price"
+    return "no_value"
+
+
+def classify_value_bet(edge: Any, expected_value: Any, risk_score: Any = None) -> str:
+    return classify_value_opportunity(edge, expected_value, risk_score)
+
+
+def explain_value_opportunity(
+    value_status: str,
+    probability: Any = None,
+    odds_decimal: Any = None,
+    edge: Any = None,
+    expected_value: Any = None,
+    risk_score: Any = None,
+    stale: bool = False,
+) -> dict[str, Any]:
+    warnings: list[str] = []
+    if stale:
+        warnings.append("Cote ancienne : surveiller avant de décider.")
+    if value_status == "no_real_odds":
+        reason = "Cote réelle non disponible : impossible de calculer la value."
+    elif value_status == "insufficient_data":
+        reason = "Données insuffisantes pour qualifier cette opportunité."
+    elif value_status == "strong_value":
+        reason = "La cote est nettement supérieure à la cote juste estimée, avec un risque contenu."
+    elif value_status == "positive_value":
+        reason = "La cote est supérieure à notre cote juste estimée."
+    elif value_status == "fair_price":
+        reason = "La cote semble proche de la probabilité estimée."
+    elif value_status == "no_value":
+        reason = "Le modèle est confiant, mais la cote est trop basse pour créer une value."
+    else:
+        reason = "Le rapport value/risque invite à éviter cette opportunité."
+    if risk_score is not None:
+        try:
+            if float(risk_score) >= 75:
+                warnings.append("Risque élevé : prudence recommandée.")
+        except (TypeError, ValueError):
+            pass
+    return {
+        "reason": reason,
+        "warnings": warnings,
+        "fair_odds": fair_odds_from_probability(probability),
+        "minimum_value_odds": minimum_value_odds(probability),
+        "implied_probability": implied_probability_from_odds(odds_decimal),
+        "edge": edge,
+        "expected_value": expected_value,
+    }
 
 
 def enrich_prediction_with_real_odds(prediction: dict[str, Any], odds: dict[str, Any] | None) -> dict[str, Any]:

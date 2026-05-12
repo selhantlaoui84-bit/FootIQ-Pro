@@ -5,8 +5,8 @@ import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { TeamIdentity } from '~/components/TeamIdentity';
 import { TacticalPitch } from '~/components/ui';
-import { getAssistantMatch, getMatch, getPrediction } from '~/lib/api';
-import { getMockMatch, getMockPrediction, matches, statusClass, teamNameHref, type AssistantMatchResponse, type Match, type Prediction } from '~/lib/mock-data';
+import { getAssistantMatch, getMatch, getPrediction, getMatchValueBets } from '~/lib/api';
+import { getMockMatch, getMockPrediction, matches, statusClass, teamNameHref, type AssistantMatchResponse, type Match, type MatchValueBetResponse, type Prediction } from '~/lib/mock-data';
 import { resolveMatchTeamLogo } from '~/lib/team-logos';
 import { formatCompetitionLabel, formatFinishedMatchSummary, formatKickoffFr, formatMatchStatusLabel, formatScore, formatWinnerLabel } from '~/lib/ui-text';
 import { Layout } from '~/src-layout';
@@ -34,6 +34,7 @@ export const getStaticProps: GetStaticProps<MatchDetailProps> = async ({ params 
 
 export default function MatchDetailPage({ match, prediction }: MatchDetailProps) {
   const [assistant, setAssistant] = useState<AssistantMatchResponse | null>(null);
+  const [valueBets, setValueBets] = useState<MatchValueBetResponse | null>(null);
   const kickoff = prediction.kickoff || match.kickoff;
   const finished = isFinished(match) || isFinished(prediction);
   const homeScore = match.score_full_time_home ?? prediction.score_full_time_home;
@@ -56,6 +57,20 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
       })
       .catch(() => {
         if (!cancelled) setAssistant(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [match.slug, prediction.match_id, prediction.slug]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getMatchValueBets(prediction.match_id || prediction.slug || match.slug)
+      .then((report) => {
+        if (!cancelled) setValueBets(report);
+      })
+      .catch(() => {
+        if (!cancelled) setValueBets(null);
       });
     return () => {
       cancelled = true;
@@ -153,6 +168,29 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
           <div className="cardActions">
             <a className="button secondary" href="/my-bets">Ajouter un pari</a>
           </div>
+        </section>
+
+        <section className="card accent">
+          <p className="eyebrow">Value bets du match</p>
+          <h2>{valueBets?.best_value ? 'Meilleure opportunité value' : 'Analyse des cotes disponibles'}</h2>
+          <p>{valueBets?.detail ?? 'Cote réelle non disponible pour ce match.'}</p>
+          {valueBets?.best_value ? (
+            <div className="compactDataGrid four">
+              <div className="metric"><span>Marché</span><strong>{valueBets.best_value.market} - {valueBets.best_value.selection}</strong></div>
+              <div className="metric"><span>Cote réelle</span><strong>{valueBets.best_value.odds_decimal?.toFixed(2) ?? 'Cote réelle non disponible'}</strong></div>
+              <div className="metric"><span>Cote juste</span><strong>{valueBets.best_value.fair_odds?.toFixed(2) ?? 'Données insuffisantes'}</strong></div>
+              <div className="metric"><span>Score opportunité</span><strong>{valueBets.best_value.opportunity_score ?? 'Données insuffisantes'}</strong></div>
+              <div className="metric"><span>EV</span><strong>{valueBets.best_value.expected_value != null ? valueBets.best_value.expected_value.toFixed(3) : 'Non calculable'}</strong></div>
+              <div className="metric"><span>Value ajustée risque</span><strong>{valueBets.best_value.risk_adjusted_value != null ? valueBets.best_value.risk_adjusted_value.toFixed(3) : 'Non calculable'}</strong></div>
+              <div className="metric"><span>Niveau</span><strong>{valueBets.best_value.opportunity_level}</strong></div>
+              <div className="metric"><span>Risque</span><strong>{valueBets.best_value.risk_level}</strong></div>
+            </div>
+          ) : (
+            <div className="emptyState">{valueBets?.real_odds_count ? 'Aucune value claire détectée sur les cotes disponibles.' : 'Cote réelle non disponible pour ce match.'}</div>
+          )}
+          {(valueBets?.markets_to_avoid ?? []).length > 0 && (
+            <div className="banner warning">Marchés à éviter : {valueBets?.markets_to_avoid?.map((item) => `${item.market} ${item.selection}`).join(', ')}</div>
+          )}
         </section>
 
         <section className="sectionSplit premiumSectionSplit">

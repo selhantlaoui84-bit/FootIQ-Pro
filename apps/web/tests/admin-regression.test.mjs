@@ -27,6 +27,8 @@ const assistantMatchProxy = new URL('../pages/api/assistant/match/[id].ts', impo
 const assistantDailyBriefProxy = new URL('../pages/api/assistant/daily-brief.ts', import.meta.url);
 const oddsMatchProxy = new URL('../pages/api/odds/match/[id].ts', import.meta.url);
 const oddsPredictionProxy = new URL('../pages/api/odds/prediction.ts', import.meta.url);
+const valueBetsProxy = new URL('../pages/api/value-bets/index.ts', import.meta.url);
+const matchValueBetsProxy = new URL('../pages/api/value-bets/match/[id].ts', import.meta.url);
 const hourlyCron = new URL('../pages/api/cron/hourly-refresh.ts', import.meta.url);
 const matchFinishedCron = new URL('../pages/api/cron/match-finished-check.ts', import.meta.url);
 const dailyLearningCron = new URL('../pages/api/cron/daily-learning.ts', import.meta.url);
@@ -49,6 +51,7 @@ const teamIdentityComponent = new URL('../components/TeamIdentity.tsx', import.m
 const layoutSourceFile = new URL('../src-layout.tsx', import.meta.url);
 const globalStyles = new URL('../styles/globals.css', import.meta.url);
 const backendMain = new URL('../../api/main.py', import.meta.url);
+const valueBetEngine = new URL('../../api/services/value_bet_engine.py', import.meta.url);
 const runtimeStore = new URL('../../api/data/runtime_store.py', import.meta.url);
 
 const brokenEncoding = new RegExp('\\u00c3|\\u00c2|\\u00e2\\u20ac|\\ufffd');
@@ -145,6 +148,8 @@ async function run() {
     [await readFile(assistantDailyBriefProxy, 'utf8'), /\/assistant\/daily-brief/],
     [await readFile(oddsMatchProxy, 'utf8'), /\/odds\/match\/\$\{encodeURIComponent\(id\)\}/],
     [await readFile(oddsPredictionProxy, 'utf8'), /\/odds\/prediction/],
+    [await readFile(valueBetsProxy, 'utf8'), /\/value-bets/],
+    [await readFile(matchValueBetsProxy, 'utf8'), /\/value-bets\/match\/\$\{encodeURIComponent\(id\)\}/],
   ];
 
   for (const [source, pathPattern] of publicProxyChecks) {
@@ -362,11 +367,15 @@ async function run() {
   assert.match(apiClientSource, /getAssistantDailyBrief/);
   assert.match(apiClientSource, /getMatchOdds/);
   assert.match(apiClientSource, /getPredictionOdds/);
+  assert.match(apiClientSource, /getValueBets/);
+  assert.match(apiClientSource, /getMatchValueBets/);
   assert.match(apiClientSource, /\/api\/assistant\/predictions/);
   assert.match(apiClientSource, /\/api\/assistant\/match\/\$\{encodeURIComponent\(matchId\)\}/);
   assert.match(apiClientSource, /\/api\/assistant\/daily-brief/);
   assert.match(apiClientSource, /\/api\/odds\/match\/\$\{encodeURIComponent\(matchId\)\}/);
   assert.match(apiClientSource, /\/api\/odds\/prediction/);
+  assert.match(apiClientSource, /\/api\/value-bets/);
+  assert.match(apiClientSource, /\/api\/value-bets\/match\/\$\{encodeURIComponent\(matchId\)\}/);
   assert.match(apiClientSource, /fetchProxyJson<RefreshJobStatus>\(`\/api\/admin\/shadow-prediction-job-status/);
   assert.match(apiClientSource, /Impossible de charger \/features\/summary depuis le backend\./);
   assert.doesNotMatch(apiClientSource, /safeFetchJson/);
@@ -451,12 +460,29 @@ async function run() {
   assert.match(performancePageSource, /Gouvernance/);
   assert.match(performancePageSource, /Pipeline IA/);
   assert.match(performancePageSource, /Qualité des recommandations/);
+  assert.match(performancePageSource, /Analyse value bet/);
   assert.match(performancePageSource, /getAssistantDailyBrief/);
   assert.match(performancePageSource, /formatMetricWhenAvailable/);
   assert.match(performancePageSource, /invalid_predictions/);
   assert.match(performancePageSource, /production_metrics/);
   assert.match(performancePageSource, /shadowHasMetrics/);
   assert.doesNotMatch(performancePageSource, /Précision shadow<\/span>\s*<strong>\{shadowBacktesting\.shadow_accuracy\}%/);
+
+  assert.match(predictionsPageSource, /Value Bets/);
+  assert.match(predictionsPageSource, /Cote réelle non disponible/);
+
+  assert.match(matchDetailSource, /Value bets du match/);
+
+  assert.match(dashboardPageSource, /Opportunités value/);
+
+  const adminPageValueSource = await readFile(adminPage, 'utf8');
+  assert.match(adminPageValueSource, /Contrôle value bets/);
+
+  const myBetsSource = await readFile(new URL('../pages/my-bets.tsx', import.meta.url), 'utf8');
+  assert.match(myBetsSource, /ROI sur paris value/);
+
+  const valueEngineSource = await readFile(valueBetEngine, 'utf8');
+  assert.match(valueEngineSource, /def evaluate_value_bet/);
 
   const uiSource = await readFile(uiComponents, 'utf8');
   assert.doesNotMatch(uiSource, brokenEncoding);

@@ -4,15 +4,8 @@ from collections import Counter
 from datetime import datetime, timezone
 from typing import Any
 
-from services.odds_engine import (
-    calculate_edge,
-    calculate_expected_value,
-    classify_value_bet,
-    implied_probability_from_odds,
-    probability_for_selection,
-    select_reference_odds,
-    selection_from_prediction,
-)
+from services.odds_engine import probability_for_selection, select_reference_odds, selection_from_prediction
+from services.value_bet_engine import evaluate_value_bet
 
 FORBIDDEN_PROMISES = (
     "pari " + "sûr",
@@ -121,11 +114,11 @@ def analyze_prediction(prediction: dict[str, Any], context: dict[str, Any] | Non
     model_probability = probability_for_selection(prediction, selection)
     raw_probability = probability_for_selection({**prediction, "calibrated_probabilities_json": None}, selection)
     odds = _odds_for_prediction(prediction, context.get("odds_lookup"), selection)
-    decimal = (odds or {}).get("odds_decimal")
-    implied = implied_probability_from_odds(decimal)
-    edge = calculate_edge(model_probability, decimal)
-    expected_value = calculate_expected_value(model_probability, decimal)
-    value_status = classify_value_bet(edge, expected_value, prediction.get("risk_score")) if decimal else "no_real_odds"
+    opportunity = evaluate_value_bet(prediction, odds, context)
+    decimal = opportunity.get("odds_decimal")
+    edge = opportunity.get("edge")
+    expected_value = opportunity.get("expected_value")
+    value_status = opportunity.get("value_status")
     risk = assess_bet_risk(
         prediction,
         {
@@ -147,11 +140,20 @@ def analyze_prediction(prediction: dict[str, Any], context: dict[str, Any] | Non
         "calibrated_probability": model_probability if prediction.get("calibration", {}).get("applied") or prediction.get("calibration_version") else None,
         "used_probability": model_probability,
         "odds": decimal,
-        "bookmaker": (odds or {}).get("bookmaker"),
-        "implied_probability": implied,
+        "bookmaker": opportunity.get("bookmaker"),
+        "odds_source": opportunity.get("odds_source"),
+        "odds_collected_at": opportunity.get("odds_collected_at"),
+        "odds_stale": opportunity.get("odds_stale"),
+        "implied_probability": opportunity.get("implied_probability"),
+        "fair_odds": opportunity.get("fair_odds"),
+        "minimum_value_odds": opportunity.get("minimum_value_odds"),
         "edge": edge,
         "expected_value": expected_value,
+        "risk_adjusted_value": opportunity.get("risk_adjusted_value"),
         "value_status": value_status,
+        "opportunity_score": opportunity.get("opportunity_score"),
+        "opportunity_level": opportunity.get("opportunity_level"),
+        "warnings": opportunity.get("warnings") or [],
         **risk,
         **recommendation,
     }

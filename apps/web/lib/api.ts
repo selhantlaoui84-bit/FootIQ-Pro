@@ -34,6 +34,8 @@ import {
   mockLearningMonitoringReport,
   mockAssistantResponse,
   mockAssistantMatchResponse,
+  mockValueBetResponse,
+  mockMatchValueBetResponse,
   mockUserBetsResponse,
   mockUserBetSummary,
   mockModelPromotionAudit,
@@ -83,6 +85,8 @@ import {
   type PipelineStatus,
   type BettingAssistantResponse,
   type AssistantMatchResponse,
+  type ValueBetResponse,
+  type MatchValueBetResponse,
   type UserBet,
   type UserBetsResponse,
   type UserBetSummary,
@@ -214,6 +218,20 @@ export async function getAssistantMatch(matchId: string): Promise<AssistantMatch
   if (IS_BUILD) return { ...mockAssistantMatchResponse, match_id: matchId };
 
   return fetchProxyJson<AssistantMatchResponse>(`/api/assistant/match/${encodeURIComponent(matchId)}`, undefined, 15000);
+}
+
+export async function getValueBets(filters: { market?: string; competition?: string; min_ev?: number; max_risk?: number; include_watchlist?: boolean; limit?: number } = {}): Promise<ValueBetResponse> {
+  if (IS_BUILD) return mockValueBetResponse;
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined && value !== null && value !== '') params.set(key, String(value));
+  }
+  return fetchProxyJson<ValueBetResponse>(`/api/value-bets${params.toString() ? `?${params.toString()}` : ''}`, undefined, 15000);
+}
+
+export async function getMatchValueBets(matchId: string): Promise<MatchValueBetResponse> {
+  if (IS_BUILD) return { ...mockMatchValueBetResponse, match_id: matchId };
+  return fetchProxyJson<MatchValueBetResponse>(`/api/value-bets/match/${encodeURIComponent(matchId)}`, undefined, 15000);
 }
 
 export async function getMatchOdds(matchId: string): Promise<{ status: string; odds?: unknown[]; detail?: string }> {

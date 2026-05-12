@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { MiniLineChart, TeamComparisonCurve, TeamCrest } from '~/components/ui';
-import { getAssistantDailyBrief, getMatches, getPredictions, getPublicDashboardSummary, getUserBetSummary } from '~/lib/api';
+import { getAssistantDailyBrief, getMatches, getPredictions, getPublicDashboardSummary, getUserBetSummary, getValueBets } from '~/lib/api';
 import {
   matchHref,
   buildDashboardSummary,
@@ -11,6 +11,7 @@ import {
   statusClass,
   type DashboardSummary,
   type BettingAssistantResponse,
+  type ValueBetResponse,
   type UserBetSummary,
   type Match,
   type Prediction,
@@ -90,6 +91,7 @@ export const getServerSideProps: GetServerSideProps<DashboardProps> = async () =
 export default function DashboardPage({ matches, predictions, summary, referenceTime }: DashboardProps) {
   const [assistantBrief, setAssistantBrief] = useState<BettingAssistantResponse | null>(null);
   const [userBetSummary, setUserBetSummary] = useState<UserBetSummary | null>(null);
+  const [valueBetReport, setValueBetReport] = useState<ValueBetResponse | null>(null);
   const referenceTimestamp = new Date(referenceTime).getTime();
   const upcoming = [...matches]
     .filter((match) => isUpcoming(match, referenceTimestamp))
@@ -142,6 +144,20 @@ export default function DashboardPage({ matches, predictions, summary, reference
       })
       .catch(() => {
         if (!cancelled) setAssistantBrief(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    getValueBets({ limit: 5, include_watchlist: true })
+      .then((report) => {
+        if (!cancelled) setValueBetReport(report);
+      })
+      .catch(() => {
+        if (!cancelled) setValueBetReport(null);
       });
     return () => {
       cancelled = true;
@@ -247,15 +263,20 @@ export default function DashboardPage({ matches, predictions, summary, reference
               <Link className="premiumInlineButton" href="/my-bets">Ouvrir mes paris</Link>
             </article>
             <article className="premiumMiniPanel">
-              <h2>Opportunités à valeur attendue</h2>
-              {signalPredictions.slice(0, 4).map((prediction) => (
-                <Link className="marketLine" href={matchHref(prediction)} key={prediction.match_id}>
-                  <span>{prediction.home_team}</span>
-                  <strong>Cote réelle non disponible</strong>
-                  <em>{prediction.confidence.score}% modèle</em>
+              <h2>Opportunités value</h2>
+              <div className="dataList compact">
+                <span>Value détectées <strong>{valueBetReport ? valueBetReport.summary.strong_value_count + valueBetReport.summary.positive_value_count : 'Données insuffisantes'}</strong></span>
+                <span>Cotes manquantes <strong>{valueBetReport?.summary.no_real_odds_count ?? 'Cotes réelles non disponibles pour le moment.'}</strong></span>
+              </div>
+              {(valueBetReport?.items ?? []).slice(0, 4).map((item) => (
+                <Link className="marketLine" href={`/matches/${item.match_id}`} key={item.match_id}>
+                  <span>{item.home_team}</span>
+                  <strong>{item.opportunity_score != null ? `${item.opportunity_score}/100` : 'Données insuffisantes'}</strong>
+                  <em>{item.expected_value != null ? `EV ${item.expected_value.toFixed(3)}` : 'Cote réelle non disponible'}</em>
                 </Link>
               ))}
-              {signalPredictions.length === 0 && <p className="muted">Aucune opportunité classée. Consultez toutes les prédictions.</p>}
+              {!valueBetReport?.items?.length && <p className="muted">Cotes réelles non disponibles pour le moment.</p>}
+              <Link className="premiumInlineButton" href="/predictions?filter=value">Voir les value bets</Link>
             </article>
             <article className="premiumMiniPanel radarPanel">
               <h2>Comparaison des équipes</h2>
