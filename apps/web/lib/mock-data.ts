@@ -60,10 +60,14 @@ export type Prediction = {
   calibration?: {
     applied: boolean;
     method: string;
+    calibration_version?: string | null;
     overconfidence_factor?: number;
     draw_adjustment?: number;
     confidence_penalty?: number;
   };
+  calibration_version?: string | null;
+  original_probabilities?: { home: number; draw: number; away: number };
+  calibrated_probabilities_json?: { home: number; draw: number; away: number };
   probabilities: { home: number; draw: number; away: number };
   goals: {
     expected_home: number;
@@ -552,20 +556,49 @@ export type LearningFeedbackReport = {
 
 export type CalibrationBucket = {
   bucket: string;
+  bucket_label?: string;
+  min_confidence?: number;
+  max_confidence?: number;
   count: number;
+  predictions_count?: number;
+  wins_count?: number;
+  losses_count?: number;
   predicted_probability: number;
-  observed_success_rate: number;
+  predicted_confidence_avg?: number | null;
+  observed_success_rate: number | null;
+  actual_success_rate?: number | null;
+  calibration_gap?: number | null;
   calibration_factor: number;
+  status?: string;
 };
 
 export type CalibrationReport = {
   status: string;
+  storage?: string;
+  calibration_status?: string;
+  active_calibration_version?: string | null;
+  latest_calibration_version?: string | null;
   calibration_version: string;
   model_version: string;
   generated_at?: string;
+  samples_count?: number;
   sample_size: number;
+  minimum_required?: number;
   global_calibration_factor: number;
+  expected_calibration_error?: number | null;
+  mean_absolute_calibration_error?: number | null;
+  max_calibration_gap?: number | null;
+  overconfidence_score?: number | null;
+  underconfidence_score?: number | null;
+  reliability_score?: number | null;
   buckets: CalibrationBucket[];
+  factors?: Record<string, unknown>;
+  recommendation?: {
+    status?: string;
+    reason?: string;
+    next_action?: string;
+  };
+  calibration_record?: Record<string, unknown> | null;
   source_metrics?: {
     accuracy?: number | null;
     log_loss?: number | null;
@@ -681,7 +714,12 @@ export type LearningMonitoringReport = {
   governance_status?: string;
   feature_store_status?: string;
   latest_feedback_at?: string | null;
+  active_calibration_version?: string | null;
   latest_calibration_version?: string | null;
+  calibration_samples_count?: number | null;
+  calibration_minimum_required?: number | null;
+  calibration_gap?: number | null;
+  reliability_score?: number | null;
   model_versions_count?: number;
   production_model_version?: string | null;
   latest_candidate_model_version?: string | null;
@@ -1881,18 +1919,40 @@ export const mockLearningFeedbackReport: LearningFeedbackReport = {
 
 export const mockCalibrationReport: CalibrationReport = {
   status: 'empty',
+  storage: 'postgresql',
+  calibration_status: 'insufficient_data',
+  active_calibration_version: null,
+  latest_calibration_version: 'calibration-buckets-v1',
   calibration_version: 'calibration-buckets-v1',
   model_version: 'all',
+  samples_count: 0,
   sample_size: 0,
+  minimum_required: 30,
   global_calibration_factor: 1,
+  expected_calibration_error: null,
+  mean_absolute_calibration_error: null,
+  max_calibration_gap: null,
+  overconfidence_score: null,
+  underconfidence_score: null,
+  reliability_score: null,
   buckets: [
-    { bucket: '0-49', count: 0, predicted_probability: 0.245, observed_success_rate: 0, calibration_factor: 1 },
-    { bucket: '50-59', count: 0, predicted_probability: 0.545, observed_success_rate: 0, calibration_factor: 1 },
-    { bucket: '60-69', count: 0, predicted_probability: 0.645, observed_success_rate: 0, calibration_factor: 1 },
-    { bucket: '70-79', count: 0, predicted_probability: 0.745, observed_success_rate: 0, calibration_factor: 1 },
-    { bucket: '80-89', count: 0, predicted_probability: 0.845, observed_success_rate: 0, calibration_factor: 1 },
-    { bucket: '90-100', count: 0, predicted_probability: 0.95, observed_success_rate: 0, calibration_factor: 1 },
+    { bucket: '0-10', bucket_label: '0-10%', count: 0, predictions_count: 0, predicted_probability: 0.05, observed_success_rate: null, actual_success_rate: null, calibration_gap: null, calibration_factor: 1, status: 'insufficient_data' },
+    { bucket: '10-20', bucket_label: '10-20%', count: 0, predictions_count: 0, predicted_probability: 0.15, observed_success_rate: null, actual_success_rate: null, calibration_gap: null, calibration_factor: 1, status: 'insufficient_data' },
+    { bucket: '20-30', bucket_label: '20-30%', count: 0, predictions_count: 0, predicted_probability: 0.25, observed_success_rate: null, actual_success_rate: null, calibration_gap: null, calibration_factor: 1, status: 'insufficient_data' },
+    { bucket: '30-40', bucket_label: '30-40%', count: 0, predictions_count: 0, predicted_probability: 0.35, observed_success_rate: null, actual_success_rate: null, calibration_gap: null, calibration_factor: 1, status: 'insufficient_data' },
+    { bucket: '40-50', bucket_label: '40-50%', count: 0, predictions_count: 0, predicted_probability: 0.45, observed_success_rate: null, actual_success_rate: null, calibration_gap: null, calibration_factor: 1, status: 'insufficient_data' },
+    { bucket: '50-60', bucket_label: '50-60%', count: 0, predictions_count: 0, predicted_probability: 0.55, observed_success_rate: null, actual_success_rate: null, calibration_gap: null, calibration_factor: 1, status: 'insufficient_data' },
+    { bucket: '60-70', bucket_label: '60-70%', count: 0, predictions_count: 0, predicted_probability: 0.65, observed_success_rate: null, actual_success_rate: null, calibration_gap: null, calibration_factor: 1, status: 'insufficient_data' },
+    { bucket: '70-80', bucket_label: '70-80%', count: 0, predictions_count: 0, predicted_probability: 0.75, observed_success_rate: null, actual_success_rate: null, calibration_gap: null, calibration_factor: 1, status: 'insufficient_data' },
+    { bucket: '80-90', bucket_label: '80-90%', count: 0, predictions_count: 0, predicted_probability: 0.85, observed_success_rate: null, actual_success_rate: null, calibration_gap: null, calibration_factor: 1, status: 'insufficient_data' },
+    { bucket: '90-100', bucket_label: '90-100%', count: 0, predictions_count: 0, predicted_probability: 0.95, observed_success_rate: null, actual_success_rate: null, calibration_gap: null, calibration_factor: 1, status: 'insufficient_data' },
   ],
+  factors: { method: 'bucket_scaling', active: false, global_correction: 0 },
+  recommendation: {
+    status: 'collect_more_data',
+    reason: 'Données insuffisantes pour activer une calibration fiable.',
+    next_action: 'Continuer le shadow testing.',
+  },
 };
 
 export const mockModelVersionsResponse: ModelVersionsResponse = {
@@ -1914,7 +1974,12 @@ export const mockLearningMonitoringReport: LearningMonitoringReport = {
   governance_status: 'ok',
   feature_store_status: 'empty',
   latest_feedback_at: null,
+  active_calibration_version: null,
   latest_calibration_version: 'calibration-buckets-v1',
+  calibration_samples_count: 0,
+  calibration_minimum_required: 30,
+  calibration_gap: null,
+  reliability_score: null,
   model_versions_count: 0,
   production_model_version: 'elo-poisson-calibrated-v1',
   latest_candidate_model_version: null,

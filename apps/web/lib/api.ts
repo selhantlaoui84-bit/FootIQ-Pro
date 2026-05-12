@@ -443,6 +443,40 @@ export async function getCalibrationReport(): Promise<CalibrationReport> {
   return fetchProxyJson<CalibrationReport>('/api/admin/calibration', undefined, 15000);
 }
 
+export async function recomputeCalibration(options: { modelVersion?: string | null; method?: string } = {}): Promise<CalibrationReport> {
+  if (IS_BUILD) return mockCalibrationReport;
+
+  return fetchProxyJson<CalibrationReport>(
+    '/api/admin/recompute-calibration',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        model_version: options.modelVersion ?? null,
+        method: options.method ?? 'bucket_scaling',
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    },
+    60000,
+  );
+}
+
+export async function activateCalibration(options: { calibrationVersion: string; confirm: boolean }): Promise<CalibrationReport> {
+  if (IS_BUILD) return mockCalibrationReport;
+
+  return fetchProxyJson<CalibrationReport>(
+    '/api/admin/activate-calibration',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        calibration_version: options.calibrationVersion,
+        confirm: options.confirm,
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    },
+    60000,
+  );
+}
+
 export async function getModelVersionsRegistry(): Promise<ModelVersionsResponse> {
   if (IS_BUILD) return mockModelVersionsResponse;
 

@@ -7,7 +7,16 @@ from sqlalchemy import create_engine, text
 
 import main
 from data import database, repository
-from services.calibration_engine import build_calibration_profile, calibrate_prediction
+from services.calibration_engine import (
+    apply_bucket_calibration_binary,
+    apply_bucket_calibration_multiclass,
+    build_confidence_buckets,
+    build_calibration_profile,
+    build_global_calibration_metrics,
+    calibrate_prediction,
+    create_calibration_candidate,
+    generate_calibration_version,
+)
 from services.feedback_engine import build_feedback_report
 from services.ml_training import (
     extract_numeric_features,
@@ -181,10 +190,77 @@ class LearningEngineTests(unittest.TestCase):
         )
         calibrated = calibrate_prediction(prediction("future", 70, 20, 10), profile)
 
-        self.assertEqual(profile["calibration_version"], "calibration-buckets-v1")
+        self.assertTrue(profile["calibration_version"].startswith("calib-bucket_scaling-all-"))
         self.assertEqual(sum(calibrated["probabilities"].values()), 100)
-        self.assertEqual(calibrated["calibration_version"], "calibration-buckets-v1")
-        self.assertTrue(calibrated["calibration"]["applied"])
+        self.assertEqual(calibrated["calibration_version"], profile["calibration_version"])
+        self.assertFalse(calibrated["calibration"]["applied"])
+        self.assertEqual(profile["calibration_status"], "insufficient_data")
+
+    def test_build_confidence_buckets_empty(self):
+        buckets = build_confidence_buckets([])
+        self.assertEqual(len(buckets), 10)
+        self.assertTrue(all(bucket["status"] == "insufficient_data" for bucket in buckets))
+        self.assertTrue(all(bucket["actual_success_rate"] is None for bucket in buckets))
+
+    def test_build_confidence_buckets_insufficient_data(self):
+        buckets = build_confidence_buckets([{"confidence": 0.64, "correct": True}])
+        target = next(bucket for bucket in buckets if bucket["bucket_label"] == "60-70%")
+        self.assertEqual(target["predictions_count"], 1)
+        self.assertEqual(target["status"], "insufficient_data")
+        self.assertIsNone(target["calibration_gap"])
+
+    def test_build_confidence_buckets_overconfident(self):
+        rows = [{"confidence": 0.82, "correct": index < 3} for index in range(10)]
+        bucket = next(item for item in build_confidence_buckets(rows) if item["bucket_label"] == "80-90%")
+        self.assertEqual(bucket["status"], "overconfident")
+        self.assertLess(bucket["calibration_gap"], 0)
+
+    def test_build_confidence_buckets_underconfident(self):
+        rows = [{"confidence": 0.52, "correct": index < 8} for index in range(10)]
+        bucket = next(item for item in build_confidence_buckets(rows) if item["bucket_label"] == "50-60%")
+        self.assertEqual(bucket["status"], "underconfident")
+        self.assertGreater(bucket["calibration_gap"], 0)
+
+    def test_global_calibration_metrics(self):
+        rows = [{"confidence": 0.62, "correct": index < 18} for index in range(30)]
+        buckets = build_confidence_buckets(rows)
+        metrics = build_global_calibration_metrics(buckets, 30)
+        self.assertGreaterEqual(metrics["samples_count"], 30)
+        self.assertIsNotNone(metrics["expected_calibration_error"])
+        self.assertIn(metrics["calibration_status"], {"mostly_calibrated", "mixed", "overconfident", "underconfident"})
+
+    def test_generate_calibration_version(self):
+        version = generate_calibration_version("ml candidate/v1", "bucket_scaling")
+        self.assertTrue(version.startswith("calib-bucket_scaling-ml-candidate-v1-"))
+
+    def test_create_calibration_candidate(self):
+        profile = build_calibration_profile(
+            [finished_match(f"c{i}", "home") for i in range(30)],
+            [prediction(f"c{i}", 60, 25, 15) for i in range(30)],
+            model_version="elo-poisson-calibrated-v1",
+        )
+        candidate = create_calibration_candidate(profile)
+        self.assertEqual(candidate["status"], "candidate")
+        self.assertEqual(candidate["samples_count"], 30)
+        self.assertIn("expected_calibration_error", candidate["metrics"])
+
+    def test_calibration_insufficient_data_not_activated(self):
+        self.use_sqlite_registry()
+        profile = build_calibration_profile([finished_match("i1", "home")], [prediction("i1", 60, 25, 15)])
+        saved = repository.create_model_calibration(create_calibration_candidate(profile))
+        self.assertIsNotNone(saved)
+        activated = repository.activate_calibration_version(saved["calibration_version"])
+        self.assertIsNone(activated)
+
+    def test_apply_bucket_calibration_binary(self):
+        profile = {"factors": {"active": True, "global_correction": -0.1, "bucket_corrections": {"70-80%": -0.1}}}
+        self.assertEqual(apply_bucket_calibration_binary(0.72, profile), 0.62)
+
+    def test_apply_bucket_calibration_multiclass_renormalizes(self):
+        profile = {"factors": {"active": True, "global_correction": -0.1, "bucket_corrections": {"70-80%": -0.1}}}
+        calibrated = apply_bucket_calibration_multiclass({"home": 72, "draw": 18, "away": 10}, profile)
+        self.assertEqual(sum(calibrated.values()), 100)
+        self.assertLess(calibrated["home"], 72)
 
     def test_model_versioning_appends_entries(self):
         registry_path = Path(__file__).with_name("_tmp_model_versions.json")
@@ -774,6 +850,37 @@ class LearningEngineTests(unittest.TestCase):
 
         self.assertIn("promotion_readiness", report)
         self.assertFalse(report["promotion_allowed"])
+
+    def test_learning_calibration_endpoint(self):
+        self.use_sqlite_registry()
+        with patch.object(main, "_available_matches", return_value=[finished_match("cal-endpoint", "home")]), patch.object(main, "_available_predictions", return_value=[prediction("cal-endpoint", 65, 20, 15)]):
+            report = main.learning_calibration()
+
+        self.assertEqual(report["storage"], "postgresql")
+        self.assertEqual(report["calibration_status"], "insufficient_data")
+        self.assertIn("buckets", report)
+
+    def test_recompute_calibration_endpoint(self):
+        self.use_sqlite_registry()
+        matches = [finished_match(f"recompute-{index}", "home") for index in range(30)]
+        preds = [prediction(f"recompute-{index}", 60, 25, 15) for index in range(30)]
+        with patch.object(main, "_available_matches", return_value=matches), patch.object(main, "_available_predictions", return_value=preds):
+            report = asyncio.run(main.recompute_learning_calibration(FakeRequest({"method": "bucket_scaling"}), x_admin_key=None))
+
+        self.assertEqual(report["status"], "ok")
+        self.assertIsNotNone(report["calibration_record"])
+        self.assertEqual(report["calibration_record"]["status"], "candidate")
+
+    def test_activate_calibration_requires_confirm(self):
+        self.use_sqlite_registry()
+        result = asyncio.run(main.activate_learning_calibration(FakeRequest({"calibration_version": "missing"}), x_admin_key=None))
+        self.assertEqual(result["status"], "blocked")
+
+    def test_learning_monitoring_includes_calibration(self):
+        self.use_sqlite_registry()
+        report = main.learning_monitoring()
+        self.assertIn("calibration_samples_count", report)
+        self.assertIn("calibration_minimum_required", report)
 
     def test_pipeline_job_lifecycle_success(self):
         self.use_sqlite_registry()

@@ -7,6 +7,7 @@ import {
   getAdminAlerts,
   getAdminDiagnostics,
   getAdminWorkflowStatus,
+  activateCalibration,
   getBackendHealth,
   getCalibrationReport,
   getDashboardSummary,
@@ -25,6 +26,7 @@ import {
   getRefreshJobStatus,
   getRefreshStatus,
   refreshData,
+  recomputeCalibration,
   promoteCandidateModel,
   rollbackProductionModel,
   resetStaleJobs,
@@ -168,6 +170,17 @@ function formatDate(value?: string | null) {
   return value;
 }
 
+function formatNullable(value: unknown, fallback = 'Données insuffisantes') {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === 'number' && !Number.isFinite(value)) return 'Non disponible';
+  return String(value);
+}
+
+function formatRate(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return 'Données insuffisantes';
+  return `${Math.round(value * 100)}%`;
+}
+
 function trainingFeatureCount(report?: TrainingReport | null) {
   if (!report) return 0;
   if (typeof report.features_used === 'number') return report.features_used;
@@ -199,6 +212,9 @@ export default function AdminPage() {
   const [learningMonitoring, setLearningMonitoring] = useState<LearningMonitoringReport | null>(null);
   const [shadowBacktesting, setShadowBacktesting] = useState<MlShadowBacktesting | null>(null);
   const [calibrationReport, setCalibrationReport] = useState<CalibrationReport | null>(null);
+  const [calibrationActionResult, setCalibrationActionResult] = useState<CalibrationReport | null>(null);
+  const [isRecomputingCalibration, setIsRecomputingCalibration] = useState(false);
+  const [isActivatingCalibration, setIsActivatingCalibration] = useState(false);
   const [modelVersions, setModelVersions] = useState<ModelVersionsResponse | null>(null);
   const [promotionAudit, setPromotionAudit] = useState<ModelPromotionAuditResponse | null>(null);
   const [promotionResult, setPromotionResult] = useState<PromoteCandidateModelResponse | RollbackProductionModelResponse | null>(null);
@@ -759,6 +775,47 @@ export default function AdminPage() {
     }
   }
 
+  async function handleRecomputeCalibration() {
+    if (!isAdmin) return;
+    setIsRecomputingCalibration(true);
+    setError(null);
+    try {
+      const result = await recomputeCalibration({
+        modelVersion: candidateModel?.model_version ?? learningMonitoring?.latest_candidate_model_version ?? null,
+        method: 'bucket_scaling',
+      });
+      setCalibrationActionResult(result);
+      setCalibrationReport(result);
+      await reloadAdminState();
+    } catch (calibrationError) {
+      setError(calibrationError instanceof Error ? calibrationError.message : 'Recalcul calibration indisponible.');
+    } finally {
+      setIsRecomputingCalibration(false);
+    }
+  }
+
+  async function handleActivateCalibration() {
+    const calibrationVersion = calibrationReport?.latest_calibration_version ?? calibrationReport?.calibration_version;
+    if (!isAdmin || !calibrationVersion) return;
+    const confirmed = window.confirm('Je confirme vouloir activer cette calibration pour les futures prédictions.');
+    if (!confirmed) return;
+
+    setIsActivatingCalibration(true);
+    setError(null);
+    try {
+      const result = await activateCalibration({ calibrationVersion, confirm: true });
+      setCalibrationActionResult(result);
+      if (result.status !== 'success') {
+        setError(result.status === 'blocked' ? 'Activation calibration bloquée : données insuffisantes.' : 'Activation calibration impossible.');
+      }
+      await reloadAdminState();
+    } catch (calibrationError) {
+      setError(calibrationError instanceof Error ? calibrationError.message : 'Activation calibration indisponible.');
+    } finally {
+      setIsActivatingCalibration(false);
+    }
+  }
+
   async function handlePromoteCandidate() {
     const modelVersion = candidateModel?.model_version ?? promotionEvaluation?.candidate_model_version;
     if (!modelVersion) {
@@ -1238,18 +1295,19 @@ export default function AdminPage() {
           <div className="cardTop">
             <div>
               <p className="eyebrow">Auto-learning</p>
-              <h2>Feedback, calibration et versions</h2>
+              <h2>Feedback, Calibration intelligente et versions</h2>
             </div>
-            <span className="badge">{calibrationReport?.calibration_version ?? 'calibration-buckets-v1'}</span>
+            <span className="badge">{calibrationReport?.latest_calibration_version ?? calibrationReport?.calibration_version ?? 'calibration-buckets-v1'}</span>
           </div>
           <div className="compactDataGrid four">
-            <div className="metric"><span>Matchs évalués</span><strong>{learningFeedback?.evaluated_matches ?? 0}</strong></div>
-            <div className="metric"><span>Accuracy feedback</span><strong>{learningFeedback?.accuracy ?? 0}%</strong></div>
+            <div className="metric"><span>Matchs évalués</span><strong>{learningFeedback?.evaluated_matches ?? 'Non disponible'}</strong></div>
+            <div className="metric"><span>Accuracy feedback</span><strong>{learningFeedback && learningFeedback.evaluated_matches > 0 ? `${learningFeedback.accuracy}%` : 'Données insuffisantes'}</strong></div>
             <div className="metric"><span>Log loss</span><strong>{learningFeedback?.log_loss ?? 'N/A'}</strong></div>
             <div className="metric"><span>Brier score</span><strong>{learningFeedback?.brier_score ?? 'N/A'}</strong></div>
             <div className="metric"><span>ROI théorique</span><strong>{learningFeedback?.theoretical_roi ?? 'N/A'}</strong></div>
-            <div className="metric"><span>Facteur calibration</span><strong>{calibrationReport?.global_calibration_factor ?? 1}</strong></div>
-            <div className="metric"><span>Sample calibration</span><strong>{calibrationReport?.sample_size ?? 0}</strong></div>
+            <div className="metric"><span>Statut calibration</span><strong>{calibrationReport?.calibration_status ?? calibrationReport?.status ?? 'Non disponible'}</strong></div>
+            <div className="metric"><span>Sample calibration</span><strong>{calibrationReport ? `${calibrationReport.samples_count ?? calibrationReport.sample_size} / ${calibrationReport.minimum_required ?? 30}` : 'Non disponible'}</strong></div>
+            <div className="metric"><span>Reliability score</span><strong>{formatNullable(calibrationReport?.reliability_score)}</strong></div>
             <div className="metric"><span>Versions suivies</span><strong>{modelVersions?.versions_count ?? modelVersions?.versions.length ?? 0}</strong></div>
             <div className="metric"><span>Storage versions</span><strong>{modelVersions?.storage ?? learningMonitoring?.storage ?? 'inconnu'}</strong></div>
           </div>
@@ -1261,7 +1319,8 @@ export default function AdminPage() {
                 <span>Statut <strong>{learningMonitoring?.status ?? 'unknown'}</strong></span>
                 <span>Stockage <strong>{learningMonitoring?.storage ?? modelVersions?.storage ?? 'inconnu'}</strong></span>
                 <span>Feedback <strong>{learningMonitoring?.feedback_status ?? 'unknown'}</strong></span>
-                <span>Calibration <strong>{learningMonitoring?.latest_calibration_version ?? calibrationReport?.calibration_version ?? 'N/A'}</strong></span>
+                <span>Calibration active <strong>{learningMonitoring?.active_calibration_version ?? calibrationReport?.active_calibration_version ?? 'Aucune'}</strong></span>
+                <span>Dernière calibration <strong>{learningMonitoring?.latest_calibration_version ?? calibrationReport?.latest_calibration_version ?? calibrationReport?.calibration_version ?? 'N/A'}</strong></span>
                 <span>Production <strong>{learningMonitoring?.production_model_version ?? modelVersions?.current_production_model?.model_version ?? 'N/A'}</strong></span>
                 <span>Candidat <strong>{learningMonitoring?.latest_candidate_model_version ?? modelVersions?.latest_candidate_model?.model_version ?? 'N/A'}</strong></span>
               </div>
@@ -1283,6 +1342,63 @@ export default function AdminPage() {
                 <span>Accuracy candidat <strong>{modelVersions?.latest_candidate_model?.accuracy ?? 'N/A'}</strong></span>
                 <span>Log loss candidat <strong>{modelVersions?.latest_candidate_model?.log_loss ?? 'N/A'}</strong></span>
                 <span>Brier candidat <strong>{modelVersions?.latest_candidate_model?.brier_score ?? 'N/A'}</strong></span>
+              </div>
+            </article>
+          </div>
+
+          <div className="sectionSplit">
+            <article>
+              <h3>Calibration intelligente</h3>
+              <div className="dataList">
+                <span>Active <strong>{calibrationReport?.active_calibration_version ?? 'Aucune'}</strong></span>
+                <span>Dernière <strong>{calibrationReport?.latest_calibration_version ?? calibrationReport?.calibration_version ?? 'N/A'}</strong></span>
+                <span>Observations <strong>{calibrationReport ? `${calibrationReport.samples_count ?? calibrationReport.sample_size} / ${calibrationReport.minimum_required ?? 30}` : 'Non disponible'}</strong></span>
+                <span>Expected calibration error <strong>{formatNullable(calibrationReport?.expected_calibration_error)}</strong></span>
+                <span>Écart max <strong>{formatNullable(calibrationReport?.max_calibration_gap)}</strong></span>
+                <span>Overconfidence <strong>{formatNullable(calibrationReport?.overconfidence_score)}</strong></span>
+                <span>Underconfidence <strong>{formatNullable(calibrationReport?.underconfidence_score)}</strong></span>
+                <span>Recommendation <strong>{calibrationReport?.recommendation?.status ?? 'Non disponible'}</strong></span>
+              </div>
+              {calibrationReport?.recommendation?.reason && (
+                <div className="banner info">{calibrationReport.recommendation.reason}</div>
+              )}
+              {calibrationActionResult?.status && (
+                <div className={calibrationActionResult.status === 'success' || calibrationActionResult.status === 'ok' ? 'banner success' : 'banner warning'}>
+                  Calibration : {calibrationActionResult.status}
+                </div>
+              )}
+              <div className="actions">
+                <button className="button secondary" type="button" onClick={handleRecomputeCalibration} disabled={!isAdmin || isRecomputingCalibration}>
+                  {isRecomputingCalibration ? 'Recalcul...' : 'Recalculer la calibration'}
+                </button>
+                <button
+                  className="button primary"
+                  type="button"
+                  onClick={handleActivateCalibration}
+                  disabled={
+                    !isAdmin ||
+                    isActivatingCalibration ||
+                    !calibrationReport?.latest_calibration_version ||
+                    (calibrationReport.samples_count ?? calibrationReport.sample_size ?? 0) < (calibrationReport.minimum_required ?? 30) ||
+                    calibrationReport.calibration_status === 'insufficient_data'
+                  }
+                >
+                  {isActivatingCalibration ? 'Activation...' : 'Activer la calibration'}
+                </button>
+              </div>
+            </article>
+            <article>
+              <h3>Lecture des buckets</h3>
+              <div className="dataList">
+                {(calibrationReport?.buckets ?? []).filter((bucket) => (bucket.predictions_count ?? bucket.count ?? 0) > 0).slice(0, 5).map((bucket) => (
+                  <span key={bucket.bucket_label ?? bucket.bucket}>
+                    {bucket.bucket_label ?? bucket.bucket}
+                    <strong>{bucket.status ?? 'insufficient_data'} / {formatNullable(bucket.calibration_gap)}</strong>
+                  </span>
+                ))}
+                {(calibrationReport?.buckets ?? []).every((bucket) => (bucket.predictions_count ?? bucket.count ?? 0) === 0) && (
+                  <span>Données insuffisantes <strong>En attente</strong></span>
+                )}
               </div>
             </article>
           </div>
@@ -1319,9 +1435,9 @@ export default function AdminPage() {
             </div>
             {(calibrationReport?.buckets ?? []).map((bucket) => (
               <div className="metricTableRow bucketRow" key={bucket.bucket}>
-                <span>{bucket.bucket}</span>
+                <span>{bucket.bucket_label ?? bucket.bucket}</span>
                 <strong>{Math.round(bucket.predicted_probability * 100)}%</strong>
-                <strong>{Math.round(bucket.observed_success_rate * 100)}%</strong>
+                <strong>{formatRate(bucket.observed_success_rate ?? bucket.actual_success_rate)}</strong>
                 <strong>{bucket.calibration_factor}</strong>
               </div>
             ))}
