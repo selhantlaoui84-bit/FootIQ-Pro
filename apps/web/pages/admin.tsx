@@ -7,6 +7,7 @@ import {
   getAdminAlerts,
   getAdminDiagnostics,
   getAdminWorkflowStatus,
+  getBillingStatus,
   activateCalibration,
   getBackendHealth,
   getCalibrationReport,
@@ -65,6 +66,7 @@ import type {
   RefreshResponse,
   TrainingReport,
   ValueBetResponse,
+  BillingStatusResponse,
 } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
 
@@ -227,6 +229,7 @@ export default function AdminPage() {
   const [pipelineJobs, setPipelineJobs] = useState<PipelineJobsResponse | null>(null);
   const [pipelineResult, setPipelineResult] = useState<PipelineRunResponse | null>(null);
   const [valueBetReport, setValueBetReport] = useState<ValueBetResponse | null>(null);
+  const [billingStatus, setBillingStatus] = useState<BillingStatusResponse | null>(null);
   const [isRunningPipeline, setIsRunningPipeline] = useState(false);
   const [adminAlerts, setAdminAlerts] = useState<AdminAlertsReport | null>(null);
   const [modelType, setModelType] = useState('random_forest');
@@ -362,6 +365,7 @@ export default function AdminPage() {
       pipelineJobsResult,
       alertsResult,
       dashboardResult,
+      billingResult,
     ] = await Promise.all([
       getBackendHealth().catch(() => null),
       captureAdminLoad(getRefreshStatus(), 'Impossible de charger /admin/refresh-status'),
@@ -379,6 +383,7 @@ export default function AdminPage() {
       captureAdminLoad(getPipelineJobs(30), 'Impossible de charger /pipeline/jobs'),
       captureAdminLoad(getAdminAlerts(), 'Impossible de charger /admin/alerts'),
       captureAdminLoad(getDashboardSummary(), 'Impossible de charger /dashboard/summary'),
+      getBillingStatus().catch(() => null),
     ]);
 
     setHealth(healthResult);
@@ -424,6 +429,7 @@ export default function AdminPage() {
     if (pipelineJobsResult.data) setPipelineJobs(pipelineJobsResult.data);
     if (alertsResult.data) setAdminAlerts(alertsResult.data);
     if (dashboardResult.data) setDashboardSummary(dashboardResult.data);
+    if (billingResult) setBillingStatus(billingResult);
   }
 
   async function handleDiagnostics() {
@@ -980,6 +986,29 @@ export default function AdminPage() {
             <div className="metric"><span>EV moyenne</span><strong>{valueBetReport?.summary.average_ev == null ? 'Données insuffisantes' : valueBetReport.summary.average_ev.toFixed(3)}</strong></div>
             <div className="metric"><span>Items analysés</span><strong>{valueBetReport?.items_count ?? 'Données insuffisantes'}</strong></div>
           </div>
+        </section>
+
+        <section className="card sectionAnchor" id="billing-saas">
+          <div className="cardTop">
+            <div>
+              <p className="eyebrow">Billing SaaS</p>
+              <h2>Abonnements et configuration paiement</h2>
+            </div>
+            <Link className="button secondary" href="/pricing">Voir pricing</Link>
+          </div>
+          <div className="compactDataGrid four">
+            <div className="metric"><span>Billing configuré</span><strong>{billingStatus?.billing_configured ? 'oui' : 'non'}</strong></div>
+            <div className="metric"><span>Webhook</span><strong>{billingStatus?.webhook_configured ? 'configuré' : 'absent'}</strong></div>
+            <div className="metric"><span>Users free</span><strong>{billingStatus?.plan_counts?.free ?? 0}</strong></div>
+            <div className="metric"><span>Users premium</span><strong>{billingStatus?.plan_counts?.premium ?? 0}</strong></div>
+            <div className="metric"><span>Users pro</span><strong>{billingStatus?.plan_counts?.pro ?? 0}</strong></div>
+            <div className="metric"><span>Storage</span><strong>{billingStatus?.storage ?? 'memory'}</strong></div>
+            <div className="metric"><span>Prix Premium</span><strong>{billingStatus?.price_ids_configured?.premium_monthly ? 'configuré' : 'absent'}</strong></div>
+            <div className="metric"><span>Prix Pro</span><strong>{billingStatus?.price_ids_configured?.pro_monthly ? 'configuré' : 'absent'}</strong></div>
+          </div>
+          {!billingStatus?.billing_configured && (
+            <div className="banner warning">Paiement non configuré : renseigner les variables Stripe serveur et les price ids avant la production.</div>
+          )}
         </section>
 
         <section className="card sectionAnchor" id="pipeline-automation">

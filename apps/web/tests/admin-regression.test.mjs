@@ -29,6 +29,10 @@ const oddsMatchProxy = new URL('../pages/api/odds/match/[id].ts', import.meta.ur
 const oddsPredictionProxy = new URL('../pages/api/odds/prediction.ts', import.meta.url);
 const valueBetsProxy = new URL('../pages/api/value-bets/index.ts', import.meta.url);
 const matchValueBetsProxy = new URL('../pages/api/value-bets/match/[id].ts', import.meta.url);
+const billingStatusProxy = new URL('../pages/api/billing/status.ts', import.meta.url);
+const billingSubscriptionProxy = new URL('../pages/api/billing/subscription.ts', import.meta.url);
+const billingCheckoutProxy = new URL('../pages/api/billing/create-checkout-session.ts', import.meta.url);
+const billingPortalProxy = new URL('../pages/api/billing/create-portal-session.ts', import.meta.url);
 const hourlyCron = new URL('../pages/api/cron/hourly-refresh.ts', import.meta.url);
 const matchFinishedCron = new URL('../pages/api/cron/match-finished-check.ts', import.meta.url);
 const dailyLearningCron = new URL('../pages/api/cron/daily-learning.ts', import.meta.url);
@@ -42,7 +46,12 @@ const dashboardPage = new URL('../pages/dashboard.tsx', import.meta.url);
 const matchesPage = new URL('../pages/matches.tsx', import.meta.url);
 const matchDetailPage = new URL('../pages/matches/[id].tsx', import.meta.url);
 const predictionsPage = new URL('../pages/predictions.tsx', import.meta.url);
+const pricingPage = new URL('../pages/pricing.tsx', import.meta.url);
+const profilePage = new URL('../pages/profile.tsx', import.meta.url);
 const performancePage = new URL('../pages/performance.tsx', import.meta.url);
+const upgradePrompt = new URL('../components/UpgradePrompt.tsx', import.meta.url);
+const premiumGate = new URL('../components/PremiumGate.tsx', import.meta.url);
+const featureAccess = new URL('../lib/feature-access.ts', import.meta.url);
 const uiComponents = new URL('../components/ui.tsx', import.meta.url);
 const teamAssets = new URL('../lib/team-assets.ts', import.meta.url);
 const teamLogos = new URL('../lib/team-logos.ts', import.meta.url);
@@ -150,6 +159,10 @@ async function run() {
     [await readFile(oddsPredictionProxy, 'utf8'), /\/odds\/prediction/],
     [await readFile(valueBetsProxy, 'utf8'), /\/value-bets/],
     [await readFile(matchValueBetsProxy, 'utf8'), /\/value-bets\/match\/\$\{encodeURIComponent\(id\)\}/],
+    [await readFile(billingStatusProxy, 'utf8'), /\/billing\/status/],
+    [await readFile(billingSubscriptionProxy, 'utf8'), /\/billing\/subscription/],
+    [await readFile(billingCheckoutProxy, 'utf8'), /\/billing\/create-checkout-session/],
+    [await readFile(billingPortalProxy, 'utf8'), /\/billing\/create-portal-session/],
   ];
 
   for (const [source, pathPattern] of publicProxyChecks) {
@@ -369,6 +382,10 @@ async function run() {
   assert.match(apiClientSource, /getPredictionOdds/);
   assert.match(apiClientSource, /getValueBets/);
   assert.match(apiClientSource, /getMatchValueBets/);
+  assert.match(apiClientSource, /getBillingStatus/);
+  assert.match(apiClientSource, /getMySubscription/);
+  assert.match(apiClientSource, /createCheckoutSession/);
+  assert.match(apiClientSource, /createPortalSession/);
   assert.match(apiClientSource, /\/api\/assistant\/predictions/);
   assert.match(apiClientSource, /\/api\/assistant\/match\/\$\{encodeURIComponent\(matchId\)\}/);
   assert.match(apiClientSource, /\/api\/assistant\/daily-brief/);
@@ -376,6 +393,10 @@ async function run() {
   assert.match(apiClientSource, /\/api\/odds\/prediction/);
   assert.match(apiClientSource, /\/api\/value-bets/);
   assert.match(apiClientSource, /\/api\/value-bets\/match\/\$\{encodeURIComponent\(matchId\)\}/);
+  assert.match(apiClientSource, /\/api\/billing\/status/);
+  assert.match(apiClientSource, /\/api\/billing\/subscription/);
+  assert.match(apiClientSource, /\/api\/billing\/create-checkout-session/);
+  assert.match(apiClientSource, /\/api\/billing\/create-portal-session/);
   assert.match(apiClientSource, /fetchProxyJson<RefreshJobStatus>\(`\/api\/admin\/shadow-prediction-job-status/);
   assert.match(apiClientSource, /Impossible de charger \/features\/summary depuis le backend\./);
   assert.doesNotMatch(apiClientSource, /safeFetchJson/);
@@ -426,6 +447,31 @@ async function run() {
   assert.match(predictionsPageSource, /Cote/);
   assert.match(predictionsPageSource, /Expected value|EV/);
   assert.match(predictionsPageSource, /getAssistantPredictions/);
+  assert.match(predictionsPageSource, /UpgradePrompt/);
+
+  const pricingSource = await readFile(pricingPage, 'utf8');
+  assert.doesNotMatch(pricingSource, brokenEncoding);
+  assert.match(pricingSource, /Pricing/);
+  assert.match(pricingSource, /Bientôt disponible/);
+  assert.match(pricingSource, /createCheckoutSession/);
+
+  const profileSource = await readFile(profilePage, 'utf8');
+  assert.doesNotMatch(profileSource, brokenEncoding);
+  assert.match(profileSource, /Abonnement/);
+  assert.match(profileSource, /getMySubscription/);
+  assert.match(profileSource, /createPortalSession/);
+
+  const upgradePromptSource = await readFile(upgradePrompt, 'utf8');
+  assert.match(upgradePromptSource, /export function UpgradePrompt/);
+  assert.match(upgradePromptSource, /\/pricing/);
+
+  const premiumGateSource = await readFile(premiumGate, 'utf8');
+  assert.match(premiumGateSource, /export function PremiumGate/);
+  assert.match(premiumGateSource, /canAccessFeature/);
+
+  const featureAccessSource = await readFile(featureAccess, 'utf8');
+  assert.match(featureAccessSource, /canViewValueBets/);
+  assert.match(featureAccessSource, /getFeatureLimit/);
 
   const dashboardPageSource = await readFile(dashboardPage, 'utf8');
   assert.doesNotMatch(dashboardPageSource, brokenEncoding);
@@ -436,6 +482,7 @@ async function run() {
   assert.match(dashboardPageSource, /TeamCrest name=\{prediction\.home_team\} logoUrl=/);
   assert.match(dashboardPageSource, /Assistant du jour/);
   assert.match(dashboardPageSource, /getAssistantDailyBrief/);
+  assert.match(dashboardPageSource, /Plan actuel|Abonnement/);
   assert.match(dashboardPageSource, /isUpcomingPrediction\(prediction, referenceTimestamp\)/);
   assert.doesNotMatch(dashboardPageSource, /isUpcomingPrediction\(prediction, referenceDayStart\)/);
   assert.doesNotMatch(dashboardPageSource, /\.filter\(\(match\) => String\(match\.status \?\? ''\)\.toUpperCase\(\) !== 'FINISHED'\)/);
@@ -461,6 +508,7 @@ async function run() {
   assert.match(performancePageSource, /Pipeline IA/);
   assert.match(performancePageSource, /Qualité des recommandations/);
   assert.match(performancePageSource, /Analyse value bet/);
+  assert.match(performancePageSource, /UpgradePrompt/);
   assert.match(performancePageSource, /getAssistantDailyBrief/);
   assert.match(performancePageSource, /formatMetricWhenAvailable/);
   assert.match(performancePageSource, /invalid_predictions/);
@@ -478,8 +526,11 @@ async function run() {
   const adminPageValueSource = await readFile(adminPage, 'utf8');
   assert.match(adminPageValueSource, /Contrôle value bets/);
 
+  assert.match(adminPageValueSource, /Billing SaaS/);
+
   const myBetsSource = await readFile(new URL('../pages/my-bets.tsx', import.meta.url), 'utf8');
   assert.match(myBetsSource, /ROI sur paris value/);
+  assert.match(myBetsSource, /Limite du plan gratuit|UpgradePrompt/);
 
   const valueEngineSource = await readFile(valueBetEngine, 'utf8');
   assert.match(valueEngineSource, /def evaluate_value_bet/);

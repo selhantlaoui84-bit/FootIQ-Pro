@@ -39,6 +39,7 @@ from services.odds_engine import (
 )
 from services.odds_provider import fetch_real_odds_for_matches, is_odds_configured
 from services.betting_assistant import analyze_prediction
+from services.billing_service import create_checkout_session, map_price_to_plan, sync_subscription_from_stripe
 from services.user_learning_engine import detect_risky_patterns, detect_user_strengths
 from services.value_bet_engine import evaluate_value_bet
 from services.pipeline_orchestrator import run_hourly_data_pipeline, run_pipeline_step
@@ -1270,6 +1271,89 @@ class LearningEngineTests(unittest.TestCase):
         ]
         self.assertTrue(detect_user_strengths("u1", bets))
         self.assertTrue(detect_risky_patterns("u1", bets))
+
+    def test_default_user_plan_is_free(self):
+        self.use_sqlite_registry()
+
+        subscription = repository.get_user_subscription("billing-u1")
+
+        self.assertEqual(subscription["plan"], "free")
+        self.assertEqual(subscription["status"], "free")
+
+    def test_upsert_user_subscription_and_get_user_plan(self):
+        self.use_sqlite_registry()
+
+        subscription = repository.upsert_user_subscription("billing-u1", plan="premium", status="active", stripe_customer_id="cus_123")
+
+        self.assertEqual(subscription["plan"], "premium")
+        self.assertEqual(repository.get_user_plan("billing-u1"), "premium")
+        self.assertTrue(repository.is_user_premium("billing-u1"))
+
+    def test_usage_limit_free_predictions(self):
+        self.use_sqlite_registry()
+
+        for _ in range(5):
+            repository.record_usage_event("usage-u1", "prediction_view")
+
+        limit = repository.check_usage_limit("usage-u1", "prediction_view")
+        self.assertFalse(limit["allowed"])
+        self.assertEqual(limit["plan"], "free")
+        self.assertEqual(limit["limit"], 5)
+
+    def test_record_usage_event(self):
+        self.use_sqlite_registry()
+
+        repository.record_usage_event("usage-u2", "assistant_request", metadata={"source": "test"})
+
+        self.assertEqual(repository.get_usage_count("usage-u2", "assistant_request"), 1)
+
+    def test_billing_status_without_stripe_config(self):
+        with patch.dict("os.environ", {"STRIPE_SECRET_KEY": "", "APP_BASE_URL": ""}, clear=False):
+            report = main.billing_status()
+
+        self.assertEqual(report["status"], "ok")
+        self.assertFalse(report["billing_configured"])
+
+    def test_create_checkout_session_requires_stripe_config(self):
+        with patch.dict("os.environ", {"STRIPE_SECRET_KEY": "", "APP_BASE_URL": ""}, clear=False):
+            report = create_checkout_session("billing-u1", "premium", "monthly")
+
+        self.assertEqual(report["status"], "billing_not_configured")
+
+    def test_map_price_to_plan(self):
+        with patch.dict("os.environ", {"STRIPE_PRICE_PREMIUM_MONTHLY": "price_premium", "STRIPE_PRICE_PRO_MONTHLY": "price_pro"}, clear=False):
+            self.assertEqual(map_price_to_plan("price_premium"), "premium")
+            self.assertEqual(map_price_to_plan("price_pro"), "pro")
+
+    def test_webhook_subscription_updated_and_deleted(self):
+        self.use_sqlite_registry()
+        event = {
+            "type": "customer.subscription.updated",
+            "data": {
+                "object": {
+                    "id": "sub_123",
+                    "customer": "cus_123",
+                    "status": "active",
+                    "metadata": {"user_id": "billing-u3", "plan": "pro"},
+                    "items": {"data": [{"price": {"id": "price_pro"}}]},
+                    "current_period_start": 1760000000,
+                    "current_period_end": 1762600000,
+                }
+            },
+        }
+
+        updated = sync_subscription_from_stripe(event)
+        deleted = sync_subscription_from_stripe({**event, "type": "customer.subscription.deleted"})
+
+        self.assertEqual(updated["subscription"]["plan"], "pro")
+        self.assertEqual(deleted["subscription"]["plan"], "free")
+
+    def test_subscription_user_scoping(self):
+        self.use_sqlite_registry()
+        repository.upsert_user_subscription("billing-u4", plan="premium", status="active")
+
+        self.assertEqual(repository.get_user_plan("billing-u4"), "premium")
+        self.assertEqual(repository.get_user_plan("billing-u5"), "free")
 
 
 if __name__ == "__main__":

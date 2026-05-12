@@ -1,7 +1,7 @@
 ﻿import json
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy import text
@@ -872,6 +872,275 @@ def compute_user_competition_performance(user_id: str, bets: list[dict] | None =
         profit = sum(float(item.get("result_profit") or 0) for item in settled)
         report.append({"competition": competition, "settled_bets": len(settled), "net_profit": round(profit, 4), "roi": round(profit / staked, 4) if staked else None})
     return report
+
+
+PLAN_FREE = "free"
+PLAN_PREMIUM = "premium"
+PLAN_PRO = "pro"
+PLAN_ADMIN = "admin"
+VALID_SUBSCRIPTION_PLANS = {PLAN_FREE, PLAN_PREMIUM, PLAN_PRO, PLAN_ADMIN}
+VALID_SUBSCRIPTION_STATUSES = {"active", "trialing", "past_due", "canceled", "incomplete", "free"}
+FEATURE_LIMITS = {
+    PLAN_FREE: {
+        "prediction_view": 5,
+        "value_bet_view": 2,
+        "assistant_request": 3,
+        "bet_created": 10,
+        "performance_view": 3,
+    },
+    PLAN_PREMIUM: {
+        "prediction_view": 200,
+        "value_bet_view": 100,
+        "assistant_request": 50,
+        "bet_created": 250,
+        "performance_view": 100,
+    },
+    PLAN_PRO: {
+        "prediction_view": 1000,
+        "value_bet_view": 500,
+        "assistant_request": 200,
+        "bet_created": 2000,
+        "performance_view": 500,
+    },
+    PLAN_ADMIN: {},
+}
+
+
+def _subscription_from_row(row: dict | None) -> dict | None:
+    if not row:
+        return None
+    return {
+        "id": row.get("id"),
+        "user_id": row.get("user_id"),
+        "plan": row.get("plan") or PLAN_FREE,
+        "status": row.get("status") or "free",
+        "stripe_customer_id": row.get("stripe_customer_id"),
+        "stripe_subscription_id": row.get("stripe_subscription_id"),
+        "stripe_price_id": row.get("stripe_price_id"),
+        "current_period_start": _iso(row.get("current_period_start")),
+        "current_period_end": _iso(row.get("current_period_end")),
+        "cancel_at_period_end": bool(row.get("cancel_at_period_end")) if row.get("cancel_at_period_end") is not None else False,
+        "created_at": _iso(row.get("created_at")),
+        "updated_at": _iso(row.get("updated_at")),
+    }
+
+
+def default_subscription(user_id: str) -> dict:
+    return {
+        "id": None,
+        "user_id": user_id,
+        "plan": PLAN_FREE,
+        "status": "free",
+        "stripe_customer_id": None,
+        "stripe_subscription_id": None,
+        "stripe_price_id": None,
+        "current_period_start": None,
+        "current_period_end": None,
+        "cancel_at_period_end": False,
+        "created_at": None,
+        "updated_at": None,
+    }
+
+
+def get_user_subscription(user_id: str) -> dict:
+    if not user_id or not db_available():
+        return default_subscription(user_id or "local-user")
+    init_db()
+    row = fetch_one_safe(
+        text(
+            """
+            SELECT *
+            FROM user_subscriptions
+            WHERE user_id = :user_id
+            ORDER BY updated_at DESC, created_at DESC
+            LIMIT 1
+            """
+        ),
+        {"user_id": str(user_id)},
+    )
+    return _subscription_from_row(row) or default_subscription(str(user_id))
+
+
+def get_subscription_by_customer(stripe_customer_id: str) -> dict | None:
+    if not stripe_customer_id or not db_available():
+        return None
+    row = fetch_one_safe(
+        text("SELECT * FROM user_subscriptions WHERE stripe_customer_id = :customer_id ORDER BY updated_at DESC LIMIT 1"),
+        {"customer_id": stripe_customer_id},
+    )
+    return _subscription_from_row(row)
+
+
+def upsert_user_subscription(
+    user_id: str,
+    plan: str = PLAN_FREE,
+    status: str = "free",
+    stripe_customer_id: str | None = None,
+    stripe_subscription_id: str | None = None,
+    stripe_price_id: str | None = None,
+    current_period_start=None,
+    current_period_end=None,
+    cancel_at_period_end: bool = False,
+) -> dict:
+    if not user_id:
+        raise ValueError("user_id required")
+    safe_plan = plan if plan in VALID_SUBSCRIPTION_PLANS else PLAN_FREE
+    safe_status = status if status in VALID_SUBSCRIPTION_STATUSES else "free"
+    now = _now()
+    subscription_id = str(uuid.uuid4())
+    row = {
+        "id": subscription_id,
+        "user_id": str(user_id),
+        "plan": safe_plan,
+        "status": safe_status,
+        "stripe_customer_id": stripe_customer_id,
+        "stripe_subscription_id": stripe_subscription_id,
+        "stripe_price_id": stripe_price_id,
+        "current_period_start": _parse_datetime(current_period_start),
+        "current_period_end": _parse_datetime(current_period_end),
+        "cancel_at_period_end": bool(cancel_at_period_end),
+        "created_at": now,
+        "updated_at": now,
+    }
+    if not db_available():
+        return _subscription_from_row(row) or default_subscription(str(user_id))
+    init_db()
+    existing = fetch_one_safe(
+        text("SELECT id FROM user_subscriptions WHERE user_id = :user_id ORDER BY updated_at DESC LIMIT 1"),
+        {"user_id": str(user_id)},
+    )
+    if existing:
+        row["id"] = existing["id"]
+        execute_safe(
+            text(
+                """
+                UPDATE user_subscriptions
+                SET plan = :plan,
+                    status = :status,
+                    stripe_customer_id = COALESCE(:stripe_customer_id, stripe_customer_id),
+                    stripe_subscription_id = COALESCE(:stripe_subscription_id, stripe_subscription_id),
+                    stripe_price_id = COALESCE(:stripe_price_id, stripe_price_id),
+                    current_period_start = :current_period_start,
+                    current_period_end = :current_period_end,
+                    cancel_at_period_end = :cancel_at_period_end,
+                    updated_at = :updated_at
+                WHERE id = :id AND user_id = :user_id
+                """
+            ),
+            row,
+        )
+    else:
+        execute_safe(
+            text(
+                """
+                INSERT INTO user_subscriptions (
+                    id, user_id, plan, status, stripe_customer_id, stripe_subscription_id,
+                    stripe_price_id, current_period_start, current_period_end,
+                    cancel_at_period_end, created_at, updated_at
+                )
+                VALUES (
+                    :id, :user_id, :plan, :status, :stripe_customer_id, :stripe_subscription_id,
+                    :stripe_price_id, :current_period_start, :current_period_end,
+                    :cancel_at_period_end, :created_at, :updated_at
+                )
+                """
+            ),
+            row,
+        )
+    return get_user_subscription(str(user_id))
+
+
+def get_user_plan(user_id: str) -> str:
+    return (get_user_subscription(user_id).get("plan") or PLAN_FREE) if user_id else PLAN_FREE
+
+
+def is_user_premium(user_id: str) -> bool:
+    return get_user_plan(user_id) in {PLAN_PREMIUM, PLAN_PRO, PLAN_ADMIN}
+
+
+def record_usage_event(user_id: str, feature: str, event_type: str | None = None, count: int = 1, metadata: dict | None = None) -> dict:
+    if not user_id:
+        raise ValueError("user_id required")
+    now = _now()
+    row = {
+        "id": str(uuid.uuid4()),
+        "user_id": str(user_id),
+        "event_type": event_type or feature,
+        "feature": str(feature or event_type or "unknown"),
+        "count": max(1, _int_or_zero(count)),
+        "metadata_json": _json(metadata or {}),
+        "created_at": now,
+    }
+    if db_available():
+        init_db()
+        execute_safe(
+            text(
+                """
+                INSERT INTO user_usage_events (id, user_id, event_type, feature, count, metadata_json, created_at)
+                VALUES (:id, :user_id, :event_type, :feature, :count, :metadata_json, :created_at)
+                """
+            ),
+            row,
+        )
+    return {**row, "metadata": metadata or {}, "created_at": _iso(now)}
+
+
+def _period_start(period: str) -> datetime:
+    now = _now()
+    if period == "month":
+        return now - timedelta(days=30)
+    if period == "week":
+        return now - timedelta(days=7)
+    return now - timedelta(days=1)
+
+
+def get_usage_count(user_id: str, feature: str, period: str = "day") -> int:
+    if not user_id or not feature or not db_available():
+        return 0
+    row = fetch_one_safe(
+        text(
+            """
+            SELECT COALESCE(SUM(count), 0) AS count
+            FROM user_usage_events
+            WHERE user_id = :user_id
+              AND feature = :feature
+              AND created_at >= :period_start
+            """
+        ),
+        {"user_id": str(user_id), "feature": str(feature), "period_start": _period_start(period)},
+    )
+    return _int_or_zero((row or {}).get("count"))
+
+
+def check_usage_limit(user_id: str, feature: str, period: str = "day") -> dict:
+    plan = get_user_plan(user_id)
+    limit = FEATURE_LIMITS.get(plan, {}).get(feature)
+    used = get_usage_count(user_id, feature, period)
+    if limit is None:
+        return {"allowed": True, "plan": plan, "feature": feature, "used": used, "limit": None, "remaining": None, "period": period}
+    remaining = max(0, limit - used)
+    return {
+        "allowed": used < limit,
+        "plan": plan,
+        "feature": feature,
+        "used": used,
+        "limit": limit,
+        "remaining": remaining,
+        "period": period,
+        "upgrade_required": used >= limit,
+    }
+
+
+def get_subscription_plan_counts() -> dict:
+    counts = {plan: 0 for plan in [PLAN_FREE, PLAN_PREMIUM, PLAN_PRO, PLAN_ADMIN]}
+    if not db_available():
+        return counts
+    rows = fetch_all_safe(text("SELECT plan, COUNT(*) AS count FROM user_subscriptions GROUP BY plan"))
+    for row in rows:
+        plan = row.get("plan")
+        if plan in counts:
+            counts[plan] = _int_or_zero(row.get("count"))
+    return counts
 
 
 def save_refresh_log(

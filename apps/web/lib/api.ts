@@ -38,6 +38,8 @@ import {
   mockMatchValueBetResponse,
   mockUserBetsResponse,
   mockUserBetSummary,
+  mockBillingStatus,
+  mockSubscription,
   mockModelPromotionAudit,
   mockPipelineJobs,
   mockPipelineStatus,
@@ -90,6 +92,8 @@ import {
   type UserBet,
   type UserBetsResponse,
   type UserBetSummary,
+  type BillingStatusResponse,
+  type SubscriptionResponse,
 } from '~/lib/mock-data';
 
 
@@ -279,6 +283,31 @@ export async function settleUserBet(id: string, payload: { status: 'won' | 'lost
 export async function getUserBetSummary(): Promise<UserBetSummary> {
   if (IS_BUILD) return mockUserBetSummary;
   return fetchProxyJson<UserBetSummary>('/api/user-bets/summary', undefined, 15000);
+}
+
+export async function getBillingStatus(): Promise<BillingStatusResponse> {
+  if (IS_BUILD) return mockBillingStatus;
+  return fetchProxyJson<BillingStatusResponse>('/api/billing/status', undefined, 10000);
+}
+
+export async function getMySubscription(): Promise<SubscriptionResponse> {
+  if (IS_BUILD) return mockSubscription;
+  return fetchProxyJson<SubscriptionResponse>('/api/billing/subscription', undefined, 10000);
+}
+
+export async function createCheckoutSession(plan: 'premium' | 'pro', interval: 'monthly' | 'yearly' = 'monthly'): Promise<{ status: string; checkout_url?: string; detail?: string }> {
+  return fetchProxyJson('/api/billing/create-checkout-session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ plan, interval }),
+  }, 15000);
+}
+
+export async function createPortalSession(): Promise<{ status: string; portal_url?: string; detail?: string }> {
+  return fetchProxyJson('/api/billing/create-portal-session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  }, 15000);
 }
 
 export async function getPrediction(matchId: string): Promise<Prediction> {

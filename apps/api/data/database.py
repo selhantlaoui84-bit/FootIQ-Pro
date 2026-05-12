@@ -266,6 +266,44 @@ Index("ix_user_bets_placed_at", user_bets_table.c.placed_at)
 Index("ix_user_bets_market", user_bets_table.c.market)
 Index("ix_user_bets_selection", user_bets_table.c.selection)
 
+user_subscriptions_table = Table(
+    "user_subscriptions",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("user_id", Text, nullable=False),
+    Column("plan", Text, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("stripe_customer_id", Text, nullable=True),
+    Column("stripe_subscription_id", Text, nullable=True),
+    Column("stripe_price_id", Text, nullable=True),
+    Column("current_period_start", TIMESTAMP(timezone=True), nullable=True),
+    Column("current_period_end", TIMESTAMP(timezone=True), nullable=True),
+    Column("cancel_at_period_end", Boolean, default=False),
+    Column("created_at", TIMESTAMP(timezone=True)),
+    Column("updated_at", TIMESTAMP(timezone=True)),
+)
+Index("ix_user_subscriptions_user_id", user_subscriptions_table.c.user_id)
+Index("ix_user_subscriptions_stripe_customer_id", user_subscriptions_table.c.stripe_customer_id)
+Index("ix_user_subscriptions_stripe_subscription_id", user_subscriptions_table.c.stripe_subscription_id)
+Index("ix_user_subscriptions_plan", user_subscriptions_table.c.plan)
+Index("ix_user_subscriptions_status", user_subscriptions_table.c.status)
+
+user_usage_events_table = Table(
+    "user_usage_events",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("user_id", Text, nullable=False),
+    Column("event_type", Text, nullable=False),
+    Column("feature", Text, nullable=False),
+    Column("count", Integer, default=1),
+    Column("metadata_json", Text, nullable=True),
+    Column("created_at", TIMESTAMP(timezone=True)),
+)
+Index("ix_user_usage_events_user_id", user_usage_events_table.c.user_id)
+Index("ix_user_usage_events_event_type", user_usage_events_table.c.event_type)
+Index("ix_user_usage_events_feature", user_usage_events_table.c.feature)
+Index("ix_user_usage_events_created_at", user_usage_events_table.c.created_at)
+
 
 def get_database_url() -> str | None:
     database_url = os.getenv("DATABASE_URL")
@@ -363,6 +401,15 @@ def _ensure_runtime_columns_and_indexes(engine: Engine) -> None:
             "CREATE INDEX IF NOT EXISTS ix_pipeline_jobs_status ON pipeline_jobs(status)",
             "CREATE INDEX IF NOT EXISTS ix_pipeline_jobs_started_at ON pipeline_jobs(started_at)",
             "CREATE INDEX IF NOT EXISTS ix_pipeline_jobs_created_at ON pipeline_jobs(created_at)",
+            "CREATE INDEX IF NOT EXISTS ix_user_subscriptions_user_id ON user_subscriptions(user_id)",
+            "CREATE INDEX IF NOT EXISTS ix_user_subscriptions_stripe_customer_id ON user_subscriptions(stripe_customer_id)",
+            "CREATE INDEX IF NOT EXISTS ix_user_subscriptions_stripe_subscription_id ON user_subscriptions(stripe_subscription_id)",
+            "CREATE INDEX IF NOT EXISTS ix_user_subscriptions_plan ON user_subscriptions(plan)",
+            "CREATE INDEX IF NOT EXISTS ix_user_subscriptions_status ON user_subscriptions(status)",
+            "CREATE INDEX IF NOT EXISTS ix_user_usage_events_user_id ON user_usage_events(user_id)",
+            "CREATE INDEX IF NOT EXISTS ix_user_usage_events_event_type ON user_usage_events(event_type)",
+            "CREATE INDEX IF NOT EXISTS ix_user_usage_events_feature ON user_usage_events(feature)",
+            "CREATE INDEX IF NOT EXISTS ix_user_usage_events_created_at ON user_usage_events(created_at)",
         ]
     elif engine.dialect.name == "sqlite":
         statements = [
@@ -394,6 +441,15 @@ def _ensure_runtime_columns_and_indexes(engine: Engine) -> None:
             "CREATE INDEX IF NOT EXISTS ix_pipeline_jobs_status ON pipeline_jobs(status)",
             "CREATE INDEX IF NOT EXISTS ix_pipeline_jobs_started_at ON pipeline_jobs(started_at)",
             "CREATE INDEX IF NOT EXISTS ix_pipeline_jobs_created_at ON pipeline_jobs(created_at)",
+            "CREATE INDEX IF NOT EXISTS ix_user_subscriptions_user_id ON user_subscriptions(user_id)",
+            "CREATE INDEX IF NOT EXISTS ix_user_subscriptions_stripe_customer_id ON user_subscriptions(stripe_customer_id)",
+            "CREATE INDEX IF NOT EXISTS ix_user_subscriptions_stripe_subscription_id ON user_subscriptions(stripe_subscription_id)",
+            "CREATE INDEX IF NOT EXISTS ix_user_subscriptions_plan ON user_subscriptions(plan)",
+            "CREATE INDEX IF NOT EXISTS ix_user_subscriptions_status ON user_subscriptions(status)",
+            "CREATE INDEX IF NOT EXISTS ix_user_usage_events_user_id ON user_usage_events(user_id)",
+            "CREATE INDEX IF NOT EXISTS ix_user_usage_events_event_type ON user_usage_events(event_type)",
+            "CREATE INDEX IF NOT EXISTS ix_user_usage_events_feature ON user_usage_events(feature)",
+            "CREATE INDEX IF NOT EXISTS ix_user_usage_events_created_at ON user_usage_events(created_at)",
         ]
         with engine.connect() as connection:
             columns = {row._mapping["name"] for row in connection.execute(text("PRAGMA table_info(feature_snapshots)"))}
