@@ -51,9 +51,9 @@ export function Layout({ children }: { children: ReactNode }) {
                   {link.label}
                 </Link>
               ))}
-              <Link className={isActive('/profile') ? 'active' : undefined} href="/profile">
+              <Link className={isActive('/my-bets') ? 'active' : undefined} href="/my-bets">
                 <span aria-hidden="true">▱</span>
-                Portefeuille
+                Mes paris
               </Link>
               {isAdmin && (
                 <Link className={isActive('/admin') ? 'active' : undefined} href="/admin">
@@ -129,7 +129,7 @@ export function Layout({ children }: { children: ReactNode }) {
               <a href="/cgu">CGU</a>
             </nav>
             <span className="footerNotice">
-              Outil d'analyse statistique. Aucune prédiction ne garantit un résultat.
+              Outil d'analyse statistique. Chaque prédiction conserve une incertitude.
             </span>
             <span className="footerCopy">© {new Date().getFullYear()} FootIQ Pro</span>
           </div>

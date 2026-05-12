@@ -247,7 +247,7 @@ function PredictionCard({ prediction, assistant }: { prediction: Prediction; ass
           Assistant <strong>{assistant?.recommendation_label ?? 'Données insuffisantes'}</strong>
         </span>
         <span>
-          Cote <strong>{assistant?.odds ? assistant.odds.toFixed(2) : 'Cote non disponible'}</strong>
+          Cote <strong>{assistant?.odds ? assistant.odds.toFixed(2) : 'Cote réelle non disponible'}</strong>
         </span>
         <span>
           Probabilité bookmaker <strong>{assistant?.implied_probability != null ? `${Math.round(assistant.implied_probability * 100)}%` : 'Non disponible'}</strong>
@@ -266,7 +266,10 @@ function PredictionCard({ prediction, assistant }: { prediction: Prediction; ass
         </span>
       </div>
       <div className="banner info">
-        {assistant?.recommendation_reason ?? 'Assistant FootIQ : cote non disponible ou données insuffisantes. Aucun pari ne doit être considéré comme certain.'}
+        {assistant?.recommendation_reason ?? 'Assistant FootIQ : cote réelle non disponible ou données insuffisantes. Les résultats restent incertains.'}
+      </div>
+      <div className="cardActions">
+        <span className="button secondary">Ajouter à mes paris</span>
       </div>
       <div className="confidenceLine confidence-bar">
         <span style={{ width: `${prediction.confidence.score}%` }} />

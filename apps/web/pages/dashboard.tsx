@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { MiniLineChart, TeamComparisonCurve, TeamCrest } from '~/components/ui';
-import { getAssistantDailyBrief, getMatches, getPredictions, getPublicDashboardSummary } from '~/lib/api';
+import { getAssistantDailyBrief, getMatches, getPredictions, getPublicDashboardSummary, getUserBetSummary } from '~/lib/api';
 import {
   matchHref,
   buildDashboardSummary,
@@ -11,6 +11,7 @@ import {
   statusClass,
   type DashboardSummary,
   type BettingAssistantResponse,
+  type UserBetSummary,
   type Match,
   type Prediction,
 } from '~/lib/mock-data';
@@ -88,6 +89,7 @@ export const getServerSideProps: GetServerSideProps<DashboardProps> = async () =
 
 export default function DashboardPage({ matches, predictions, summary, referenceTime }: DashboardProps) {
   const [assistantBrief, setAssistantBrief] = useState<BettingAssistantResponse | null>(null);
+  const [userBetSummary, setUserBetSummary] = useState<UserBetSummary | null>(null);
   const referenceTimestamp = new Date(referenceTime).getTime();
   const upcoming = [...matches]
     .filter((match) => isUpcoming(match, referenceTimestamp))
@@ -146,6 +148,20 @@ export default function DashboardPage({ matches, predictions, summary, reference
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    getUserBetSummary()
+      .then((report) => {
+        if (!cancelled) setUserBetSummary(report);
+      })
+      .catch(() => {
+        if (!cancelled) setUserBetSummary(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <ProtectedRoute>
       <Layout>
@@ -197,7 +213,7 @@ export default function DashboardPage({ matches, predictions, summary, reference
                       <small>{prediction.main_prediction}</small>
                     </span>
                     <em>{prediction.confidence.score}%</em>
-                    <b>{formatSyntheticOdd(prediction.confidence.score)}</b>
+                    <b>Cote réelle non disponible</b>
                   </Link>
                 ))}
               </div>
@@ -215,18 +231,28 @@ export default function DashboardPage({ matches, predictions, summary, reference
                 <span>Recommandés <strong>{assistantBrief?.summary.recommended_count ?? 'Données insuffisantes'}</strong></span>
                 <span>Prudence <strong>{assistantBrief?.summary.cautious_count ?? 'Données insuffisantes'}</strong></span>
                 <span>À éviter <strong>{assistantBrief?.summary.avoid_count ?? 'Données insuffisantes'}</strong></span>
-                <span>Cotes manquantes <strong>{assistantBrief?.summary.no_odds_count ?? 'Cote non disponible'}</strong></span>
+                <span>Cotes manquantes <strong>{assistantBrief?.summary.no_odds_count ?? 'Cote réelle non disponible'}</strong></span>
               </div>
               <p>Lecture informative combinant cote, probabilité, value et risque.</p>
               <Link className="premiumInlineButton" href="/predictions">Ouvrir l'assistant</Link>
+            </article>
+            <article className="premiumMiniPanel">
+              <h2>Suivi de mes paris</h2>
+              <div className="dataList compact">
+                <span>En cours <strong>{userBetSummary?.pending_bets ?? 'Données insuffisantes'}</strong></span>
+                <span>ROI <strong>{userBetSummary?.roi == null ? 'Données insuffisantes' : `${(userBetSummary.roi * 100).toFixed(1)}%`}</strong></span>
+                <span>Profit net <strong>{userBetSummary?.net_profit == null ? 'Données insuffisantes' : `${userBetSummary.net_profit.toFixed(2)} €`}</strong></span>
+              </div>
+              <p>{userBetSummary?.total_bets ? 'Historique personnel chargé.' : 'Commencez à suivre vos paris pour obtenir des conseils personnalisés.'}</p>
+              <Link className="premiumInlineButton" href="/my-bets">Ouvrir mes paris</Link>
             </article>
             <article className="premiumMiniPanel">
               <h2>Opportunités à valeur attendue</h2>
               {signalPredictions.slice(0, 4).map((prediction) => (
                 <Link className="marketLine" href={matchHref(prediction)} key={prediction.match_id}>
                   <span>{prediction.home_team}</span>
-                  <strong>{formatSyntheticOdd(prediction.confidence.score)}</strong>
-                  <em>+{Math.max(1, Math.round(prediction.confidence.score / 20))},21%</em>
+                  <strong>Cote réelle non disponible</strong>
+                  <em>{prediction.confidence.score}% modèle</em>
                 </Link>
               ))}
               {signalPredictions.length === 0 && <p className="muted">Aucune opportunité classée. Consultez toutes les prédictions.</p>}
@@ -532,10 +558,6 @@ function initials(name: string) {
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase())
     .join('');
-}
-
-function formatSyntheticOdd(confidenceScore: number) {
-  return Math.max(1.18, 2.48 - confidenceScore / 100).toFixed(2);
 }
 
 function isFinished(match: Match) {
