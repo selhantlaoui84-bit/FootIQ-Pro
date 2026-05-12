@@ -20,7 +20,7 @@ const forbidden = [
   />\s*Prediction\s*</,
   /A EVITER/,
   /Pr\?diction|mod\?le|g\?n\?r|d\?saccord|\?viter/,
-  /Ã|�/,
+  new RegExp('\\u00c3|\\ufffd'),
 ];
 
 function collectFiles(target) {

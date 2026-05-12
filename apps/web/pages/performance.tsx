@@ -28,11 +28,13 @@ import {
   getPipelineJobs,
   getPipelineStatus,
   getPerformance,
+  getValueBets,
 } from '~/lib/api';
 import type {
   BacktestingReport,
   BettingAssistantResponse,
   UserBetSummary,
+  ValueBetResponse,
   CalibrationReport,
   DatasetQualityReport,
   FeatureImportanceRow,
@@ -1367,6 +1369,7 @@ function AnalysisCommandCenter({
 }) {
   const [assistantReport, setAssistantReport] = useState<BettingAssistantResponse | null>(null);
   const [userBetSummary, setUserBetSummary] = useState<UserBetSummary | null>(null);
+  const [valueBetReport, setValueBetReport] = useState<ValueBetResponse | null>(null);
   const productionModel = modelVersions.current_production_model;
   const candidateModel = modelVersions.latest_candidate_model;
   const productionVersion =
@@ -1423,6 +1426,20 @@ function AnalysisCommandCenter({
       })
       .catch(() => {
         if (!cancelled) setAssistantReport(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    getValueBets({ limit: 100, include_watchlist: true })
+      .then((report) => {
+        if (!cancelled) setValueBetReport(report);
+      })
+      .catch(() => {
+        if (!cancelled) setValueBetReport(null);
       });
     return () => {
       cancelled = true;
@@ -1604,6 +1621,20 @@ function AnalysisCommandCenter({
         </div>
         <div className="banner warning">
           Les recommandations restent informatives : la value dépend des cotes disponibles, du risque et du volume de données.
+        </div>
+      </section>
+
+      <section className="card">
+        <p className="eyebrow">Analyse value bet</p>
+        <h2>Opportunités et cotes réelles</h2>
+        <div className="compactDataGrid four">
+          <AnalysisKpi title="Value bets détectés" value={valueBetReport ? String(valueBetReport.summary.strong_value_count + valueBetReport.summary.positive_value_count) : 'Données insuffisantes'} detail="Cotes réelles uniquement" />
+          <AnalysisKpi title="EV moyenne" value={valueBetReport?.summary.average_ev == null ? 'Données insuffisantes' : valueBetReport.summary.average_ev.toFixed(3)} detail="Cotes disponibles" />
+          <AnalysisKpi title="Watchlist" value={valueBetReport ? String(valueBetReport.summary.watchlist_count) : 'Données insuffisantes'} detail="À surveiller" />
+          <AnalysisKpi title="Cotes manquantes" value={valueBetReport ? String(valueBetReport.summary.no_real_odds_count) : 'Cote réelle non disponible'} detail="EV absente sans cote" />
+        </div>
+        <div className="banner info">
+          {valueBetReport?.items_count ? 'Les opportunités sont classées avec EV, risque, fiabilité et fraîcheur de cote.' : 'Données insuffisantes ou cotes réelles non disponibles.'}
         </div>
       </section>
 

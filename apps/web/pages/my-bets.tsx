@@ -45,6 +45,11 @@ export default function MyBetsPage() {
   }, []);
 
   const filtered = statusFilter === 'all' ? bets : bets.filter((bet) => bet.status === statusFilter);
+  const valuePositive = bets.filter((bet) => ['strong_value', 'positive_value'].includes(String(bet.value_status ?? bet.recommendation_type ?? '')));
+  const noValue = bets.filter((bet) => ['no_value', 'avoid'].includes(String(bet.value_status ?? bet.recommendation_type ?? '')));
+  const manualBets = bets.filter((bet) => bet.odds_source === 'manual_user_input');
+  const providerBets = bets.filter((bet) => bet.odds_source === 'provider');
+  const avoidTaken = bets.filter((bet) => String(bet.value_status ?? bet.recommendation_type ?? '') === 'avoid').length;
 
   async function submitBet(event: React.FormEvent) {
     event.preventDefault();
@@ -99,6 +104,21 @@ export default function MyBetsPage() {
           <div className="metric"><span>ROI</span><strong>{summary.roi == null ? 'Données insuffisantes' : `${(summary.roi * 100).toFixed(1)}%`}</strong></div>
         </section>
 
+        <section className="card">
+          <p className="eyebrow">Discipline value</p>
+          <h2>ROI sur paris value</h2>
+          <div className="compactDataGrid four">
+            <div className="metric"><span>Value positive</span><strong>{formatBetGroupRoi(valuePositive)}</strong></div>
+            <div className="metric"><span>No value / avoid</span><strong>{formatBetGroupRoi(noValue)}</strong></div>
+            <div className="metric"><span>Paris manuels</span><strong>{formatBetGroupRoi(manualBets)}</strong></div>
+            <div className="metric"><span>Paris provider</span><strong>{formatBetGroupRoi(providerBets)}</strong></div>
+          </div>
+          <div className="dataList compact">
+            <span>Paris pris malgré recommandation avoid <strong>{avoidTaken || 'Données insuffisantes'}</strong></span>
+            <span>Lecture discipline <strong>{bets.length < 3 ? 'Données insuffisantes pour analyser votre discipline de value.' : 'Historique exploitable'}</strong></span>
+          </div>
+        </section>
+
         <section className="sectionSplit">
           <form className="card formStack" onSubmit={submitBet}>
             <p className="eyebrow">Ajouter un pari</p>
@@ -132,6 +152,9 @@ export default function MyBetsPage() {
                     <span>{bet.match_id}<br /><small>{bet.market} - {bet.selection}</small></span>
                     <strong>{bet.odds_decimal}</strong>
                     <strong>{bet.stake} €</strong>
+                    <span>EV {bet.expected_value == null ? 'Non calculable' : bet.expected_value.toFixed(3)}<br /><small>Edge {bet.edge == null ? 'Non calculable' : `${(bet.edge * 100).toFixed(1)}%`}</small></span>
+                    <span>{bet.value_status ?? 'Données insuffisantes'}<br /><small>{bet.opportunity_score == null ? 'Score indisponible' : `${bet.opportunity_score}/100`}</small></span>
+                    <span>{bet.odds_source === 'manual_user_input' ? 'Cote saisie manuellement par l’utilisateur' : 'Cote provider'}</span>
                     <span>{bet.status}</span>
                     {bet.status === 'pending' && (
                       <span className="inlineActions">
@@ -158,4 +181,12 @@ export default function MyBetsPage() {
       </main>
     </ProtectedRoute>
   );
+}
+
+function formatBetGroupRoi(items: UserBet[]) {
+  const settled = items.filter((bet) => ['won', 'lost', 'void'].includes(bet.status));
+  const staked = settled.reduce((total, bet) => total + Number(bet.stake || 0), 0);
+  const profit = settled.reduce((total, bet) => total + Number(bet.result_profit || 0), 0);
+  if (!settled.length || !staked) return 'Données insuffisantes';
+  return `${((profit / staked) * 100).toFixed(1)}%`;
 }

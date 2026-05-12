@@ -31,6 +31,7 @@ import {
   rollbackProductionModel,
   resetStaleJobs,
   refreshRealOdds,
+  getValueBets,
   runDailyPipeline,
   runHourlyPipeline,
   runPipelineStep,
@@ -63,6 +64,7 @@ import type {
   RefreshJobStatus,
   RefreshResponse,
   TrainingReport,
+  ValueBetResponse,
 } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
 
@@ -224,6 +226,7 @@ export default function AdminPage() {
   const [pipelineStatus, setPipelineStatus] = useState<PipelineStatus | null>(null);
   const [pipelineJobs, setPipelineJobs] = useState<PipelineJobsResponse | null>(null);
   const [pipelineResult, setPipelineResult] = useState<PipelineRunResponse | null>(null);
+  const [valueBetReport, setValueBetReport] = useState<ValueBetResponse | null>(null);
   const [isRunningPipeline, setIsRunningPipeline] = useState(false);
   const [adminAlerts, setAdminAlerts] = useState<AdminAlertsReport | null>(null);
   const [modelType, setModelType] = useState('random_forest');
@@ -505,6 +508,7 @@ export default function AdminPage() {
   useEffect(() => {
     void reloadAdminState();
     void handleDiagnostics();
+    getValueBets({ limit: 100, include_watchlist: true }).then(setValueBetReport).catch(() => setValueBetReport(null));
   }, []);
 
   useEffect(() => {
@@ -953,6 +957,28 @@ export default function AdminPage() {
             <div className="metric"><span>Cron Vercel</span><strong>{diagnostics?.cronConfigured ? 'configuré' : 'non configuré'}</strong></div>
             <div className="metric"><span>Hourly refresh</span><strong>{workflowStatus?.cron?.hourly_refresh_last_run?.ran_at ?? 'jamais'}</strong></div>
             <div className="metric"><span>Fins de match</span><strong>{workflowStatus?.cron?.match_finished_check_last_run?.ran_at ?? 'jamais'}</strong></div>
+          </div>
+        </section>
+
+        <section className="card sectionAnchor" id="value-bets-control">
+          <div className="cardTop">
+            <div>
+              <p className="eyebrow">Contrôle value bets</p>
+              <h2>Cotes réelles et opportunités</h2>
+            </div>
+            <button className="button secondary" type="button" disabled={!isAdmin || isRunningPipeline} onClick={handleRefreshOdds}>
+              Rafraîchir les cotes réelles
+            </button>
+          </div>
+          <div className="compactDataGrid four">
+            <div className="metric"><span>Value détectées</span><strong>{valueBetReport ? valueBetReport.summary.strong_value_count + valueBetReport.summary.positive_value_count : 'Données insuffisantes'}</strong></div>
+            <div className="metric"><span>Watchlist</span><strong>{valueBetReport?.summary.watchlist_count ?? 'Données insuffisantes'}</strong></div>
+            <div className="metric"><span>No real odds</span><strong>{valueBetReport?.summary.no_real_odds_count ?? 'Cote réelle non disponible'}</strong></div>
+            <div className="metric"><span>Provider</span><strong>{valueBetReport ? 'contrôlé côté serveur' : 'statut inconnu'}</strong></div>
+            <div className="metric"><span>Cotes stale</span><strong>{(valueBetReport?.items ?? []).filter((item) => item.odds_stale).length}</strong></div>
+            <div className="metric"><span>Dernier refresh odds</span><strong>{pipelineStatus?.latest_jobs.refresh_odds?.status ?? 'non disponible'}</strong></div>
+            <div className="metric"><span>EV moyenne</span><strong>{valueBetReport?.summary.average_ev == null ? 'Données insuffisantes' : valueBetReport.summary.average_ev.toFixed(3)}</strong></div>
+            <div className="metric"><span>Items analysés</span><strong>{valueBetReport?.items_count ?? 'Données insuffisantes'}</strong></div>
           </div>
         </section>
 

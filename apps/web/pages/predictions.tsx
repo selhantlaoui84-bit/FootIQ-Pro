@@ -6,8 +6,8 @@ import { InfoTooltip } from '~/components/InfoTooltip';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { TeamIdentity } from '~/components/TeamIdentity';
 import { ProbabilityRing } from '~/components/ui';
-import { getAssistantPredictions, getPredictions } from '~/lib/api';
-import { isAvoidStatus, matchHref, predictions as mockPredictions, statusClass, type BettingAssistantItem, type ConfidenceStatus, type Prediction } from '~/lib/mock-data';
+import { getAssistantPredictions, getPredictions, getValueBets } from '~/lib/api';
+import { isAvoidStatus, matchHref, predictions as mockPredictions, statusClass, type BettingAssistantItem, type ConfidenceStatus, type Prediction, type ValueBetItem } from '~/lib/mock-data';
 import { resolveMatchTeamLogo } from '~/lib/team-logos';
 import { formatCompetitionLabel, formatKickoffFr, formatRecommendationLabel, formatStatusLabel } from '~/lib/ui-text';
 import { Layout } from '~/src-layout';
@@ -43,8 +43,10 @@ export default function PredictionsPage({ predictions, referenceTime }: Predicti
   const [trapOnly, setTrapOnly] = useState(false);
   const [riskOnly, setRiskOnly] = useState(false);
   const [highConfidence, setHighConfidence] = useState(false);
+  const [valueOnly, setValueOnly] = useState(false);
   const [query, setQuery] = useState('');
   const [assistantItems, setAssistantItems] = useState<Record<string, BettingAssistantItem>>({});
+  const [valueItems, setValueItems] = useState<Record<string, ValueBetItem>>({});
 
   useEffect(() => {
     if (typeof router.query.status === 'string') {
@@ -52,7 +54,8 @@ export default function PredictionsPage({ predictions, referenceTime }: Predicti
     }
 
     setTrapOnly(router.query.trap === 'true');
-  }, [router.query.status, router.query.trap]);
+    setValueOnly(router.query.filter === 'value');
+  }, [router.query.status, router.query.trap, router.query.filter]);
 
   useEffect(() => {
     let cancelled = false;
@@ -63,6 +66,20 @@ export default function PredictionsPage({ predictions, referenceTime }: Predicti
       })
       .catch(() => {
         if (!cancelled) setAssistantItems({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    getValueBets({ limit: 100, include_watchlist: true })
+      .then((report) => {
+        if (!cancelled) setValueItems(Object.fromEntries((report.items ?? []).map((item) => [item.match_id, item])));
+      })
+      .catch(() => {
+        if (!cancelled) setValueItems({});
       });
     return () => {
       cancelled = true;
@@ -83,6 +100,8 @@ export default function PredictionsPage({ predictions, referenceTime }: Predicti
             (status === 'À ÉVITER' && isAvoidStatus(prediction.confidence.status));
           const trapMatches = !trapOnly || prediction.flags.trap_match;
           const riskMatches = !riskOnly || prediction.flags.risk;
+          const value = valueItems[prediction.match_id];
+          const valueMatches = !valueOnly || ['strong_value', 'positive_value'].includes(value?.value_status ?? '');
           const confidenceMatches = !highConfidence || prediction.confidence.score >= 70;
           const queryMatches =
             !query.trim() ||
@@ -90,14 +109,14 @@ export default function PredictionsPage({ predictions, referenceTime }: Predicti
               .toLowerCase()
               .includes(query.trim().toLowerCase());
 
-          return isUpcoming && statusMatches && trapMatches && riskMatches && confidenceMatches && queryMatches;
+          return isUpcoming && statusMatches && trapMatches && riskMatches && valueMatches && confidenceMatches && queryMatches;
         })
         .sort((a, b) => {
           const dateDelta = new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime();
           return dateDelta || b.confidence.score - a.confidence.score;
         });
     },
-    [highConfidence, predictions, query, referenceTime, riskOnly, status, trapOnly],
+    [highConfidence, predictions, query, referenceTime, riskOnly, status, trapOnly, valueItems, valueOnly],
   );
   const averageConfidence =
     filtered.length > 0
@@ -144,6 +163,10 @@ export default function PredictionsPage({ predictions, referenceTime }: Predicti
           />
           Haute confiance
         </label>
+        <label className="filterToggle">
+          <input type="checkbox" checked={valueOnly} onChange={(event) => setValueOnly(event.target.checked)} />
+          Value Bets
+        </label>
       </section>
 
       <section className="predictionsPremiumLayout">
@@ -188,7 +211,7 @@ export default function PredictionsPage({ predictions, referenceTime }: Predicti
           </div>
           <div className="premiumPredictionTable">
             {filtered.length > 0 ? (
-              filtered.map((prediction) => <PredictionCard assistant={assistantItems[prediction.match_id]} prediction={prediction} key={prediction.match_id} />)
+              filtered.map((prediction) => <PredictionCard assistant={{ ...assistantItems[prediction.match_id], ...valueItems[prediction.match_id] }} prediction={prediction} key={prediction.match_id} />)
             ) : (
               <div className="emptyState">Aucune prédiction ne correspond aux filtres.</div>
             )}
@@ -200,7 +223,7 @@ export default function PredictionsPage({ predictions, referenceTime }: Predicti
   );
 }
 
-function PredictionCard({ prediction, assistant }: { prediction: Prediction; assistant?: BettingAssistantItem }) {
+function PredictionCard({ prediction, assistant }: { prediction: Prediction; assistant?: Partial<BettingAssistantItem & ValueBetItem> }) {
   const calibrationApplied = prediction.calibration?.applied === true || Boolean(prediction.calibration_version);
   const rawProbabilities = prediction.original_probabilities;
 
@@ -244,6 +267,15 @@ function PredictionCard({ prediction, assistant }: { prediction: Prediction; ass
       )}
       <div className="dataList compact">
         <span>
+          Statut value <strong>{valueLabel(assistant?.value_status)}</strong>
+        </span>
+        <span>
+          Score opportunité <strong>{assistant?.opportunity_score != null ? `${assistant.opportunity_score}/100` : 'Données insuffisantes'}</strong>
+        </span>
+        <span>
+          Niveau <strong>{assistant?.opportunity_level ?? 'Données insuffisantes'}</strong>
+        </span>
+        <span>
           Assistant <strong>{assistant?.recommendation_label ?? 'Données insuffisantes'}</strong>
         </span>
         <span>
@@ -262,9 +294,19 @@ function PredictionCard({ prediction, assistant }: { prediction: Prediction; ass
           Expected value <strong>{assistant?.expected_value != null ? assistant.expected_value.toFixed(3) : 'Non calculable'}</strong>
         </span>
         <span>
+          Cote juste <strong>{assistant?.fair_odds != null ? assistant.fair_odds.toFixed(2) : 'Données insuffisantes'}</strong>
+        </span>
+        <span>
+          Cote minimum value <strong>{assistant?.minimum_value_odds != null ? assistant.minimum_value_odds.toFixed(2) : 'Données insuffisantes'}</strong>
+        </span>
+        <span>
+          Value ajustée risque <strong>{assistant?.risk_adjusted_value != null ? assistant.risk_adjusted_value.toFixed(3) : 'Non calculable'}</strong>
+        </span>
+        <span>
           Risque assistant <strong>{assistant?.risk_level ?? 'unknown'}</strong>
         </span>
       </div>
+      {(assistant?.warnings ?? []).length > 0 && <div className="banner warning">{assistant?.warnings?.join(' ')}</div>}
       <div className="banner info">
         {assistant?.recommendation_reason ?? 'Assistant FootIQ : cote réelle non disponible ou données insuffisantes. Les résultats restent incertains.'}
       </div>
@@ -319,4 +361,15 @@ function hybridLabel(label: string) {
   if (label === 'desaccord_modele') return 'désaccord modèle';
   if (label === 'eviter') return 'à éviter';
   return 'shadow indisponible';
+}
+
+function valueLabel(status?: string | null) {
+  if (status === 'strong_value') return 'Value forte';
+  if (status === 'positive_value') return 'Value positive';
+  if (status === 'fair_price') return 'Prix correct';
+  if (status === 'no_value') return 'Pas de value';
+  if (status === 'avoid') return 'À éviter';
+  if (status === 'no_real_odds') return 'Cote réelle non disponible';
+  if (status === 'insufficient_data') return 'Données insuffisantes';
+  return 'Données insuffisantes';
 }

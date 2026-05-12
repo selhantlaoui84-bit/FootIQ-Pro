@@ -124,6 +124,15 @@ export type BettingAssistantItem = {
   implied_probability?: number | null;
   edge?: number | null;
   expected_value?: number | null;
+  fair_odds?: number | null;
+  minimum_value_odds?: number | null;
+  risk_adjusted_value?: number | null;
+  opportunity_score?: number | null;
+  opportunity_level?: string | null;
+  odds_source?: 'provider' | 'manual_user_input' | null;
+  odds_collected_at?: string | null;
+  odds_stale?: boolean | null;
+  warnings?: string[];
   value_status: string;
   risk_score: number;
   risk_level: string;
@@ -136,6 +145,53 @@ export type BettingAssistantItem = {
   risk_explanation?: string;
   data_quality_explanation?: string;
   suggested_action?: string;
+};
+
+export type ValueBetItem = BettingAssistantItem & {
+  odds_decimal?: number | null;
+  provider?: string | null;
+  reliability_score?: number | null;
+  user_fit_score?: number | null;
+  value_score?: number | null;
+  is_value_bet?: boolean;
+  is_false_value_risk?: boolean;
+  is_overpriced_favorite?: boolean;
+  is_high_odds_trap?: boolean;
+  is_data_limited?: boolean;
+  reason?: string;
+};
+
+export type ValueBetResponse = {
+  status: string;
+  storage?: string;
+  generated_at?: string;
+  items_count: number;
+  items: ValueBetItem[];
+  summary: {
+    strong_value_count: number;
+    positive_value_count: number;
+    watchlist_count: number;
+    avoid_count: number;
+    no_real_odds_count: number;
+    insufficient_data_count: number;
+    average_ev?: number | null;
+  };
+};
+
+export type MatchValueBetResponse = {
+  status: string;
+  match_id: string;
+  home_team?: string | null;
+  away_team?: string | null;
+  items_count: number;
+  items: ValueBetItem[];
+  best_value?: ValueBetItem | null;
+  markets_to_watch?: ValueBetItem[];
+  markets_to_avoid?: ValueBetItem[];
+  real_odds_count: number;
+  missing_odds?: string[];
+  detail: string;
+  summary: ValueBetResponse['summary'];
 };
 
 export type BettingAssistantResponse = {
@@ -181,6 +237,8 @@ export type UserBet = {
   calibrated_probability?: number | null;
   expected_value?: number | null;
   edge?: number | null;
+  value_status?: string | null;
+  opportunity_score?: number | null;
   risk_level?: string | null;
   recommendation_type?: string | null;
   status: 'pending' | 'won' | 'lost' | 'void' | 'cancelled';
@@ -2119,6 +2177,37 @@ export const mockAssistantResponse: BettingAssistantResponse = {
     no_odds_count: 0,
     insufficient_data_count: 0,
   },
+};
+
+export const mockValueBetResponse: ValueBetResponse = {
+  status: 'ok',
+  storage: 'mock',
+  generated_at: new Date().toISOString(),
+  items_count: 0,
+  items: [],
+  summary: {
+    strong_value_count: 0,
+    positive_value_count: 0,
+    watchlist_count: 0,
+    avoid_count: 0,
+    no_real_odds_count: 0,
+    insufficient_data_count: 0,
+    average_ev: null,
+  },
+};
+
+export const mockMatchValueBetResponse: MatchValueBetResponse = {
+  status: 'ok',
+  match_id: 'mock',
+  items_count: 0,
+  items: [],
+  best_value: null,
+  markets_to_watch: [],
+  markets_to_avoid: [],
+  real_odds_count: 0,
+  missing_odds: ['1X2'],
+  detail: 'Cote réelle non disponible pour ce match.',
+  summary: mockValueBetResponse.summary,
 };
 
 export const mockAssistantMatchResponse: AssistantMatchResponse = {

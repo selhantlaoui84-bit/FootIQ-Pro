@@ -29,13 +29,18 @@ from services.model_governance import build_model_governance_report, evaluate_mo
 from services.model_versioning import get_versions_report, record_model_version, list_model_versions
 from services.odds_engine import (
     calculate_expected_value,
+    calculate_risk_adjusted_value,
     classify_value_bet,
+    classify_value_opportunity,
+    fair_odds_from_probability,
     implied_probability_from_odds,
+    minimum_value_odds,
     select_reference_odds,
 )
 from services.odds_provider import fetch_real_odds_for_matches, is_odds_configured
 from services.betting_assistant import analyze_prediction
 from services.user_learning_engine import detect_risky_patterns, detect_user_strengths
+from services.value_bet_engine import evaluate_value_bet
 from services.pipeline_orchestrator import run_hourly_data_pipeline, run_pipeline_step
 from services.shadow_backtesting import calculate_shadow_backtest_report
 
@@ -1039,6 +1044,56 @@ class LearningEngineTests(unittest.TestCase):
         self.assertIsNone(calculate_expected_value(0.58, None))
         self.assertEqual(classify_value_bet(None, None), "no_real_odds")
 
+    def test_fair_odds_from_probability(self):
+        self.assertEqual(fair_odds_from_probability(0.5), 2.0)
+
+    def test_minimum_value_odds(self):
+        self.assertEqual(minimum_value_odds(0.5, margin=0.02), 2.04)
+
+    def test_calculate_risk_adjusted_value(self):
+        self.assertEqual(calculate_risk_adjusted_value(0.2, 40), 0.12)
+
+    def test_classify_strong_value(self):
+        self.assertEqual(classify_value_opportunity(0.08, 0.14, 40, 70), "strong_value")
+
+    def test_classify_positive_value(self):
+        self.assertEqual(classify_value_opportunity(0.03, 0.04, 65, 70), "positive_value")
+
+    def test_classify_no_value(self):
+        self.assertEqual(classify_value_opportunity(-0.04, -0.05, 40, 70), "no_value")
+
+    def test_classify_no_real_odds(self):
+        self.assertEqual(classify_value_opportunity(None, None, 40, 70), "no_real_odds")
+
+    def test_classify_insufficient_data(self):
+        self.assertEqual(classify_value_opportunity(0.03, 0.04, 40, 10), "insufficient_data")
+
+    def test_value_bet_engine_uses_calibrated_probability_first(self):
+        item = prediction("value-calib", 70, 20, 10)
+        item["calibrated_probabilities_json"] = {"home": 60, "draw": 25, "away": 15}
+        result = evaluate_value_bet(item, {"market": "1X2", "selection": "HOME_WIN", "odds_decimal": 2.0, "source_type": "provider"})
+        self.assertEqual(result["used_probability"], 0.6)
+        self.assertEqual(result["fair_odds"], 1.6667)
+
+    def test_value_bet_engine_flags_stale_odds(self):
+        result = evaluate_value_bet(
+            prediction("value-stale", 65, 20, 15),
+            {"market": "1X2", "selection": "HOME_WIN", "odds_decimal": 2.1, "source_type": "provider", "stale": True},
+        )
+        self.assertTrue(result["is_stale_odds"])
+        self.assertTrue(result["warnings"])
+
+    def test_value_bet_engine_does_not_use_simulated_odds(self):
+        result = evaluate_value_bet(prediction("value-no-odds", 65, 20, 15), None)
+        self.assertEqual(result["value_status"], "no_real_odds")
+        self.assertIsNone(result["expected_value"])
+
+    def test_no_false_value_when_risk_high(self):
+        item = prediction("value-risk", 70, 20, 10)
+        item["risk_score"] = 90
+        result = evaluate_value_bet(item, {"market": "1X2", "selection": "HOME_WIN", "odds_decimal": 2.2, "source_type": "provider"})
+        self.assertEqual(result["opportunity_level"], "avoid")
+
     def test_no_random_odds_generation(self):
         odds_source = Path(__file__).parents[1] / "services" / "odds_provider.py"
         source = odds_source.read_text(encoding="utf-8")
@@ -1116,6 +1171,27 @@ class LearningEngineTests(unittest.TestCase):
         self.assertEqual(report["status"], "ok")
         self.assertEqual(report["items_count"], 1)
         self.assertIn("expected_value", report["items"][0])
+
+    def test_betting_assistant_includes_opportunity_score(self):
+        result = analyze_prediction(
+            prediction("assistant-opportunity", 65, 20, 15),
+            {"odds_lookup": {"assistant-opportunity": [{"market": "1X2", "selection": "HOME_WIN", "odds_decimal": 2.1, "source_type": "provider"}]}},
+        )
+        self.assertIn("opportunity_score", result)
+        self.assertIn("fair_odds", result)
+
+    def test_value_bets_endpoint(self):
+        with patch.object(main, "_available_predictions", return_value=[prediction("value-endpoint", 65, 20, 15)]), patch.object(main, "_odds_lookup_for_predictions", return_value={"value-endpoint": [{"market": "1X2", "selection": "HOME_WIN", "odds_decimal": 2.1, "source_type": "provider"}]}):
+            report = main.value_bets(limit=10)
+        self.assertEqual(report["status"], "ok")
+        self.assertIn("summary", report)
+
+    def test_match_value_bets_endpoint(self):
+        match = {"id": "value-match", "match_id": "value-match", "home_team": "PSG", "away_team": "Lyon"}
+        with patch.object(main, "_find_match", return_value=match), patch.object(main, "_available_predictions", return_value=[prediction("value-match", 65, 20, 15)]), patch.object(main, "_odds_lookup_for_predictions", return_value={"value-match": [{"market": "1X2", "selection": "HOME_WIN", "odds_decimal": 2.1, "source_type": "provider"}]}), patch.object(main.repository, "list_match_real_odds", return_value=[{"odds_decimal": 2.1}]):
+            report = main.match_value_bets("value-match")
+        self.assertEqual(report["status"], "ok")
+        self.assertIn("best_value", report)
 
     def test_assistant_match_endpoint(self):
         match = {"id": "assistant-match", "match_id": "assistant-match", "home_team": "PSG", "away_team": "Lyon"}
