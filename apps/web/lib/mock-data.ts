@@ -165,6 +165,56 @@ export type AssistantMatchResponse = {
   missing_data?: string[];
 };
 
+export type UserBet = {
+  id: string;
+  user_id?: string;
+  match_id: string;
+  market: string;
+  selection: string;
+  bookmaker?: string | null;
+  odds_decimal: number;
+  odds_source?: 'provider' | 'manual_user_input';
+  odds_collected_at?: string | null;
+  stake: number;
+  implied_probability?: number | null;
+  model_probability?: number | null;
+  calibrated_probability?: number | null;
+  expected_value?: number | null;
+  edge?: number | null;
+  risk_level?: string | null;
+  recommendation_type?: string | null;
+  status: 'pending' | 'won' | 'lost' | 'void' | 'cancelled';
+  result_profit?: number | null;
+  placed_at?: string | null;
+  settled_at?: string | null;
+  notes?: string | null;
+  raw_context?: Record<string, unknown>;
+};
+
+export type UserBetsResponse = {
+  status: string;
+  user_id?: string;
+  items_count: number;
+  items: UserBet[];
+};
+
+export type UserBetSummary = {
+  status: string;
+  user_id?: string;
+  total_bets: number;
+  settled_bets: number;
+  pending_bets: number;
+  total_staked: number;
+  net_profit: number | null;
+  roi: number | null;
+  win_rate: number | null;
+  average_odds: number | null;
+  by_market: Array<Record<string, unknown>>;
+  by_competition: Array<Record<string, unknown>>;
+  insights?: string[];
+  learning?: Record<string, unknown>;
+};
+
 export type MatchView = 'all' | 'upcoming' | 'history';
 
 export type MlShadowPrediction = {
@@ -2074,11 +2124,34 @@ export const mockAssistantResponse: BettingAssistantResponse = {
 export const mockAssistantMatchResponse: AssistantMatchResponse = {
   status: 'missing',
   match_id: 'mock',
-  summary: 'Cote non disponible : impossible de calculer une value fiable.',
+  summary: 'Cote réelle non disponible : impossible de calculer une value fiable.',
   primary_recommendation: null,
   markets_to_watch: [],
   markets_to_avoid: [],
   missing_data: ['odds'],
+};
+
+export const mockUserBetsResponse: UserBetsResponse = {
+  status: 'ok',
+  user_id: 'local-user',
+  items_count: 0,
+  items: [],
+};
+
+export const mockUserBetSummary: UserBetSummary = {
+  status: 'ok',
+  user_id: 'local-user',
+  total_bets: 0,
+  settled_bets: 0,
+  pending_bets: 0,
+  total_staked: 0,
+  net_profit: null,
+  roi: null,
+  win_rate: null,
+  average_odds: null,
+  by_market: [],
+  by_competition: [],
+  insights: ['Commencez à suivre vos paris pour obtenir des conseils personnalisés.'],
 };
 
 export const mockModelPromotionAudit: ModelPromotionAuditResponse = {

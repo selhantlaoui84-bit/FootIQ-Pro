@@ -39,7 +39,8 @@ from services.calibration_engine import (
     create_calibration_candidate,
 )
 from services.betting_assistant import analyze_prediction, generate_daily_assistant_brief, generate_match_assistant_summary
-from services.odds_engine import implied_probability_from_odds, select_reference_odds
+from services.odds_engine import implied_probability_from_odds
+from services.odds_provider import fetch_real_odds_for_matches, is_odds_configured
 from services.model_versioning import get_versions_report, list_model_versions, record_model_version
 from services.pipeline_orchestrator import run_after_match_finished_pipeline, run_daily_learning_pipeline, run_hourly_data_pipeline, run_pipeline_step
 from services.user_learning_engine import analyze_user_bets
@@ -839,31 +840,33 @@ def _odds_lookup_for_predictions(predictions: list[dict[str, Any]]) -> dict[str,
     lookup: dict[str, list[dict[str, Any]]] = {}
     for prediction in predictions:
         match_id = str(prediction.get("match_id") or prediction.get("id") or prediction.get("slug") or "")
-        lookup[match_id] = repository.list_match_odds(match_id)
+        lookup[match_id] = repository.list_match_real_odds(match_id)
     return lookup
 
 
 @app.get("/odds/match/{match_id}")
 def match_odds(match_id: str):
-    rows = repository.list_match_odds(match_id)
+    rows = repository.list_match_real_odds(match_id)
     if not rows:
-        return {"status": "missing", "match_id": match_id, "odds": [], "detail": "Cote non disponible pour ce match."}
-    return {"status": "ok", "match_id": match_id, "odds": rows}
+        return {"status": "missing", "source": "real_provider", "match_id": match_id, "odds": [], "odds_count": 0, "detail": "Cote réelle non disponible pour ce match."}
+    return {"status": "ok", "source": "real_provider", "match_id": match_id, "odds_count": len(rows), "odds": rows}
 
 
 @app.get("/odds/prediction")
 def prediction_odds(match_id: str, market: str = "1X2", selection: str = "HOME_WIN"):
-    odds = repository.get_reference_odds_for_prediction(match_id, market, selection)
+    odds = repository.get_reference_real_odds(match_id, market, selection)
     if not odds:
         return {
             "status": "missing",
+            "source": "real_provider",
             "match_id": match_id,
             "market": market,
             "selection": selection,
-            "detail": "Cote non disponible pour cette sélection.",
+            "detail": "Cote réelle non disponible pour cette sélection.",
         }
     return {
         "status": "ok",
+        "source": "real_provider",
         "match_id": match_id,
         "market": market,
         "selection": selection,
@@ -871,6 +874,40 @@ def prediction_odds(match_id: str, market: str = "1X2", selection: str = "HOME_W
             **odds,
             "implied_probability": odds.get("implied_probability") or implied_probability_from_odds(odds.get("odds_decimal")),
         },
+    }
+
+
+@app.post("/odds/refresh")
+async def refresh_odds(request: Request, x_admin_key: str | None = Header(default=None, alias="X-Admin-Key")):
+    _require_admin_key(x_admin_key)
+    body = await request.json()
+    match_ids = [str(item) for item in body.get("match_ids", []) if item]
+    if not is_odds_configured():
+        return {
+            "status": "missing_provider_config",
+            "saved_count": 0,
+            "detail": "ODDS provider is not configured. Cote réelle non disponible.",
+        }
+    try:
+        provider_report = fetch_real_odds_for_matches(match_ids)
+    except Exception as exc:
+        for match_id in match_ids:
+            repository.mark_odds_stale(match_id)
+        stale_count = sum(len(repository.list_match_real_odds(match_id)) for match_id in match_ids)
+        return {
+            "status": "provider_unavailable",
+            "source": "real_provider",
+            "saved_count": 0,
+            "stale_count": stale_count,
+            "detail": f"Provider de cotes réelles indisponible. Dernières cotes réelles marquées stale si disponibles. {exc}",
+        }
+    saved = [repository.save_real_bookmaker_odds(item) for item in provider_report.get("items", [])]
+    saved = [item for item in saved if item]
+    return {
+        "status": provider_report.get("status", "ok"),
+        "source": "real_provider",
+        "saved_count": len(saved),
+        "items_count": len(provider_report.get("items", [])),
     }
 
 
@@ -905,6 +942,71 @@ def assistant_match(match_id: str):
 @app.get("/assistant/daily-brief")
 def assistant_daily_brief(limit: int = Query(default=30, ge=1, le=200)):
     return assistant_predictions(limit=limit)
+
+
+def _request_user_id(x_user_id: str | None = Header(default=None, alias="X-User-Id")) -> str:
+    return x_user_id or "local-user"
+
+
+@app.get("/user-bets")
+def user_bets(x_user_id: str | None = Header(default=None, alias="X-User-Id"), limit: int = Query(default=100, ge=1, le=500)):
+    user_id = x_user_id or "local-user"
+    items = repository.list_user_bets(user_id, limit=limit)
+    return {"status": "ok", "user_id": user_id, "items_count": len(items), "items": items}
+
+
+@app.post("/user-bets")
+async def create_user_bet(request: Request, x_user_id: str | None = Header(default=None, alias="X-User-Id")):
+    user_id = x_user_id or "local-user"
+    body = await request.json()
+    try:
+        bet = repository.create_user_bet(user_id, body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"status": "ok", "user_id": user_id, "bet": bet}
+
+
+@app.get("/user-bets/summary")
+def user_bets_summary(x_user_id: str | None = Header(default=None, alias="X-User-Id")):
+    user_id = x_user_id or "local-user"
+    summary = repository.compute_user_betting_summary(user_id)
+    insights = analyze_user_bets(user_id, repository.list_user_bets(user_id, limit=500))
+    return {**summary, "user_id": user_id, "learning": insights}
+
+
+@app.get("/user-bets/{bet_id}")
+def user_bet_detail(bet_id: str, x_user_id: str | None = Header(default=None, alias="X-User-Id")):
+    user_id = x_user_id or "local-user"
+    bet = repository.get_user_bet(user_id, bet_id)
+    if not bet:
+        raise HTTPException(status_code=404, detail="Bet not found")
+    return {"status": "ok", "user_id": user_id, "bet": bet}
+
+
+@app.patch("/user-bets/{bet_id}")
+async def update_user_bet(bet_id: str, request: Request, x_user_id: str | None = Header(default=None, alias="X-User-Id")):
+    user_id = x_user_id or "local-user"
+    body = await request.json()
+    if body.get("status"):
+        try:
+            bet = repository.update_user_bet_status(user_id, bet_id, body["status"], body.get("result_profit"))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"status": "ok", "user_id": user_id, "bet": bet}
+    return user_bet_detail(bet_id, x_user_id=user_id)
+
+
+@app.post("/user-bets/{bet_id}/settle")
+async def settle_user_bet_endpoint(bet_id: str, request: Request, x_user_id: str | None = Header(default=None, alias="X-User-Id")):
+    user_id = x_user_id or "local-user"
+    body = await request.json()
+    try:
+        bet = repository.settle_user_bet(user_id, bet_id, body.get("status"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if not bet:
+        raise HTTPException(status_code=404, detail="Bet not found")
+    return {"status": "ok", "user_id": user_id, "bet": bet}
 
 
 
@@ -1549,7 +1651,7 @@ def model_performance():
         average_risk_score = round(sum(item.get("risk_score", 0) for item in predictions) / len(predictions))
     reliable = [item for item in predictions if item["confidence"]["status"] == "FIABLE"]
     medium = [item for item in predictions if item["confidence"]["status"] == "MOYEN"]
-    avoid = [item for item in predictions if item["confidence"]["status"] in {"Ã€ Ã‰VITER", "A EVITER"}]
+    avoid = [item for item in predictions if item["confidence"]["status"] in {"À ÉVITER", "A EVITER"}]
     traps = [item for item in predictions if item["flags"]["trap_match"]]
 
     comparison = calculate_snapshot_backtest(_available_matches(), repository.get_prediction_snapshots())

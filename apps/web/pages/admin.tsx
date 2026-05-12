@@ -30,6 +30,7 @@ import {
   promoteCandidateModel,
   rollbackProductionModel,
   resetStaleJobs,
+  refreshRealOdds,
   runDailyPipeline,
   runHourlyPipeline,
   runPipelineStep,
@@ -482,6 +483,20 @@ export default function AdminPage() {
       await reloadAdminState();
     } catch (runError) {
       setError(runError instanceof Error ? runError.message : 'Pipeline impossible.');
+    } finally {
+      setIsRunningPipeline(false);
+    }
+  }
+
+  async function handleRefreshOdds() {
+    if (!isAdmin) return;
+    setIsRunningPipeline(true);
+    setError(null);
+    try {
+      const result = await refreshRealOdds([]);
+      setPipelineResult({ status: result.status, step: 'refresh_odds', result } as PipelineRunResponse);
+    } catch (refreshError) {
+      setError(refreshError instanceof Error ? refreshError.message : 'Refresh cotes impossible.');
     } finally {
       setIsRunningPipeline(false);
     }
@@ -976,6 +991,9 @@ export default function AdminPage() {
             </button>
             <button className="button secondary" type="button" disabled={!isAdmin || isRunningPipeline} onClick={handleResetStaleJobs}>
               Réinitialiser les jobs bloqués
+            </button>
+            <button className="button secondary" type="button" disabled={!isAdmin || isRunningPipeline} onClick={handleRefreshOdds}>
+              Rafraîchir les cotes réelles
             </button>
           </div>
           {pipelineResult && (

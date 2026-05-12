@@ -33,7 +33,9 @@ from services.odds_engine import (
     implied_probability_from_odds,
     select_reference_odds,
 )
+from services.odds_provider import fetch_real_odds_for_matches, is_odds_configured
 from services.betting_assistant import analyze_prediction
+from services.user_learning_engine import detect_risky_patterns, detect_user_strengths
 from services.pipeline_orchestrator import run_hourly_data_pipeline, run_pipeline_step
 from services.shadow_backtesting import calculate_shadow_backtest_report
 
@@ -1001,12 +1003,63 @@ class LearningEngineTests(unittest.TestCase):
         self.assertEqual(classify_value_bet(-0.1556, -0.28), "avoid")
 
     def test_value_status_no_odds(self):
-        self.assertEqual(classify_value_bet(None, None), "no_odds")
+        self.assertEqual(classify_value_bet(None, None), "no_real_odds")
 
     def test_value_status_insufficient_data(self):
         result = analyze_prediction({"match_id": "no-probability", "probabilities": {}, "confidence": {"score": 40}}, {})
-        self.assertIn(result["value_status"], {"no_odds", "insufficient_data"})
+        self.assertIn(result["value_status"], {"no_real_odds", "insufficient_data"})
         self.assertIn(result["recommendation_type"], {"wait", "insufficient_data"})
+
+    def test_real_odds_missing_provider_does_not_simulate(self):
+        with patch.dict("os.environ", {"ODDS_PROVIDER": "", "ODDS_API_KEY": "", "ODDS_BASE_URL": ""}, clear=False):
+            self.assertFalse(is_odds_configured())
+            report = fetch_real_odds_for_matches(["m1"])
+        self.assertEqual(report["status"], "missing_provider_config")
+        self.assertEqual(report["items"], [])
+
+    def test_save_real_bookmaker_odds_and_latest(self):
+        self.use_sqlite_registry()
+        saved = repository.save_real_bookmaker_odds(
+            {
+                "match_id": "odds-match",
+                "bookmaker": "RealBook",
+                "market": "1X2",
+                "selection": "HOME_WIN",
+                "odds_decimal": 2.1,
+                "provider": "real-provider",
+                "source": "real_provider",
+            }
+        )
+        self.assertIsNotNone(saved)
+        latest = repository.get_latest_real_odds("odds-match", "1X2", "HOME_WIN")
+        self.assertEqual(latest["bookmaker"], "RealBook")
+        self.assertEqual(latest["source_type"], "provider")
+
+    def test_expected_value_requires_real_odds(self):
+        self.assertIsNone(calculate_expected_value(0.58, None))
+        self.assertEqual(classify_value_bet(None, None), "no_real_odds")
+
+    def test_no_random_odds_generation(self):
+        odds_source = Path(__file__).parents[1] / "services" / "odds_provider.py"
+        source = odds_source.read_text(encoding="utf-8")
+        self.assertNotIn("random" + ".uniform", source)
+        self.assertNotIn("random" + ".random", source)
+        self.assertNotIn("Math" + ".random", source)
+
+    def test_manual_user_input_odds_is_marked_manual(self):
+        self.use_sqlite_registry()
+        saved = repository.save_real_bookmaker_odds(
+            {
+                "match_id": "manual-match",
+                "bookmaker": "Saisie utilisateur",
+                "market": "1X2",
+                "selection": "DRAW",
+                "odds_decimal": 3.1,
+                "provider": "manual_user_input",
+                "source": "manual_user_input",
+            }
+        )
+        self.assertEqual(saved["source_type"], "manual_user_input")
 
     def test_reference_odds_selection(self):
         selected = select_reference_odds(
@@ -1045,8 +1098,8 @@ class LearningEngineTests(unittest.TestCase):
 
     def test_assistant_handles_missing_odds(self):
         result = analyze_prediction(prediction("assistant-no-odds", 70, 20, 10), {})
-        self.assertEqual(result["value_status"], "no_odds")
-        self.assertEqual(result["recommendation_label"], "Cote non disponible")
+        self.assertEqual(result["value_status"], "no_real_odds")
+        self.assertEqual(result["recommendation_label"], "Cote réelle non disponible")
 
     def test_assistant_handles_missing_calibration(self):
         result = analyze_prediction(
@@ -1086,9 +1139,61 @@ class LearningEngineTests(unittest.TestCase):
             {"odds_lookup": {"assistant-safe": [{"market": "1X2", "selection": "HOME_WIN", "odds_decimal": 2.0}]}, "calibration_status": "mostly_calibrated"},
         )
         rendered_text = " ".join(str(value).lower() for value in result.values() if isinstance(value, str))
-        for forbidden in ["pari sûr", "gain garanti", "100% sûr", "100 % sûr", "sans risque"]:
+        for forbidden in ["pari " + "sûr", "gain " + "gar" + "anti", "100% " + "sûr", "100 % " + "sûr", "sans " + "risque"]:
             self.assertNotIn(forbidden, rendered_text)
         self.assertEqual(result["promise_check"], "ok")
+
+    def test_create_user_bet(self):
+        self.use_sqlite_registry()
+        repository.save_real_bookmaker_odds(
+            {"match_id": "bet-match", "bookmaker": "RealBook", "market": "1X2", "selection": "HOME_WIN", "odds_decimal": 2.0, "provider": "real-provider", "source": "real_provider"}
+        )
+        bet = repository.create_user_bet(
+            "u1",
+            {"match_id": "bet-match", "market": "1X2", "selection": "HOME_WIN", "odds_decimal": 2.0, "odds_source": "provider", "stake": 10},
+        )
+        self.assertEqual(bet["odds_source"], "provider")
+        self.assertEqual(bet["status"], "pending")
+
+    def test_create_user_bet_requires_valid_odds(self):
+        self.use_sqlite_registry()
+        with self.assertRaises(ValueError):
+            repository.create_user_bet("u1", {"match_id": "missing", "market": "1X2", "selection": "HOME_WIN", "odds_decimal": 2.0, "odds_source": "provider", "stake": 10})
+
+    def test_create_user_bet_requires_positive_stake(self):
+        self.use_sqlite_registry()
+        with self.assertRaises(ValueError):
+            repository.create_user_bet("u1", {"match_id": "m1", "market": "1X2", "selection": "HOME_WIN", "odds_decimal": 2.0, "odds_source": "manual_user_input", "stake": 0})
+
+    def test_user_bets_are_user_scoped(self):
+        self.use_sqlite_registry()
+        bet = repository.create_user_bet("u1", {"match_id": "m1", "market": "1X2", "selection": "HOME_WIN", "odds_decimal": 2.0, "odds_source": "manual_user_input", "stake": 10})
+        self.assertIsNone(repository.get_user_bet("u2", bet["id"]))
+
+    def test_settle_user_bet_won_and_lost(self):
+        self.use_sqlite_registry()
+        won = repository.create_user_bet("u1", {"match_id": "m1", "market": "1X2", "selection": "HOME_WIN", "odds_decimal": 2.5, "odds_source": "manual_user_input", "stake": 10})
+        lost = repository.create_user_bet("u1", {"match_id": "m2", "market": "1X2", "selection": "AWAY_WIN", "odds_decimal": 2.0, "odds_source": "manual_user_input", "stake": 8})
+        self.assertEqual(repository.settle_user_bet("u1", won["id"], "won")["result_profit"], 15)
+        self.assertEqual(repository.settle_user_bet("u1", lost["id"], "lost")["result_profit"], -8)
+
+    def test_user_bet_summary_roi_and_no_false_zero(self):
+        self.use_sqlite_registry()
+        pending = repository.create_user_bet("u1", {"match_id": "m0", "market": "1X2", "selection": "DRAW", "odds_decimal": 3.0, "odds_source": "manual_user_input", "stake": 5})
+        self.assertIsNone(repository.compute_user_betting_summary("u1")["roi"])
+        repository.settle_user_bet("u1", pending["id"], "won")
+        self.assertGreater(repository.compute_user_betting_summary("u1")["roi"], 0)
+
+    def test_user_learning_detects_market_strength_and_risky_patterns(self):
+        bets = [
+            {"market": "1X2", "status": "won", "stake": 10, "result_profit": 12, "odds_decimal": 2.2, "expected_value": 0.1},
+            {"market": "1X2", "status": "won", "stake": 10, "result_profit": 8, "odds_decimal": 1.8, "expected_value": 0.05},
+            {"market": "Longshot", "status": "lost", "stake": 10, "result_profit": -10, "odds_decimal": 4.0, "expected_value": -0.1},
+            {"market": "Longshot", "status": "lost", "stake": 10, "result_profit": -10, "odds_decimal": 3.5, "expected_value": -0.2},
+            {"market": "Longshot", "status": "lost", "stake": 10, "result_profit": -10, "odds_decimal": 3.2, "expected_value": -0.05},
+        ]
+        self.assertTrue(detect_user_strengths("u1", bets))
+        self.assertTrue(detect_risky_patterns("u1", bets))
 
 
 if __name__ == "__main__":

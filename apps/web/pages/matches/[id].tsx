@@ -140,15 +140,18 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
         <section className="card accent">
           <p className="eyebrow">Assistant FootIQ</p>
           <h2>{assistant?.primary_recommendation?.recommendation_label ?? 'Analyse de pari'}</h2>
-          <p>{assistant?.summary ?? 'Cote non disponible : impossible de calculer une value fiable.'}</p>
+          <p>{assistant?.summary ?? 'Cote réelle non disponible : impossible de calculer une value fiable.'}</p>
           <div className="compactDataGrid four">
-            <div className="metric"><span>Cote</span><strong>{assistant?.primary_recommendation?.odds ? assistant.primary_recommendation.odds.toFixed(2) : 'Cote non disponible'}</strong></div>
+            <div className="metric"><span>Cote</span><strong>{assistant?.primary_recommendation?.odds ? assistant.primary_recommendation.odds.toFixed(2) : 'Cote réelle non disponible'}</strong></div>
             <div className="metric"><span>Value</span><strong>{assistant?.primary_recommendation?.expected_value != null ? assistant.primary_recommendation.expected_value.toFixed(3) : 'Non calculable'}</strong></div>
             <div className="metric"><span>Edge</span><strong>{assistant?.primary_recommendation?.edge != null ? `${Math.round(assistant.primary_recommendation.edge * 1000) / 10}%` : 'Non calculable'}</strong></div>
             <div className="metric"><span>Risque</span><strong>{assistant?.primary_recommendation?.risk_level ?? 'unknown'}</strong></div>
           </div>
           <div className="banner warning">
             Les recommandations sont informatives, dépendantes des cotes disponibles et du risque. Les résultats restent incertains.
+          </div>
+          <div className="cardActions">
+            <a className="button secondary" href="/my-bets">Ajouter un pari</a>
           </div>
         </section>
 
@@ -288,7 +291,7 @@ export default function MatchDetailPage({ match, prediction }: MatchDetailProps)
           <section className="card explainabilityCard">
             <h2 className="metricHelp">
               Pourquoi cette prédiction ?
-              <InfoTooltip content="Cette couche transforme les signaux statistiques en facteurs lisibles, sans garantir le résultat." />
+              <InfoTooltip content="Cette couche transforme les signaux statistiques en facteurs lisibles, avec une part d'incertitude." />
             </h2>
             <p>{explainability.summary}</p>
             <div className="dataList">
@@ -419,7 +422,7 @@ function Probability({ label, value }: { label: string; value: number }) {
     <article className="card probability">
       <span className="metricHelp">
         {label}
-        <InfoTooltip content="Probabilité estimée par le modèle. Elle exprime une tendance statistique, pas une garantie." />
+        <InfoTooltip content="Probabilité estimée par le modèle. Elle exprime une tendance statistique, pas une certitude." />
       </span>
       <strong>{value}%</strong>
       <div className="probabilityBar confidence-bar"><span style={{ width: `${value}%` }} /></div>

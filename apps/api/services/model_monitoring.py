@@ -144,7 +144,7 @@ def build_official_monitoring(
             reliable_count += 1
         elif status == "MOYEN":
             medium_count += 1
-        elif status in {"A EVITER", "À ÉVITER", "Ã€ Ã‰VITER"}:
+        elif status in {"A EVITER", "À ÉVITER"}:
             avoid_count += 1
 
         if flags.get("trap_match"):

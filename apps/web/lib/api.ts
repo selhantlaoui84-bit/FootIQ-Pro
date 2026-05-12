@@ -34,6 +34,8 @@ import {
   mockLearningMonitoringReport,
   mockAssistantResponse,
   mockAssistantMatchResponse,
+  mockUserBetsResponse,
+  mockUserBetSummary,
   mockModelPromotionAudit,
   mockPipelineJobs,
   mockPipelineStatus,
@@ -81,6 +83,9 @@ import {
   type PipelineStatus,
   type BettingAssistantResponse,
   type AssistantMatchResponse,
+  type UserBet,
+  type UserBetsResponse,
+  type UserBetSummary,
 } from '~/lib/mock-data';
 
 
@@ -218,6 +223,44 @@ export async function getMatchOdds(matchId: string): Promise<{ status: string; o
 export async function getPredictionOdds(options: { matchId: string; market: string; selection: string }): Promise<{ status: string; odds?: unknown; detail?: string }> {
   const params = new URLSearchParams({ match_id: options.matchId, market: options.market, selection: options.selection });
   return fetchProxyJson(`/api/odds/prediction?${params.toString()}`, undefined, 10000);
+}
+
+export async function refreshRealOdds(matchIds: string[] = []): Promise<{ status: string; saved_count?: number; detail?: string }> {
+  return fetchProxyJson('/api/admin/refresh-odds', {
+    method: 'POST',
+    body: JSON.stringify({ match_ids: matchIds }),
+  }, 60000);
+}
+
+export async function getUserBets(): Promise<UserBetsResponse> {
+  if (IS_BUILD) return mockUserBetsResponse;
+  return fetchProxyJson<UserBetsResponse>('/api/user-bets', undefined, 15000);
+}
+
+export async function createUserBet(payload: Partial<UserBet> & { match_id: string; market: string; selection: string; odds_decimal: number; stake: number; odds_source?: 'provider' | 'manual_user_input' }): Promise<{ status: string; bet: UserBet }> {
+  return fetchProxyJson('/api/user-bets', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, 15000);
+}
+
+export async function updateUserBet(id: string, payload: Partial<UserBet>): Promise<{ status: string; bet: UserBet }> {
+  return fetchProxyJson(`/api/user-bets/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  }, 15000);
+}
+
+export async function settleUserBet(id: string, payload: { status: 'won' | 'lost' | 'void' }): Promise<{ status: string; bet: UserBet }> {
+  return fetchProxyJson(`/api/user-bets/${encodeURIComponent(id)}/settle`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, 15000);
+}
+
+export async function getUserBetSummary(): Promise<UserBetSummary> {
+  if (IS_BUILD) return mockUserBetSummary;
+  return fetchProxyJson<UserBetSummary>('/api/user-bets/summary', undefined, 15000);
 }
 
 export async function getPrediction(matchId: string): Promise<Prediction> {

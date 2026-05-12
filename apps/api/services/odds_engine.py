@@ -78,7 +78,7 @@ def classify_value_bet(edge: Any, expected_value: Any, risk_score: Any = None) -
     except (TypeError, ValueError):
         risk = None
     if edge is None or expected_value is None:
-        return "no_odds"
+        return "no_real_odds"
     ev = float(expected_value)
     if risk is not None and risk >= 85:
         return "avoid"
@@ -91,6 +91,33 @@ def classify_value_bet(edge: Any, expected_value: Any, risk_score: Any = None) -
     if ev > 0.08:
         return "strong_value"
     return "positive_value"
+
+
+def enrich_prediction_with_real_odds(prediction: dict[str, Any], odds: dict[str, Any] | None) -> dict[str, Any]:
+    selection = selection_from_prediction(prediction)
+    probability = probability_for_selection(prediction, selection)
+    if not odds:
+        return {
+            **prediction,
+            "selection": selection,
+            "real_odds": None,
+            "value_status": "no_real_odds",
+            "edge": None,
+            "expected_value": None,
+            "implied_probability": None,
+        }
+    decimal = odds.get("odds_decimal")
+    edge = calculate_edge(probability, decimal)
+    expected_value = calculate_expected_value(probability, decimal)
+    return {
+        **prediction,
+        "selection": selection,
+        "real_odds": odds,
+        "value_status": classify_value_bet(edge, expected_value, prediction.get("risk_score")),
+        "edge": edge,
+        "expected_value": expected_value,
+        "implied_probability": implied_probability_from_odds(decimal),
+    }
 
 
 def selection_from_prediction(prediction: dict[str, Any]) -> str:

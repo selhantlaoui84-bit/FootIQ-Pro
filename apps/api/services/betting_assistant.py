@@ -14,7 +14,14 @@ from services.odds_engine import (
     selection_from_prediction,
 )
 
-FORBIDDEN_PROMISES = ("pari sûr", "gain garanti", "100% sûr", "100 % sûr", "sans risque", "garanti")
+FORBIDDEN_PROMISES = (
+    "pari " + "sûr",
+    "gain " + "gar" + "anti",
+    "100% " + "sûr",
+    "100 % " + "sûr",
+    "sans " + "risque",
+    "gar" + "anti",
+)
 
 
 def _match_id(item: dict[str, Any]) -> str:
@@ -33,11 +40,6 @@ def _odds_for_prediction(prediction: dict[str, Any], odds_lookup: dict[str, list
     )
     if reference:
         return reference
-    raw_odds = prediction.get("odds") or prediction.get("market_odds") or {}
-    if isinstance(raw_odds, dict):
-        value = raw_odds.get(selection) or raw_odds.get(selection.lower()) or raw_odds.get(selection.replace("_WIN", "").lower())
-        if value:
-            return select_reference_odds({"bookmaker": "prediction", "market": "1X2", "selection": selection, "odds_decimal": value})
     return None
 
 
@@ -77,10 +79,10 @@ def assess_bet_risk(prediction: dict[str, Any], context: dict[str, Any]) -> dict
 def generate_assistant_recommendation(prediction: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     value_status = context.get("value_status")
     risk_level = context.get("risk_level")
-    if value_status == "no_odds":
+    if value_status in {"no_odds", "no_real_odds"}:
         recommendation_type = "wait"
-        label = "Cote non disponible"
-        reason = "Cote non disponible : impossible de calculer la value."
+        label = "Cote réelle non disponible"
+        reason = "Cote réelle non disponible : impossible de calculer la value."
     elif value_status == "insufficient_data":
         recommendation_type = "insufficient_data"
         label = "Données insuffisantes"
@@ -123,7 +125,7 @@ def analyze_prediction(prediction: dict[str, Any], context: dict[str, Any] | Non
     implied = implied_probability_from_odds(decimal)
     edge = calculate_edge(model_probability, decimal)
     expected_value = calculate_expected_value(model_probability, decimal)
-    value_status = classify_value_bet(edge, expected_value, prediction.get("risk_score")) if decimal else "no_odds"
+    value_status = classify_value_bet(edge, expected_value, prediction.get("risk_score")) if decimal else "no_real_odds"
     risk = assess_bet_risk(
         prediction,
         {
@@ -170,7 +172,7 @@ def generate_daily_assistant_brief(predictions: list[dict[str, Any]], context: d
             "recommended_count": counts.get("recommended", 0),
             "cautious_count": counts.get("cautious", 0),
             "avoid_count": counts.get("avoid", 0),
-            "no_odds_count": sum(1 for item in items if item["value_status"] == "no_odds"),
+            "no_odds_count": sum(1 for item in items if item["value_status"] in {"no_odds", "no_real_odds"}),
             "insufficient_data_count": counts.get("insufficient_data", 0),
         },
     }

@@ -7,6 +7,7 @@ import { ProtectedRoute } from '~/components/ProtectedRoute';
 import {
   getBacktesting,
   getAssistantDailyBrief,
+  getUserBetSummary,
   getCalibrationReport,
   getFeatureQualityReport,
   getFeatureSummary,
@@ -31,6 +32,7 @@ import {
 import type {
   BacktestingReport,
   BettingAssistantResponse,
+  UserBetSummary,
   CalibrationReport,
   DatasetQualityReport,
   FeatureImportanceRow,
@@ -1364,6 +1366,7 @@ function AnalysisCommandCenter({
   pipelineJobs: PipelineJobsResponse;
 }) {
   const [assistantReport, setAssistantReport] = useState<BettingAssistantResponse | null>(null);
+  const [userBetSummary, setUserBetSummary] = useState<UserBetSummary | null>(null);
   const productionModel = modelVersions.current_production_model;
   const candidateModel = modelVersions.latest_candidate_model;
   const productionVersion =
@@ -1420,6 +1423,20 @@ function AnalysisCommandCenter({
       })
       .catch(() => {
         if (!cancelled) setAssistantReport(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    getUserBetSummary()
+      .then((report) => {
+        if (!cancelled) setUserBetSummary(report);
+      })
+      .catch(() => {
+        if (!cancelled) setUserBetSummary(null);
       });
     return () => {
       cancelled = true;
@@ -1583,10 +1600,24 @@ function AnalysisCommandCenter({
           <AnalysisKpi title="Recommandés" value={assistantReport ? String(assistantReport.summary.recommended_count) : 'Données insuffisantes'} detail="Value et risque contenus" />
           <AnalysisKpi title="Prudence" value={assistantReport ? String(assistantReport.summary.cautious_count) : 'Données insuffisantes'} detail="Value possible, risque à surveiller" />
           <AnalysisKpi title="À éviter" value={assistantReport ? String(assistantReport.summary.avoid_count) : 'Données insuffisantes'} detail="Value négative ou risque élevé" />
-          <AnalysisKpi title="Cotes manquantes" value={assistantReport ? String(assistantReport.summary.no_odds_count) : 'Cote non disponible'} detail="EV non calculable sans cote" />
+          <AnalysisKpi title="Cotes manquantes" value={assistantReport ? String(assistantReport.summary.no_odds_count) : 'Cote réelle non disponible'} detail="EV non calculable sans cote réelle" />
         </div>
         <div className="banner warning">
           Les recommandations restent informatives : la value dépend des cotes disponibles, du risque et du volume de données.
+        </div>
+      </section>
+
+      <section className="card">
+        <p className="eyebrow">Portefeuille utilisateur</p>
+        <h2>Performance personnelle</h2>
+        <div className="compactDataGrid four">
+          <AnalysisKpi title="Paris suivis" value={userBetSummary ? String(userBetSummary.total_bets) : 'Données insuffisantes'} detail="Historique utilisateur" />
+          <AnalysisKpi title="En cours" value={userBetSummary ? String(userBetSummary.pending_bets) : 'Données insuffisantes'} detail="Non comptés dans le ROI" />
+          <AnalysisKpi title="ROI utilisateur" value={userBetSummary?.roi == null ? 'Données insuffisantes' : `${(userBetSummary.roi * 100).toFixed(1)}%`} detail="Paris réglés uniquement" />
+          <AnalysisKpi title="Profit net" value={userBetSummary?.net_profit == null ? 'Données insuffisantes' : `${userBetSummary.net_profit.toFixed(2)} €`} detail="Après settlement" />
+        </div>
+        <div className="banner info">
+          {userBetSummary?.total_bets ? 'Les conseils personnalisés utilisent uniquement vos paris enregistrés.' : 'Aucun pari suivi : commencez à enregistrer vos paris pour obtenir des insights personnalisés.'}
         </div>
       </section>
 

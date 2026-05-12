@@ -445,9 +445,15 @@ def _odds_from_row(row: dict | None) -> dict | None:
         "odds_decimal": _num_or_none(row.get("odds_decimal")),
         "implied_probability": _num_or_none(row.get("implied_probability")),
         "margin": _num_or_none(row.get("margin")),
+        "provider": row.get("provider"),
+        "provider_event_id": row.get("provider_event_id"),
+        "provider_market_id": row.get("provider_market_id"),
         "raw": _loads(row.get("raw_json")) or {},
         "collected_at": _iso(row.get("collected_at")),
+        "expires_at": _iso(row.get("expires_at")),
+        "stale": bool(row.get("stale")) if row.get("stale") is not None else False,
         "source": row.get("source"),
+        "source_type": "manual_user_input" if row.get("source") == "manual_user_input" else "provider",
         "created_at": _iso(row.get("created_at")),
     }
 
@@ -470,30 +476,42 @@ def upsert_bookmaker_odds(odds: dict) -> dict | None:
         "odds_decimal": odds_decimal,
         "implied_probability": implied_probability,
         "margin": _num_or_none(odds.get("margin")),
+        "provider": odds.get("provider") or odds.get("source") or "unknown",
+        "provider_event_id": odds.get("provider_event_id"),
+        "provider_market_id": odds.get("provider_market_id"),
         "raw_json": _json(odds.get("raw") or odds.get("raw_json") or odds),
         "collected_at": _parse_datetime(odds.get("collected_at")) or _now(),
+        "expires_at": _parse_datetime(odds.get("expires_at")),
+        "stale": bool(odds.get("stale", False)),
         "source": odds.get("source") or "system",
         "created_at": _parse_datetime(odds.get("created_at")) or _now(),
     }
-    if not row["match_id"] or not row["selection"]:
+    if not row["match_id"] or not row["selection"] or odds_decimal is None or odds_decimal <= 1:
         return None
     execute_safe(
         text(
             """
             INSERT INTO bookmaker_odds (
                 id, match_id, bookmaker, market, selection, odds_decimal, implied_probability,
-                margin, raw_json, collected_at, source, created_at
+                margin, provider, provider_event_id, provider_market_id, raw_json, collected_at,
+                expires_at, stale, source, created_at
             )
             VALUES (
                 :id, :match_id, :bookmaker, :market, :selection, :odds_decimal, :implied_probability,
-                :margin, :raw_json, :collected_at, :source, :created_at
+                :margin, :provider, :provider_event_id, :provider_market_id, :raw_json, :collected_at,
+                :expires_at, :stale, :source, :created_at
             )
             ON CONFLICT (id) DO UPDATE SET
                 odds_decimal = EXCLUDED.odds_decimal,
                 implied_probability = EXCLUDED.implied_probability,
                 margin = EXCLUDED.margin,
+                provider = EXCLUDED.provider,
+                provider_event_id = EXCLUDED.provider_event_id,
+                provider_market_id = EXCLUDED.provider_market_id,
                 raw_json = EXCLUDED.raw_json,
                 collected_at = EXCLUDED.collected_at,
+                expires_at = EXCLUDED.expires_at,
+                stale = EXCLUDED.stale,
                 source = EXCLUDED.source
             """
         ),
@@ -561,6 +579,299 @@ def get_best_odds_for_prediction(match_id: str, market: str, selection: str) -> 
 
 def get_reference_odds_for_prediction(match_id: str, market: str, selection: str) -> dict | None:
     return get_best_odds_for_prediction(match_id, market, selection) or get_latest_odds_for_prediction(match_id, market, selection)
+
+
+def _is_real_or_manual_odds(odds: dict | None) -> bool:
+    if not odds:
+        return False
+    source = str(odds.get("source") or "").lower()
+    provider = str(odds.get("provider") or "").lower()
+    return source in {"real_provider", "manual_user_input"} or provider not in {"", "unknown", "system", "prediction", "mock"}
+
+
+def save_real_bookmaker_odds(odds: dict) -> dict | None:
+    source = str((odds or {}).get("source") or "real_provider")
+    if source not in {"real_provider", "manual_user_input"}:
+        return None
+    saved = upsert_bookmaker_odds({**odds, "source": source})
+    return saved if _is_real_or_manual_odds(saved) else None
+
+
+def list_match_real_odds(match_id: str) -> list[dict]:
+    return [item for item in list_match_odds(match_id) if _is_real_or_manual_odds(item)]
+
+
+def get_latest_real_odds(match_id: str, market: str, selection: str) -> dict | None:
+    odds = get_latest_odds_for_prediction(match_id, market, selection)
+    return odds if _is_real_or_manual_odds(odds) else None
+
+
+def get_best_real_odds(match_id: str, market: str, selection: str) -> dict | None:
+    odds = get_best_odds_for_prediction(match_id, market, selection)
+    return odds if _is_real_or_manual_odds(odds) else None
+
+
+def get_reference_real_odds(match_id: str, market: str, selection: str) -> dict | None:
+    return get_best_real_odds(match_id, market, selection) or get_latest_real_odds(match_id, market, selection)
+
+
+def mark_odds_stale(match_id: str | None = None) -> int:
+    if not db_available():
+        return 0
+    params = {}
+    where = ""
+    if match_id:
+        where = "WHERE match_id = :match_id"
+        params["match_id"] = str(match_id)
+    rows = fetch_all_safe(text(f"SELECT id FROM bookmaker_odds {where}"), params)
+    execute_safe(text(f"UPDATE bookmaker_odds SET stale = true {where}"), params)
+    return len(rows)
+
+
+def list_recent_odds(limit: int = 100) -> list[dict]:
+    if not db_available():
+        return []
+    rows = fetch_all_safe(
+        text("SELECT * FROM bookmaker_odds ORDER BY collected_at DESC, created_at DESC LIMIT :limit"),
+        {"limit": max(1, min(int(limit or 100), 500))},
+    )
+    return [item for item in (_odds_from_row(row) for row in rows) if item and _is_real_or_manual_odds(item)]
+
+
+def has_real_odds_for_match(match_id: str) -> bool:
+    return bool(list_match_real_odds(match_id))
+
+
+def _user_bet_from_row(row: dict | None) -> dict | None:
+    if not row:
+        return None
+    return {
+        "id": row.get("id"),
+        "user_id": row.get("user_id"),
+        "match_id": row.get("match_id"),
+        "market": row.get("market"),
+        "selection": row.get("selection"),
+        "bookmaker": row.get("bookmaker"),
+        "odds_decimal": _num_or_none(row.get("odds_decimal")),
+        "odds_source": row.get("odds_source"),
+        "odds_collected_at": _iso(row.get("odds_collected_at")),
+        "stake": _num_or_none(row.get("stake")),
+        "implied_probability": _num_or_none(row.get("implied_probability")),
+        "model_probability": _num_or_none(row.get("model_probability")),
+        "calibrated_probability": _num_or_none(row.get("calibrated_probability")),
+        "expected_value": _num_or_none(row.get("expected_value")),
+        "edge": _num_or_none(row.get("edge")),
+        "risk_level": row.get("risk_level"),
+        "recommendation_type": row.get("recommendation_type"),
+        "status": row.get("status"),
+        "result_profit": _num_or_none(row.get("result_profit")) or 0,
+        "placed_at": _iso(row.get("placed_at")),
+        "settled_at": _iso(row.get("settled_at")),
+        "notes": row.get("notes"),
+        "raw_context": _loads(row.get("raw_context_json")) or {},
+        "created_at": _iso(row.get("created_at")),
+        "updated_at": _iso(row.get("updated_at")),
+    }
+
+
+def create_user_bet(user_id: str, payload: dict) -> dict:
+    if not user_id:
+        raise ValueError("user_id required")
+    odds_decimal = _num_or_none(payload.get("odds_decimal"))
+    stake = _num_or_none(payload.get("stake"))
+    if odds_decimal is None or odds_decimal <= 1:
+        raise ValueError("odds_decimal must be greater than 1")
+    if stake is None or stake <= 0:
+        raise ValueError("stake must be greater than 0")
+    requested_source = str(payload.get("odds_source") or payload.get("source") or (payload.get("raw_context") or {}).get("source") or "")
+    source = "real_provider" if requested_source in {"provider", "real_provider"} else requested_source
+    if source not in {"real_provider", "manual_user_input"}:
+        raise ValueError("real odds source or explicit manual_user_input required")
+    stored_odds = None
+    if source == "real_provider":
+        stored_odds = get_reference_real_odds(str(payload.get("match_id") or ""), str(payload.get("market") or ""), str(payload.get("selection") or ""))
+        if not stored_odds:
+            raise ValueError("provider odds source requires an existing real bookmaker odd")
+        if abs(float(stored_odds.get("odds_decimal") or 0) - odds_decimal) > 0.0001:
+            raise ValueError("provider odds_decimal must match stored real bookmaker odds")
+    bet_id = str(payload.get("id") or uuid.uuid4())
+    now = _now()
+    row = {
+        "id": bet_id,
+        "user_id": str(user_id),
+        "match_id": str(payload.get("match_id") or ""),
+        "market": str(payload.get("market") or ""),
+        "selection": str(payload.get("selection") or ""),
+        "bookmaker": payload.get("bookmaker"),
+        "odds_decimal": odds_decimal,
+        "odds_source": "provider" if source == "real_provider" else "manual_user_input",
+        "odds_collected_at": _parse_datetime(payload.get("odds_collected_at") or (stored_odds or {}).get("collected_at")),
+        "stake": stake,
+        "implied_probability": _num_or_none(payload.get("implied_probability")),
+        "model_probability": _num_or_none(payload.get("model_probability")),
+        "calibrated_probability": _num_or_none(payload.get("calibrated_probability")),
+        "expected_value": _num_or_none(payload.get("expected_value")),
+        "edge": _num_or_none(payload.get("edge")),
+        "risk_level": payload.get("risk_level"),
+        "recommendation_type": payload.get("recommendation_type"),
+        "status": payload.get("status") or "pending",
+        "result_profit": _num_or_none(payload.get("result_profit")) or 0,
+        "placed_at": _parse_datetime(payload.get("placed_at")) or now,
+        "settled_at": _parse_datetime(payload.get("settled_at")),
+        "notes": payload.get("notes"),
+        "raw_context_json": _json({**(payload.get("raw_context") or {}), "source": source}),
+        "created_at": now,
+        "updated_at": now,
+    }
+    if not row["match_id"] or not row["market"] or not row["selection"]:
+        raise ValueError("match_id, market and selection are required")
+    if not db_available():
+        return {**row, "raw_context": _loads(row["raw_context_json"]) or {}}
+    init_db()
+    execute_safe(
+        text(
+            """
+            INSERT INTO user_bets (
+                id, user_id, match_id, market, selection, bookmaker, odds_decimal, odds_source,
+                odds_collected_at, stake,
+                implied_probability, model_probability, calibrated_probability, expected_value,
+                edge, risk_level, recommendation_type, status, result_profit, placed_at,
+                settled_at, notes, raw_context_json, created_at, updated_at
+            )
+            VALUES (
+                :id, :user_id, :match_id, :market, :selection, :bookmaker, :odds_decimal, :odds_source,
+                :odds_collected_at, :stake,
+                :implied_probability, :model_probability, :calibrated_probability, :expected_value,
+                :edge, :risk_level, :recommendation_type, :status, :result_profit, :placed_at,
+                :settled_at, :notes, :raw_context_json, :created_at, :updated_at
+            )
+            """
+        ),
+        row,
+    )
+    return get_user_bet(user_id, bet_id) or _user_bet_from_row(row)
+
+
+def list_user_bets(user_id: str, limit: int = 100) -> list[dict]:
+    if not user_id or not db_available():
+        return []
+    rows = fetch_all_safe(
+        text("SELECT * FROM user_bets WHERE user_id = :user_id ORDER BY placed_at DESC LIMIT :limit"),
+        {"user_id": str(user_id), "limit": max(1, min(int(limit or 100), 500))},
+    )
+    return [item for item in (_user_bet_from_row(row) for row in rows) if item]
+
+
+def get_user_bet(user_id: str, bet_id: str) -> dict | None:
+    if not user_id or not bet_id or not db_available():
+        return None
+    row = fetch_one_safe(
+        text("SELECT * FROM user_bets WHERE user_id = :user_id AND id = :bet_id LIMIT 1"),
+        {"user_id": str(user_id), "bet_id": str(bet_id)},
+    )
+    return _user_bet_from_row(row)
+
+
+def update_user_bet_status(user_id: str, bet_id: str, status: str, result_profit: float | None = None) -> dict | None:
+    if status not in {"pending", "won", "lost", "void", "cancelled"}:
+        raise ValueError("invalid bet status")
+    if not db_available():
+        return None
+    params = {
+        "user_id": str(user_id),
+        "bet_id": str(bet_id),
+        "status": status,
+        "result_profit": result_profit,
+        "settled_at": _now() if status in {"won", "lost", "void", "cancelled"} else None,
+        "updated_at": _now(),
+    }
+    execute_safe(
+        text(
+            """
+            UPDATE user_bets
+            SET status = :status,
+                result_profit = COALESCE(:result_profit, result_profit),
+                settled_at = COALESCE(:settled_at, settled_at),
+                updated_at = :updated_at
+            WHERE user_id = :user_id AND id = :bet_id
+            """
+        ),
+        params,
+    )
+    return get_user_bet(user_id, bet_id)
+
+
+def settle_user_bet(user_id: str, bet_id: str, status: str) -> dict | None:
+    bet = get_user_bet(user_id, bet_id)
+    if not bet:
+        return None
+    stake = bet.get("stake") or 0
+    odds = bet.get("odds_decimal") or 0
+    if status == "won":
+        profit = round(stake * (odds - 1), 4)
+    elif status == "lost":
+        profit = round(-stake, 4)
+    elif status == "void":
+        profit = 0
+    else:
+        raise ValueError("settle status must be won, lost or void")
+    return update_user_bet_status(user_id, bet_id, status, profit)
+
+
+def delete_or_cancel_user_bet(user_id: str, bet_id: str) -> dict | None:
+    return update_user_bet_status(user_id, bet_id, "cancelled", 0)
+
+
+def compute_user_betting_summary(user_id: str) -> dict:
+    bets = list_user_bets(user_id, limit=500)
+    settled = [item for item in bets if item["status"] in {"won", "lost", "void"}]
+    total_staked = round(sum(float(item.get("stake") or 0) for item in bets), 4)
+    settled_staked = sum(float(item.get("stake") or 0) for item in settled)
+    net_profit = round(sum(float(item.get("result_profit") or 0) for item in settled), 4)
+    wins = [item for item in settled if item["status"] == "won"]
+    average_odds = round(sum(float(item.get("odds_decimal") or 0) for item in bets) / len(bets), 4) if bets else None
+    return {
+        "status": "ok",
+        "total_bets": len(bets),
+        "settled_bets": len(settled),
+        "pending_bets": len([item for item in bets if item["status"] == "pending"]),
+        "total_staked": total_staked,
+        "net_profit": net_profit if settled else None,
+        "roi": round(net_profit / settled_staked, 4) if settled and settled_staked else None,
+        "win_rate": round(len(wins) / len([item for item in settled if item["status"] in {"won", "lost"}]), 4) if any(item["status"] in {"won", "lost"} for item in settled) else None,
+        "average_odds": average_odds,
+        "by_market": compute_user_market_performance(user_id, bets),
+        "by_competition": compute_user_competition_performance(user_id, bets),
+        "insights": [],
+    }
+
+
+def compute_user_market_performance(user_id: str, bets: list[dict] | None = None) -> list[dict]:
+    rows = bets if bets is not None else list_user_bets(user_id)
+    markets = sorted({item.get("market") for item in rows if item.get("market")})
+    report = []
+    for market in markets:
+        subset = [item for item in rows if item.get("market") == market and item.get("status") in {"won", "lost", "void"}]
+        staked = sum(float(item.get("stake") or 0) for item in subset)
+        profit = sum(float(item.get("result_profit") or 0) for item in subset)
+        report.append({"market": market, "settled_bets": len(subset), "net_profit": round(profit, 4), "roi": round(profit / staked, 4) if staked else None})
+    return report
+
+
+def compute_user_competition_performance(user_id: str, bets: list[dict] | None = None) -> list[dict]:
+    rows = bets if bets is not None else list_user_bets(user_id)
+    by_competition: dict[str, list[dict]] = {}
+    for item in rows:
+        raw = item.get("raw_context") or {}
+        competition = raw.get("competition") or "unknown"
+        by_competition.setdefault(str(competition), []).append(item)
+    report = []
+    for competition, items in sorted(by_competition.items()):
+        settled = [item for item in items if item.get("status") in {"won", "lost", "void"}]
+        staked = sum(float(item.get("stake") or 0) for item in settled)
+        profit = sum(float(item.get("result_profit") or 0) for item in settled)
+        report.append({"competition": competition, "settled_bets": len(settled), "net_profit": round(profit, 4), "roi": round(profit / staked, 4) if staked else None})
+    return report
 
 
 def save_refresh_log(

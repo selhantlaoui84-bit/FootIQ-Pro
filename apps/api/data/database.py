@@ -210,11 +210,16 @@ bookmaker_odds_table = Table(
     Column("bookmaker", Text, nullable=False),
     Column("market", Text, nullable=False),
     Column("selection", Text, nullable=False),
-    Column("odds_decimal", Float, nullable=True),
+    Column("odds_decimal", Float, nullable=False),
     Column("implied_probability", Float, nullable=True),
     Column("margin", Float, nullable=True),
+    Column("provider", Text, nullable=True),
+    Column("provider_event_id", Text, nullable=True),
+    Column("provider_market_id", Text, nullable=True),
     Column("raw_json", Text, nullable=True),
     Column("collected_at", TIMESTAMP(timezone=True)),
+    Column("expires_at", TIMESTAMP(timezone=True), nullable=True),
+    Column("stale", Boolean, default=False),
     Column("source", Text, nullable=True),
     Column("created_at", TIMESTAMP(timezone=True)),
 )
@@ -222,7 +227,44 @@ Index("ix_bookmaker_odds_match_id", bookmaker_odds_table.c.match_id)
 Index("ix_bookmaker_odds_market", bookmaker_odds_table.c.market)
 Index("ix_bookmaker_odds_selection", bookmaker_odds_table.c.selection)
 Index("ix_bookmaker_odds_bookmaker", bookmaker_odds_table.c.bookmaker)
+Index("ix_bookmaker_odds_provider", bookmaker_odds_table.c.provider)
 Index("ix_bookmaker_odds_collected_at", bookmaker_odds_table.c.collected_at)
+
+user_bets_table = Table(
+    "user_bets",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("user_id", Text, nullable=False),
+    Column("match_id", Text, nullable=False),
+    Column("market", Text, nullable=False),
+    Column("selection", Text, nullable=False),
+    Column("bookmaker", Text, nullable=True),
+    Column("odds_decimal", Float, nullable=False),
+    Column("odds_source", Text, nullable=False),
+    Column("odds_collected_at", TIMESTAMP(timezone=True), nullable=True),
+    Column("stake", Float, nullable=False),
+    Column("implied_probability", Float, nullable=True),
+    Column("model_probability", Float, nullable=True),
+    Column("calibrated_probability", Float, nullable=True),
+    Column("expected_value", Float, nullable=True),
+    Column("edge", Float, nullable=True),
+    Column("risk_level", Text, nullable=True),
+    Column("recommendation_type", Text, nullable=True),
+    Column("status", Text, nullable=False),
+    Column("result_profit", Float, default=0),
+    Column("placed_at", TIMESTAMP(timezone=True)),
+    Column("settled_at", TIMESTAMP(timezone=True), nullable=True),
+    Column("notes", Text, nullable=True),
+    Column("raw_context_json", Text, nullable=True),
+    Column("created_at", TIMESTAMP(timezone=True)),
+    Column("updated_at", TIMESTAMP(timezone=True)),
+)
+Index("ix_user_bets_user_id", user_bets_table.c.user_id)
+Index("ix_user_bets_match_id", user_bets_table.c.match_id)
+Index("ix_user_bets_status", user_bets_table.c.status)
+Index("ix_user_bets_placed_at", user_bets_table.c.placed_at)
+Index("ix_user_bets_market", user_bets_table.c.market)
+Index("ix_user_bets_selection", user_bets_table.c.selection)
 
 
 def get_database_url() -> str | None:
@@ -297,11 +339,26 @@ def _ensure_runtime_columns_and_indexes(engine: Engine) -> None:
             "CREATE INDEX IF NOT EXISTS ix_model_calibrations_model_version ON model_calibrations(model_version)",
             "CREATE INDEX IF NOT EXISTS ix_model_calibrations_status ON model_calibrations(status)",
             "CREATE INDEX IF NOT EXISTS ix_model_calibrations_created_at ON model_calibrations(created_at)",
+            "ALTER TABLE bookmaker_odds ADD COLUMN IF NOT EXISTS provider TEXT",
+            "ALTER TABLE bookmaker_odds ADD COLUMN IF NOT EXISTS provider_event_id TEXT",
+            "ALTER TABLE bookmaker_odds ADD COLUMN IF NOT EXISTS provider_market_id TEXT",
+            "ALTER TABLE bookmaker_odds ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ",
+            "ALTER TABLE bookmaker_odds ADD COLUMN IF NOT EXISTS stale BOOLEAN DEFAULT false",
+            "ALTER TABLE bookmaker_odds ADD COLUMN IF NOT EXISTS source TEXT",
+            "ALTER TABLE user_bets ADD COLUMN IF NOT EXISTS odds_source TEXT DEFAULT 'manual_user_input'",
+            "ALTER TABLE user_bets ADD COLUMN IF NOT EXISTS odds_collected_at TIMESTAMPTZ",
             "CREATE INDEX IF NOT EXISTS ix_bookmaker_odds_match_id ON bookmaker_odds(match_id)",
             "CREATE INDEX IF NOT EXISTS ix_bookmaker_odds_market ON bookmaker_odds(market)",
             "CREATE INDEX IF NOT EXISTS ix_bookmaker_odds_selection ON bookmaker_odds(selection)",
             "CREATE INDEX IF NOT EXISTS ix_bookmaker_odds_bookmaker ON bookmaker_odds(bookmaker)",
+            "CREATE INDEX IF NOT EXISTS ix_bookmaker_odds_provider ON bookmaker_odds(provider)",
             "CREATE INDEX IF NOT EXISTS ix_bookmaker_odds_collected_at ON bookmaker_odds(collected_at)",
+            "CREATE INDEX IF NOT EXISTS ix_user_bets_user_id ON user_bets(user_id)",
+            "CREATE INDEX IF NOT EXISTS ix_user_bets_match_id ON user_bets(match_id)",
+            "CREATE INDEX IF NOT EXISTS ix_user_bets_status ON user_bets(status)",
+            "CREATE INDEX IF NOT EXISTS ix_user_bets_placed_at ON user_bets(placed_at)",
+            "CREATE INDEX IF NOT EXISTS ix_user_bets_market ON user_bets(market)",
+            "CREATE INDEX IF NOT EXISTS ix_user_bets_selection ON user_bets(selection)",
             "CREATE INDEX IF NOT EXISTS ix_pipeline_jobs_job_type ON pipeline_jobs(job_type)",
             "CREATE INDEX IF NOT EXISTS ix_pipeline_jobs_status ON pipeline_jobs(status)",
             "CREATE INDEX IF NOT EXISTS ix_pipeline_jobs_started_at ON pipeline_jobs(started_at)",
@@ -325,7 +382,14 @@ def _ensure_runtime_columns_and_indexes(engine: Engine) -> None:
             "CREATE INDEX IF NOT EXISTS ix_bookmaker_odds_market ON bookmaker_odds(market)",
             "CREATE INDEX IF NOT EXISTS ix_bookmaker_odds_selection ON bookmaker_odds(selection)",
             "CREATE INDEX IF NOT EXISTS ix_bookmaker_odds_bookmaker ON bookmaker_odds(bookmaker)",
+            "CREATE INDEX IF NOT EXISTS ix_bookmaker_odds_provider ON bookmaker_odds(provider)",
             "CREATE INDEX IF NOT EXISTS ix_bookmaker_odds_collected_at ON bookmaker_odds(collected_at)",
+            "CREATE INDEX IF NOT EXISTS ix_user_bets_user_id ON user_bets(user_id)",
+            "CREATE INDEX IF NOT EXISTS ix_user_bets_match_id ON user_bets(match_id)",
+            "CREATE INDEX IF NOT EXISTS ix_user_bets_status ON user_bets(status)",
+            "CREATE INDEX IF NOT EXISTS ix_user_bets_placed_at ON user_bets(placed_at)",
+            "CREATE INDEX IF NOT EXISTS ix_user_bets_market ON user_bets(market)",
+            "CREATE INDEX IF NOT EXISTS ix_user_bets_selection ON user_bets(selection)",
             "CREATE INDEX IF NOT EXISTS ix_pipeline_jobs_job_type ON pipeline_jobs(job_type)",
             "CREATE INDEX IF NOT EXISTS ix_pipeline_jobs_status ON pipeline_jobs(status)",
             "CREATE INDEX IF NOT EXISTS ix_pipeline_jobs_started_at ON pipeline_jobs(started_at)",
@@ -335,6 +399,28 @@ def _ensure_runtime_columns_and_indexes(engine: Engine) -> None:
             columns = {row._mapping["name"] for row in connection.execute(text("PRAGMA table_info(feature_snapshots)"))}
         if "payload_json" not in columns:
             statements.insert(0, "ALTER TABLE feature_snapshots ADD COLUMN payload_json TEXT")
+        with engine.connect() as connection:
+            odds_columns = {row._mapping["name"] for row in connection.execute(text("PRAGMA table_info(bookmaker_odds)"))}
+        sqlite_odds_columns = {
+            "provider": "ALTER TABLE bookmaker_odds ADD COLUMN provider TEXT",
+            "provider_event_id": "ALTER TABLE bookmaker_odds ADD COLUMN provider_event_id TEXT",
+            "provider_market_id": "ALTER TABLE bookmaker_odds ADD COLUMN provider_market_id TEXT",
+            "expires_at": "ALTER TABLE bookmaker_odds ADD COLUMN expires_at TIMESTAMP",
+            "stale": "ALTER TABLE bookmaker_odds ADD COLUMN stale BOOLEAN DEFAULT false",
+            "source": "ALTER TABLE bookmaker_odds ADD COLUMN source TEXT",
+        }
+        for column_name, alter_statement in sqlite_odds_columns.items():
+            if column_name not in odds_columns:
+                statements.insert(0, alter_statement)
+        with engine.connect() as connection:
+            user_bet_columns = {row._mapping["name"] for row in connection.execute(text("PRAGMA table_info(user_bets)"))}
+        sqlite_user_bet_columns = {
+            "odds_source": "ALTER TABLE user_bets ADD COLUMN odds_source TEXT DEFAULT 'manual_user_input'",
+            "odds_collected_at": "ALTER TABLE user_bets ADD COLUMN odds_collected_at TIMESTAMP",
+        }
+        for column_name, alter_statement in sqlite_user_bet_columns.items():
+            if column_name not in user_bet_columns:
+                statements.insert(0, alter_statement)
     else:
         statements = []
 
