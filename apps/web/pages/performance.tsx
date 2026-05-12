@@ -1524,8 +1524,10 @@ function AnalysisCommandCenter({
           <p className="eyebrow">Calibration & confiance</p>
           <h2>{calibrationReport.calibration_version ?? 'Calibration'}</h2>
           <div className="dataList">
-            <span>Échantillon <strong>{calibrationReport.sample_size > 0 ? calibrationReport.sample_size : 'Données insuffisantes'}</strong></span>
-            <span>Facteur global <strong>{calibrationReport.sample_size > 0 ? formatMetricWhenAvailable(calibrationReport.global_calibration_factor) : 'Données insuffisantes'}</strong></span>
+            <span>Échantillon <strong>{(calibrationReport.samples_count ?? calibrationReport.sample_size) > 0 ? `${calibrationReport.samples_count ?? calibrationReport.sample_size} / ${calibrationReport.minimum_required ?? 30}` : 'Données insuffisantes'}</strong></span>
+            <span>Facteur global <strong>{(calibrationReport.samples_count ?? calibrationReport.sample_size) > 0 ? formatMetricWhenAvailable(calibrationReport.global_calibration_factor) : 'Données insuffisantes'}</strong></span>
+            <span>Statut <strong>{calibrationReport.calibration_status ?? calibrationReport.status}</strong></span>
+            <span>Reliability <strong>{calibrationReport.reliability_score == null ? 'Données insuffisantes' : `${calibrationReport.reliability_score}/100`}</strong></span>
             <span>Feedback <strong>{learningFeedback.status}</strong></span>
             <span>Erreurs fréquentes <strong>{learningFeedback.frequent_errors?.length ?? 0}</strong></span>
           </div>
@@ -1539,10 +1541,10 @@ function AnalysisCommandCenter({
               </div>
               {confidenceBuckets.slice(0, 6).map((bucket) => (
                 <div className="metricTableRow bucketRow" key={bucket.bucket}>
-                  <span>{bucket.bucket}</span>
+                  <span>{bucket.bucket_label ?? bucket.bucket}</span>
                   <strong>{formatMetricWhenAvailable(bucket.predicted_probability, true)}</strong>
-                  <strong>{bucket.count > 0 ? formatMetricWhenAvailable(bucket.observed_success_rate, true) : 'Données insuffisantes'}</strong>
-                  <strong>{bucket.count > 0 ? formatMetricWhenAvailable(bucket.calibration_factor) : 'Non disponible'}</strong>
+                  <strong>{(bucket.predictions_count ?? bucket.count) > 0 && bucket.observed_success_rate != null ? formatMetricWhenAvailable(bucket.observed_success_rate, true) : 'Données insuffisantes'}</strong>
+                  <strong>{(bucket.predictions_count ?? bucket.count) > 0 ? formatMetricWhenAvailable(bucket.calibration_factor) : 'Non disponible'}</strong>
                 </div>
               ))}
             </div>

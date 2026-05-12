@@ -20,6 +20,8 @@ const pipelineJobsProxy = new URL('../pages/api/admin/pipeline-jobs.ts', import.
 const runPipelineStepProxy = new URL('../pages/api/admin/run-pipeline-step.ts', import.meta.url);
 const runHourlyPipelineProxy = new URL('../pages/api/admin/run-hourly-pipeline.ts', import.meta.url);
 const runDailyPipelineProxy = new URL('../pages/api/admin/run-daily-pipeline.ts', import.meta.url);
+const recomputeCalibrationProxy = new URL('../pages/api/admin/recompute-calibration.ts', import.meta.url);
+const activateCalibrationProxy = new URL('../pages/api/admin/activate-calibration.ts', import.meta.url);
 const hourlyCron = new URL('../pages/api/cron/hourly-refresh.ts', import.meta.url);
 const matchFinishedCron = new URL('../pages/api/cron/match-finished-check.ts', import.meta.url);
 const dailyLearningCron = new URL('../pages/api/cron/daily-learning.ts', import.meta.url);
@@ -147,6 +149,8 @@ async function run() {
     await readFile(refreshDataSyncProxy, 'utf8'),
     await readFile(trainCandidateProxy, 'utf8'),
     await readFile(shadowProxy, 'utf8'),
+    await readFile(recomputeCalibrationProxy, 'utf8'),
+    await readFile(activateCalibrationProxy, 'utf8'),
     buildFeatureStoreSource,
   ]) {
     assert.match(mutationSource, /method: 'POST'/);
@@ -216,6 +220,10 @@ async function run() {
   assert.match(adminPageSource, /getLearningMonitoring/);
   assert.match(adminPageSource, /getMlShadowBacktesting/);
   assert.match(adminPageSource, /getCalibrationReport/);
+  assert.match(adminPageSource, /Calibration intelligente/);
+  assert.match(adminPageSource, /handleRecomputeCalibration/);
+  assert.match(adminPageSource, /handleActivateCalibration/);
+  assert.match(adminPageSource, /Recalculer la calibration/);
   assert.match(adminPageSource, /getModelVersionsRegistry/);
   assert.match(adminPageSource, /Auto-learning/);
   assert.match(adminPageSource, /Monitoring learning/);
@@ -313,6 +321,10 @@ async function run() {
   assert.match(apiClientSource, /fetchProxyJson<LearningFeedbackReport>\('\/api\/admin\/learning-feedback', undefined, 15000\)/);
   assert.match(apiClientSource, /fetchProxyJson<LearningMonitoringReport>\('\/api\/admin\/learning-monitoring', undefined, 45000\)/);
   assert.match(apiClientSource, /fetchProxyJson<CalibrationReport>\('\/api\/admin\/calibration', undefined, 15000\)/);
+  assert.match(apiClientSource, /\/api\/admin\/recompute-calibration/);
+  assert.match(apiClientSource, /\/api\/admin\/activate-calibration/);
+  assert.match(apiClientSource, /recomputeCalibration/);
+  assert.match(apiClientSource, /activateCalibration/);
   assert.match(apiClientSource, /fetchProxyJson<ModelVersionsResponse>\('\/api\/admin\/model-versions', undefined, 15000\)/);
   assert.match(apiClientSource, /\/api\/admin\/promote-candidate-model/);
   assert.match(apiClientSource, /\/api\/admin\/rollback-production-model/);
@@ -366,6 +378,8 @@ async function run() {
   assert.match(predictionsPageSource, /TeamIdentity/);
   assert.match(predictionsPageSource, /resolveMatchTeamLogo\(prediction, 'home'\)/);
   assert.match(predictionsPageSource, /resolveMatchTeamLogo\(prediction, 'away'\)/);
+  assert.match(predictionsPageSource, /calibration_version/);
+  assert.match(predictionsPageSource, /Probabilités calibrées/);
 
   const dashboardPageSource = await readFile(dashboardPage, 'utf8');
   assert.doesNotMatch(dashboardPageSource, brokenEncoding);

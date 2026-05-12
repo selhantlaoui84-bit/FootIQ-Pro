@@ -31,7 +31,13 @@ from services.model_registry import get_model_metadata
 from services.model_monitoring import build_monitoring_report
 from services.model_governance import build_model_governance_report, evaluate_model_promotion
 from services.feedback_engine import build_feedback_report
-from services.calibration_engine import CALIBRATION_VERSION, build_calibration_profile
+from services.calibration_engine import (
+    CALIBRATION_VERSION,
+    MINIMUM_CALIBRATION_SAMPLES,
+    build_calibration_profile,
+    calibrate_prediction,
+    create_calibration_candidate,
+)
 from services.model_versioning import get_versions_report, list_model_versions, record_model_version
 from services.pipeline_orchestrator import run_after_match_finished_pipeline, run_daily_learning_pipeline, run_hourly_data_pipeline, run_pipeline_step
 from services.user_learning_engine import analyze_user_bets
@@ -528,6 +534,7 @@ def _model_governance_report():
         repository.get_ml_shadow_predictions(limit=2000),
     )
     feedback_report = build_feedback_report(_available_matches(), _available_predictions(), model_version=MODEL_VERSION)
+    calibration_report = _calibration_report(model_version=MODEL_VERSION)
 
     try:
         hybrid_engine_summary = hybrid_engine_summary_report(limit=200, view="upcoming")
@@ -560,6 +567,17 @@ def _model_governance_report():
             "reasons": [str(exc)],
             "requirements": {"minimum_evaluable_predictions": 30, "current_evaluable_predictions": 0},
         }
+    report["calibration"] = {
+        "status": calibration_report.get("calibration_status"),
+        "active_calibration_version": calibration_report.get("active_calibration_version"),
+        "latest_calibration_version": calibration_report.get("latest_calibration_version"),
+        "samples_count": calibration_report.get("samples_count"),
+        "minimum_required": calibration_report.get("minimum_required"),
+        "reliability_score": calibration_report.get("reliability_score"),
+        "recommendation": calibration_report.get("recommendation"),
+    }
+    if calibration_report.get("calibration_status") == "overconfident":
+        report.setdefault("warnings", []).append("Calibration : modèle potentiellement trop confiant.")
     return report
 
 
@@ -1094,9 +1112,103 @@ def learning_feedback(model_version: str | None = None):
     return build_feedback_report(_available_matches(), _available_predictions(), model_version=model_version)
 
 
+def _stored_calibration_profile(calibration: dict | None) -> dict | None:
+    if not calibration:
+        return None
+    factors = calibration.get("factors") or {}
+    metrics = calibration.get("metrics") or {}
+    global_factor = round(1 + float(factors.get("global_correction") or 0), 3)
+    return {
+        **calibration,
+        "global_calibration_factor": global_factor,
+        "expected_calibration_error": metrics.get("expected_calibration_error"),
+        "mean_absolute_calibration_error": metrics.get("mean_absolute_calibration_error"),
+        "max_calibration_gap": metrics.get("max_calibration_gap"),
+        "overconfidence_score": metrics.get("overconfidence_score"),
+        "underconfidence_score": metrics.get("underconfidence_score"),
+        "reliability_score": metrics.get("reliability_score"),
+        "calibration_status": metrics.get("calibration_status") or calibration.get("status"),
+    }
+
+
+def _calibration_report(model_version: str | None = None) -> dict[str, Any]:
+    profile = build_calibration_profile(_available_matches(), _available_predictions(), model_version=model_version)
+    active = _stored_calibration_profile(repository.get_active_calibration())
+    latest = _stored_calibration_profile(repository.get_latest_calibration())
+    calibrations = repository.list_model_calibrations(limit=20)
+    latest_version = (latest or {}).get("calibration_version") or profile.get("calibration_version")
+    active_version = (active or {}).get("calibration_version")
+    return {
+        **profile,
+        "storage": "postgresql" if repository.db_available() else "memory",
+        "active_calibration_version": active_version,
+        "latest_calibration_version": latest_version,
+        "active_calibration": active,
+        "latest_calibration": latest,
+        "calibrations_count": len(calibrations),
+        "calibrations": calibrations,
+    }
+
+
 @app.get("/learning/calibration")
 def learning_calibration(model_version: str | None = None):
-    return build_calibration_profile(_available_matches(), _available_predictions(), model_version=model_version)
+    return _calibration_report(model_version=model_version)
+
+
+@app.post("/learning/calibration/recompute")
+async def recompute_learning_calibration(
+    request: Request,
+    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
+):
+    _require_admin_key(x_admin_key)
+    payload = await request.json()
+    model_version = payload.get("model_version") or payload.get("modelVersion")
+    method = payload.get("method") or "bucket_scaling"
+    source = payload.get("source") or "production_feedback"
+    report = build_calibration_profile(_available_matches(), _available_predictions(), model_version=model_version)
+    candidate = create_calibration_candidate(report, source=source, method=method)
+    saved = repository.create_model_calibration(candidate)
+    status = "ok" if saved and saved.get("status") != "insufficient_data" else "insufficient_data"
+    return {
+        **report,
+        "status": status,
+        "storage": "postgresql" if repository.db_available() else "memory",
+        "calibration_record": saved,
+        "latest_calibration_version": (saved or {}).get("calibration_version") or report.get("calibration_version"),
+        "active_calibration_version": (repository.get_active_calibration() or {}).get("calibration_version"),
+    }
+
+
+@app.post("/learning/calibration/activate")
+async def activate_learning_calibration(
+    request: Request,
+    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
+):
+    _require_admin_key(x_admin_key)
+    payload = await request.json()
+    calibration_version = payload.get("calibration_version") or payload.get("calibrationVersion")
+    if payload.get("confirm") is not True:
+        return {
+            "status": "blocked",
+            "detail": "Activation bloquée : confirm=true est obligatoire.",
+        }
+    calibration = repository.get_model_calibration(calibration_version)
+    if not calibration:
+        return {"status": "blocked", "detail": "Calibration introuvable."}
+    if calibration.get("status") == "insufficient_data" or int(calibration.get("samples_count") or 0) < MINIMUM_CALIBRATION_SAMPLES:
+        return {
+            "status": "blocked",
+            "detail": "Données insuffisantes pour activer cette calibration.",
+            "calibration": calibration,
+        }
+    activated = repository.activate_calibration_version(calibration_version)
+    if not activated:
+        return {"status": "error", "detail": "Activation de la calibration impossible."}
+    return {
+        "status": "success",
+        "active_calibration_version": activated.get("calibration_version"),
+        "calibration": activated,
+    }
 
 
 @app.get("/learning/user-profile/{user_id}")
@@ -1109,7 +1221,7 @@ def learning_monitoring():
     alerts: list[str] = []
     versions_report = get_versions_report()
     feedback_report = build_feedback_report(_available_matches(), _available_predictions(), model_version=MODEL_VERSION)
-    calibration_report = build_calibration_profile(_available_matches(), _available_predictions(), model_version=MODEL_VERSION)
+    calibration_report = _calibration_report(model_version=MODEL_VERSION)
     ml_status = _ml_status_compact()
     shadow_report = calculate_shadow_backtest_report(
         _available_matches(),
@@ -1167,12 +1279,17 @@ def learning_monitoring():
         "status": "ok" if not alerts else "warning",
         "storage": versions_report.get("storage"),
         "feedback_status": feedback_report.get("status"),
-        "calibration_status": calibration_report.get("status"),
+        "calibration_status": calibration_report.get("calibration_status") or calibration_report.get("status"),
         "model_versions_status": versions_report.get("status"),
         "governance_status": "candidate_available" if candidate_model or ml_status.get("candidate_model_exists") else "no_candidate",
         "feature_store_status": feature_store_status,
         "latest_feedback_at": feedback_report.get("generated_at"),
-        "latest_calibration_version": calibration_report.get("calibration_version"),
+        "active_calibration_version": calibration_report.get("active_calibration_version"),
+        "latest_calibration_version": calibration_report.get("latest_calibration_version") or calibration_report.get("calibration_version"),
+        "calibration_samples_count": calibration_report.get("samples_count"),
+        "calibration_minimum_required": calibration_report.get("minimum_required"),
+        "calibration_gap": calibration_report.get("max_calibration_gap"),
+        "reliability_score": calibration_report.get("reliability_score"),
         "model_versions_count": versions_report.get("versions_count", 0),
         "production_model_version": production_model.get("model_version") or MODEL_VERSION,
         "latest_candidate_model_version": candidate_model.get("model_version"),
@@ -1929,6 +2046,7 @@ def run_generate_shadow_predictions_job(job_id: str | None, limit: int, force: b
         same_pick_count = 0
         disagreement_count = 0
         high_disagreement_count = 0
+        active_calibration = _stored_calibration_profile(repository.get_active_calibration())
 
         for match in matches:
             match_id = _match_id(match)
@@ -1946,6 +2064,8 @@ def run_generate_shadow_predictions_job(job_id: str | None, limit: int, force: b
                 or _prediction_for_match(match, matches)
             )
             shadow_prediction = generate_shadow_prediction(match, production_prediction)
+            if active_calibration:
+                shadow_prediction = calibrate_prediction(shadow_prediction, active_calibration)
             comparison = compare_shadow_to_production(production_prediction, shadow_prediction)
 
             if not shadow_prediction.get("available"):
@@ -1993,6 +2113,8 @@ def run_generate_shadow_predictions_job(job_id: str | None, limit: int, force: b
             "high_disagreement_count": high_disagreement_count,
             "skipped_existing_count": skipped_existing,
             "candidate_is_production": False,
+            "calibration_applied": bool(active_calibration),
+            "calibration_version": (active_calibration or {}).get("calibration_version"),
             "created_at": created_at,
             "detail": detail,
             "next_step": "review_shadow_backtesting" if saved_count > 0 else "generate_shadow_predictions",
@@ -2101,10 +2223,10 @@ def _pipeline_handlers(controlled_auto_train: bool = False) -> dict[str, Any]:
         return calculate_shadow_backtest_report(_available_matches(), repository.get_ml_shadow_predictions(limit=2000))
 
     def feedback_step():
-        return build_feedback_report(_available_predictions(), _available_matches())
+        return build_feedback_report(_available_matches(), _available_predictions())
 
     def calibration_step():
-        return build_calibration_profile(_available_predictions(), _available_matches())
+        return _calibration_report()
 
     def monitoring_step():
         return learning_monitoring()

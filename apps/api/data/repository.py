@@ -1028,6 +1028,182 @@ def get_latest_model_promotion_event(action: str) -> dict | None:
     return _promotion_audit_from_row(row)
 
 
+def init_model_calibrations_schema() -> bool:
+    return init_db()
+
+
+def _model_calibration_from_row(row: dict | None) -> dict | None:
+    if not row:
+        return None
+    return {
+        "id": row.get("id"),
+        "calibration_version": row.get("calibration_version"),
+        "model_version": row.get("model_version"),
+        "model_type": row.get("model_type"),
+        "source": row.get("source"),
+        "method": row.get("method"),
+        "status": row.get("status"),
+        "samples_count": row.get("samples_count") or 0,
+        "buckets": _loads(row.get("buckets_json")) or [],
+        "factors": _loads(row.get("factors_json")) or {},
+        "metrics": _loads(row.get("metrics_json")) or {},
+        "recommendation": _loads(row.get("recommendation_json")) or {},
+        "created_at": _iso(row.get("created_at")),
+        "activated_at": _iso(row.get("activated_at")),
+    }
+
+
+def create_model_calibration(calibration: dict) -> dict | None:
+    if not calibration or not calibration.get("calibration_version") or not db_available():
+        return None
+
+    init_model_calibrations_schema()
+    calibration_version = calibration.get("calibration_version")
+    existing = fetch_one_safe(
+        text("SELECT * FROM model_calibrations WHERE calibration_version = :calibration_version LIMIT 1"),
+        {"calibration_version": calibration_version},
+    )
+    row = {
+        "id": calibration.get("id") or str(uuid.uuid4()),
+        "calibration_version": calibration_version,
+        "model_version": calibration.get("model_version"),
+        "model_type": calibration.get("model_type"),
+        "source": calibration.get("source") or "system",
+        "method": calibration.get("method") or "bucket_scaling",
+        "status": calibration.get("status") or "candidate",
+        "samples_count": _int_or_zero(calibration.get("samples_count") or calibration.get("sample_size")),
+        "buckets_json": _json(calibration.get("buckets") or []),
+        "factors_json": _json(calibration.get("factors") or calibration.get("factors_json") or {}),
+        "metrics_json": _json(calibration.get("metrics") or {}),
+        "recommendation_json": _json(calibration.get("recommendation") or {}),
+        "created_at": _parse_datetime(calibration.get("created_at")) or _now(),
+        "activated_at": _parse_datetime(calibration.get("activated_at")),
+    }
+    if existing:
+        execute_safe(
+            text(
+                """
+                UPDATE model_calibrations
+                SET model_version = COALESCE(:model_version, model_version),
+                    model_type = COALESCE(:model_type, model_type),
+                    source = :source,
+                    method = :method,
+                    status = :status,
+                    samples_count = :samples_count,
+                    buckets_json = :buckets_json,
+                    factors_json = :factors_json,
+                    metrics_json = :metrics_json,
+                    recommendation_json = :recommendation_json,
+                    activated_at = COALESCE(:activated_at, activated_at)
+                WHERE calibration_version = :calibration_version
+                """
+            ),
+            row,
+        )
+    else:
+        execute_safe(
+            text(
+                """
+                INSERT INTO model_calibrations (
+                    id, calibration_version, model_version, model_type, source, method, status,
+                    samples_count, buckets_json, factors_json, metrics_json, recommendation_json,
+                    created_at, activated_at
+                )
+                VALUES (
+                    :id, :calibration_version, :model_version, :model_type, :source, :method, :status,
+                    :samples_count, :buckets_json, :factors_json, :metrics_json, :recommendation_json,
+                    :created_at, :activated_at
+                )
+                """
+            ),
+            row,
+        )
+
+    return get_model_calibration(calibration_version)
+
+
+def get_model_calibration(calibration_version: str | None) -> dict | None:
+    if not calibration_version or not db_available():
+        return None
+    row = fetch_one_safe(
+        text("SELECT * FROM model_calibrations WHERE calibration_version = :calibration_version LIMIT 1"),
+        {"calibration_version": calibration_version},
+    )
+    return _model_calibration_from_row(row)
+
+
+def list_model_calibrations(limit: int = 50) -> list[dict]:
+    if not db_available():
+        return []
+    safe_limit = max(1, min(int(limit or 50), 200))
+    rows = fetch_all_safe(
+        text(
+            """
+            SELECT *
+            FROM model_calibrations
+            ORDER BY COALESCE(activated_at, created_at) DESC, created_at DESC
+            LIMIT :limit
+            """
+        ),
+        {"limit": safe_limit},
+    )
+    return [item for item in (_model_calibration_from_row(row) for row in rows) if item]
+
+
+def get_latest_calibration() -> dict | None:
+    rows = list_model_calibrations(limit=1)
+    return rows[0] if rows else None
+
+
+def get_active_calibration() -> dict | None:
+    if not db_available():
+        return None
+    row = fetch_one_safe(
+        text(
+            """
+            SELECT *
+            FROM model_calibrations
+            WHERE status = 'active'
+            ORDER BY COALESCE(activated_at, created_at) DESC
+            LIMIT 1
+            """
+        )
+    )
+    return _model_calibration_from_row(row)
+
+
+def archive_old_calibrations(except_version: str | None = None) -> int:
+    if not db_available():
+        return 0
+    params = {"except_version": except_version}
+    statement = "UPDATE model_calibrations SET status = 'archived' WHERE status = 'active'"
+    if except_version:
+        statement += " AND calibration_version <> :except_version"
+    execute_safe(text(statement), params)
+    rows = fetch_all_safe(text("SELECT id FROM model_calibrations WHERE status = 'archived'"))
+    return len(rows)
+
+
+def activate_calibration_version(calibration_version: str | None) -> dict | None:
+    if not calibration_version or not db_available():
+        return None
+    calibration = get_model_calibration(calibration_version)
+    if not calibration or calibration.get("status") == "insufficient_data":
+        return None
+    archive_old_calibrations(except_version=calibration_version)
+    execute_safe(
+        text(
+            """
+            UPDATE model_calibrations
+            SET status = 'active', activated_at = :activated_at
+            WHERE calibration_version = :calibration_version
+            """
+        ),
+        {"calibration_version": calibration_version, "activated_at": _now()},
+    )
+    return get_model_calibration(calibration_version)
+
+
 def import_model_versions_from_file_if_needed(file_path: str | Path | None = None) -> dict:
     if not db_available():
         return {"status": "skipped", "storage": "file_fallback", "imported_count": 0, "reason": "database_unavailable"}

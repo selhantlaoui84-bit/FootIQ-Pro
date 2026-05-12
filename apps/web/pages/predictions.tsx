@@ -185,6 +185,9 @@ export default function PredictionsPage({ predictions, referenceTime }: Predicti
 }
 
 function PredictionCard({ prediction }: { prediction: Prediction }) {
+  const calibrationApplied = prediction.calibration?.applied === true || Boolean(prediction.calibration_version);
+  const rawProbabilities = prediction.original_probabilities;
+
   return (
     <Link className="card matchCard clickable-card" href={matchHref(prediction)}>
       <div className="cardTop">
@@ -216,6 +219,13 @@ function PredictionCard({ prediction }: { prediction: Prediction }) {
           2 <strong>{prediction.probabilities.away}%</strong>
         </span>
       </div>
+      {calibrationApplied && (
+        <div className="banner info">
+          Probabilités calibrées
+          {prediction.calibration_version ? ` (${prediction.calibration_version})` : ''}
+          {rawProbabilities ? ` - brut 1/N/2 : ${rawProbabilities.home}/${rawProbabilities.draw}/${rawProbabilities.away}%` : ''}
+        </div>
+      )}
       <div className="confidenceLine confidence-bar">
         <span style={{ width: `${prediction.confidence.score}%` }} />
       </div>
