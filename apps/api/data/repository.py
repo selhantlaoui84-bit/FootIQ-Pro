@@ -429,6 +429,140 @@ def get_prediction(match_id: str) -> dict | None:
     return _prediction_payload_from_row(row)
 
 
+def init_bookmaker_odds_schema() -> bool:
+    return init_db()
+
+
+def _odds_from_row(row: dict | None) -> dict | None:
+    if not row:
+        return None
+    return {
+        "id": row.get("id"),
+        "match_id": row.get("match_id"),
+        "bookmaker": row.get("bookmaker"),
+        "market": row.get("market"),
+        "selection": row.get("selection"),
+        "odds_decimal": _num_or_none(row.get("odds_decimal")),
+        "implied_probability": _num_or_none(row.get("implied_probability")),
+        "margin": _num_or_none(row.get("margin")),
+        "raw": _loads(row.get("raw_json")) or {},
+        "collected_at": _iso(row.get("collected_at")),
+        "source": row.get("source"),
+        "created_at": _iso(row.get("created_at")),
+    }
+
+
+def upsert_bookmaker_odds(odds: dict) -> dict | None:
+    if not odds or not db_available():
+        return None
+    init_bookmaker_odds_schema()
+    odds_id = odds.get("id") or str(uuid.uuid4())
+    odds_decimal = _num_or_none(odds.get("odds_decimal") or odds.get("odds"))
+    implied_probability = _num_or_none(odds.get("implied_probability"))
+    if implied_probability is None and odds_decimal and odds_decimal > 1:
+        implied_probability = round(1 / odds_decimal, 4)
+    row = {
+        "id": odds_id,
+        "match_id": str(odds.get("match_id") or ""),
+        "bookmaker": odds.get("bookmaker") or "reference",
+        "market": odds.get("market") or "1X2",
+        "selection": odds.get("selection") or "",
+        "odds_decimal": odds_decimal,
+        "implied_probability": implied_probability,
+        "margin": _num_or_none(odds.get("margin")),
+        "raw_json": _json(odds.get("raw") or odds.get("raw_json") or odds),
+        "collected_at": _parse_datetime(odds.get("collected_at")) or _now(),
+        "source": odds.get("source") or "system",
+        "created_at": _parse_datetime(odds.get("created_at")) or _now(),
+    }
+    if not row["match_id"] or not row["selection"]:
+        return None
+    execute_safe(
+        text(
+            """
+            INSERT INTO bookmaker_odds (
+                id, match_id, bookmaker, market, selection, odds_decimal, implied_probability,
+                margin, raw_json, collected_at, source, created_at
+            )
+            VALUES (
+                :id, :match_id, :bookmaker, :market, :selection, :odds_decimal, :implied_probability,
+                :margin, :raw_json, :collected_at, :source, :created_at
+            )
+            ON CONFLICT (id) DO UPDATE SET
+                odds_decimal = EXCLUDED.odds_decimal,
+                implied_probability = EXCLUDED.implied_probability,
+                margin = EXCLUDED.margin,
+                raw_json = EXCLUDED.raw_json,
+                collected_at = EXCLUDED.collected_at,
+                source = EXCLUDED.source
+            """
+        ),
+        row,
+    )
+    return _odds_from_row(fetch_one_safe(text("SELECT * FROM bookmaker_odds WHERE id = :id LIMIT 1"), {"id": odds_id}))
+
+
+def list_match_odds(match_id: str) -> list[dict]:
+    if not match_id or not db_available():
+        return []
+    rows = fetch_all_safe(
+        text(
+            """
+            SELECT *
+            FROM bookmaker_odds
+            WHERE match_id = :match_id
+            ORDER BY collected_at DESC, created_at DESC
+            """
+        ),
+        {"match_id": str(match_id)},
+    )
+    return [item for item in (_odds_from_row(row) for row in rows) if item]
+
+
+def get_latest_odds_for_prediction(match_id: str, market: str, selection: str) -> dict | None:
+    if not match_id or not market or not selection or not db_available():
+        return None
+    row = fetch_one_safe(
+        text(
+            """
+            SELECT *
+            FROM bookmaker_odds
+            WHERE match_id = :match_id
+              AND lower(market) = lower(:market)
+              AND lower(selection) = lower(:selection)
+            ORDER BY collected_at DESC, created_at DESC
+            LIMIT 1
+            """
+        ),
+        {"match_id": str(match_id), "market": market, "selection": selection},
+    )
+    return _odds_from_row(row)
+
+
+def get_best_odds_for_prediction(match_id: str, market: str, selection: str) -> dict | None:
+    if not match_id or not market or not selection or not db_available():
+        return None
+    row = fetch_one_safe(
+        text(
+            """
+            SELECT *
+            FROM bookmaker_odds
+            WHERE match_id = :match_id
+              AND lower(market) = lower(:market)
+              AND lower(selection) = lower(:selection)
+            ORDER BY odds_decimal DESC NULLS LAST, collected_at DESC
+            LIMIT 1
+            """
+        ),
+        {"match_id": str(match_id), "market": market, "selection": selection},
+    )
+    return _odds_from_row(row)
+
+
+def get_reference_odds_for_prediction(match_id: str, market: str, selection: str) -> dict | None:
+    return get_best_odds_for_prediction(match_id, market, selection) or get_latest_odds_for_prediction(match_id, market, selection)
+
+
 def save_refresh_log(
     source: str,
     storage: str,

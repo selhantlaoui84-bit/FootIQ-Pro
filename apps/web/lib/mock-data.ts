@@ -89,6 +89,7 @@ export type Prediction = {
   };
   flags: { trap_match: boolean; risk: boolean };
   risk_score?: number;
+  assistant?: BettingAssistantItem;
   trap_match_score?: number;
   recommendation: Recommendation;
   main_prediction: string;
@@ -99,6 +100,69 @@ export type Prediction = {
   hybrid?: HybridDecision;
   hybrid_engine?: HybridEngineDecision;
   explainability?: PredictionExplainability;
+};
+
+export type BookmakerOdds = {
+  bookmaker?: string | null;
+  odds_decimal?: number | null;
+  implied_probability?: number | null;
+  collected_at?: string | null;
+};
+
+export type BettingAssistantItem = {
+  match_id: string;
+  home_team?: string;
+  away_team?: string;
+  competition?: string;
+  market: string;
+  selection: string;
+  model_probability?: number | null;
+  calibrated_probability?: number | null;
+  used_probability?: number | null;
+  odds?: number | null;
+  bookmaker?: string | null;
+  implied_probability?: number | null;
+  edge?: number | null;
+  expected_value?: number | null;
+  value_status: string;
+  risk_score: number;
+  risk_level: string;
+  risk_reasons?: string[];
+  recommendation_type: string;
+  recommendation_label: string;
+  recommendation_reason: string;
+  confidence_explanation?: string;
+  value_explanation?: string;
+  risk_explanation?: string;
+  data_quality_explanation?: string;
+  suggested_action?: string;
+};
+
+export type BettingAssistantResponse = {
+  status: string;
+  storage?: string;
+  generated_at?: string;
+  items_count: number;
+  items: BettingAssistantItem[];
+  summary: {
+    recommended_count: number;
+    cautious_count: number;
+    avoid_count: number;
+    no_odds_count: number;
+    insufficient_data_count: number;
+  };
+};
+
+export type AssistantMatchResponse = {
+  status: string;
+  match_id: string;
+  home_team?: string;
+  away_team?: string;
+  summary: string;
+  primary_recommendation?: BettingAssistantItem | null;
+  markets_to_watch?: BettingAssistantItem[];
+  markets_to_avoid?: BettingAssistantItem[];
+  missing_data?: string[];
 };
 
 export type MatchView = 'all' | 'upcoming' | 'history';
@@ -1191,7 +1255,7 @@ export const predictions: Prediction[] = [
       'Les signaux recents sont coherents',
     ],
     risks: ['Rotation possible', 'Fatigue europeenne moderee'],
-    disclaimer: 'Modèle probabiliste. Aucune garantie de résultat.',
+    disclaimer: 'Modèle probabiliste. Résultat incertain.',
   },
   {
     id: 'marseille-rennes',
@@ -1217,7 +1281,7 @@ export const predictions: Prediction[] = [
       'Probabilite de nul élevée, lisibilite réduite',
     ],
     risks: ['Forme recente irreguliere', 'Pression du contexte', 'High draw probability'],
-    disclaimer: 'Modèle probabiliste. Aucune garantie de résultat.',
+    disclaimer: 'Modèle probabiliste. Résultat incertain.',
   },
   {
     id: 'real-madrid-arsenal',
@@ -1243,7 +1307,7 @@ export const predictions: Prediction[] = [
       'La marge entre les issues reste moderee',
     ],
     risks: ['Qualite individuelle adverse', 'Transitions rapides', 'BTTS eleve'],
-    disclaimer: 'Modèle probabiliste. Aucune garantie de résultat.',
+    disclaimer: 'Modèle probabiliste. Résultat incertain.',
   },
   {
     id: 'lille-monaco',
@@ -1269,7 +1333,7 @@ export const predictions: Prediction[] = [
       'Donnees recentes contradictoires, confiance reduite',
     ],
     risks: ['Inconsistent recent form', 'High draw probability', "Faible volume d'occasions"],
-    disclaimer: 'Modèle probabiliste. Aucune garantie de résultat.',
+    disclaimer: 'Modèle probabiliste. Résultat incertain.',
   },
   {
     id: 'lens-nice',
@@ -1295,7 +1359,7 @@ export const predictions: Prediction[] = [
       'Le nul reste un scenario significatif',
     ],
     risks: ['Efficacite offensive variable', 'High draw probability', 'Rythme potentiellement ferme'],
-    disclaimer: 'Modele probabiliste. Aucune garantie de resultat.',
+    disclaimer: 'Modele probabiliste. Resultat incertain.',
   },
 ];
 
@@ -1357,7 +1421,7 @@ export const mockPredictionExplainability: PredictionExplainability = {
   data_quality_notes: ['La qualité des données est suffisante pour une lecture probabiliste.'],
   hybrid_notes: ['Le ML shadow peut compléter la lecture sans remplacer le modèle officiel.'],
   plain_language: 'Cette explication traduit les signaux statistiques disponibles avant le match. Elle aide à comprendre la prédiction, sans prouver la cause du résultat futur.',
-  disclaimer: 'Modèle probabiliste. Aucune garantie de résultat.',
+  disclaimer: 'Modèle probabiliste. Résultat incertain.',
 };
 
 export const mockExplainabilitySummary: ExplainabilitySummary = {
@@ -1369,7 +1433,7 @@ export const mockExplainabilitySummary: ExplainabilitySummary = {
   trap_risk_count: predictions.filter((prediction) => prediction.flags.trap_match).length,
   most_common_positive_factors: { 'Écart Elo': 2, 'Qualité des données': 2 },
   most_common_negative_factors: { 'Risque de match nul': 2, 'Score de risque': 1 },
-  note: "L'explicabilité décrit les signaux du modèle sans garantir le résultat.",
+  note: "L'explicabilité décrit les signaux du modèle sans certifier le résultat.",
 };
 
 export const teams: Team[] = [
@@ -1990,6 +2054,31 @@ export const mockLearningMonitoringReport: LearningMonitoringReport = {
   last_rollback_at: null,
   alerts: ['Aucun modèle candidat enregistré.'],
   next_best_action: { label: 'Entraîner un modèle candidat', href: '/admin' },
+};
+
+export const mockAssistantResponse: BettingAssistantResponse = {
+  status: 'ok',
+  storage: 'mock',
+  generated_at: new Date().toISOString(),
+  items_count: 0,
+  items: [],
+  summary: {
+    recommended_count: 0,
+    cautious_count: 0,
+    avoid_count: 0,
+    no_odds_count: 0,
+    insufficient_data_count: 0,
+  },
+};
+
+export const mockAssistantMatchResponse: AssistantMatchResponse = {
+  status: 'missing',
+  match_id: 'mock',
+  summary: 'Cote non disponible : impossible de calculer une value fiable.',
+  primary_recommendation: null,
+  markets_to_watch: [],
+  markets_to_avoid: [],
+  missing_data: ['odds'],
 };
 
 export const mockModelPromotionAudit: ModelPromotionAuditResponse = {

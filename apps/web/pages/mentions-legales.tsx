@@ -16,7 +16,7 @@ export default function MentionsLegalesPage() {
 
       <section className="card">
         <h2>Responsabilité</h2>
-        <p>Les contenus ne garantissent aucun résultat sportif ou financier. Ils doivent être utilisés comme support d'analyse uniquement.</p>
+        <p>Les contenus sont probabilistes et ne doivent être utilisés que comme support d'analyse.</p>
       </section>
     </Layout>
   );

@@ -22,6 +22,11 @@ const runHourlyPipelineProxy = new URL('../pages/api/admin/run-hourly-pipeline.t
 const runDailyPipelineProxy = new URL('../pages/api/admin/run-daily-pipeline.ts', import.meta.url);
 const recomputeCalibrationProxy = new URL('../pages/api/admin/recompute-calibration.ts', import.meta.url);
 const activateCalibrationProxy = new URL('../pages/api/admin/activate-calibration.ts', import.meta.url);
+const assistantPredictionsProxy = new URL('../pages/api/assistant/predictions.ts', import.meta.url);
+const assistantMatchProxy = new URL('../pages/api/assistant/match/[id].ts', import.meta.url);
+const assistantDailyBriefProxy = new URL('../pages/api/assistant/daily-brief.ts', import.meta.url);
+const oddsMatchProxy = new URL('../pages/api/odds/match/[id].ts', import.meta.url);
+const oddsPredictionProxy = new URL('../pages/api/odds/prediction.ts', import.meta.url);
 const hourlyCron = new URL('../pages/api/cron/hourly-refresh.ts', import.meta.url);
 const matchFinishedCron = new URL('../pages/api/cron/match-finished-check.ts', import.meta.url);
 const dailyLearningCron = new URL('../pages/api/cron/daily-learning.ts', import.meta.url);
@@ -133,6 +138,22 @@ async function run() {
   assert.match(buildFeatureStoreSource, /requireAdminKey: true/);
   assert.match(buildFeatureStoreSource, /timeoutMs: 60000/);
   assert.match(buildFeatureStoreSource, /Backend Feature Store build timed out/);
+
+  const publicProxyChecks = [
+    [await readFile(assistantPredictionsProxy, 'utf8'), /\/assistant\/predictions/],
+    [await readFile(assistantMatchProxy, 'utf8'), /\/assistant\/match\/\$\{encodeURIComponent\(id\)\}/],
+    [await readFile(assistantDailyBriefProxy, 'utf8'), /\/assistant\/daily-brief/],
+    [await readFile(oddsMatchProxy, 'utf8'), /\/odds\/match\/\$\{encodeURIComponent\(id\)\}/],
+    [await readFile(oddsPredictionProxy, 'utf8'), /\/odds\/prediction/],
+  ];
+
+  for (const [source, pathPattern] of publicProxyChecks) {
+    assert.match(source, /process\.env\.NEXT_PUBLIC_API_URL/);
+    assert.match(source, pathPattern);
+    assert.doesNotMatch(source, /process\.env\.ADMIN_API_KEY/);
+    assert.doesNotMatch(source, /footiq-pro-production\.up\.railway\.app\/admin/);
+    assert.doesNotMatch(source, publicAdminKeyPattern);
+  }
 
   const trainCandidateSource = await readFile(trainCandidateProxy, 'utf8');
   assert.match(trainCandidateSource, /proxyAdminRequest/);
@@ -336,6 +357,16 @@ async function run() {
   assert.match(apiClientSource, /\/api\/admin\/run-pipeline-step/);
   assert.match(apiClientSource, /\/api\/admin\/run-hourly-pipeline/);
   assert.match(apiClientSource, /\/api\/admin\/run-daily-pipeline/);
+  assert.match(apiClientSource, /getAssistantPredictions/);
+  assert.match(apiClientSource, /getAssistantMatch/);
+  assert.match(apiClientSource, /getAssistantDailyBrief/);
+  assert.match(apiClientSource, /getMatchOdds/);
+  assert.match(apiClientSource, /getPredictionOdds/);
+  assert.match(apiClientSource, /\/api\/assistant\/predictions/);
+  assert.match(apiClientSource, /\/api\/assistant\/match\/\$\{encodeURIComponent\(matchId\)\}/);
+  assert.match(apiClientSource, /\/api\/assistant\/daily-brief/);
+  assert.match(apiClientSource, /\/api\/odds\/match\/\$\{encodeURIComponent\(matchId\)\}/);
+  assert.match(apiClientSource, /\/api\/odds\/prediction/);
   assert.match(apiClientSource, /fetchProxyJson<RefreshJobStatus>\(`\/api\/admin\/shadow-prediction-job-status/);
   assert.match(apiClientSource, /Impossible de charger \/features\/summary depuis le backend\./);
   assert.doesNotMatch(apiClientSource, /safeFetchJson/);
@@ -370,6 +401,8 @@ async function run() {
   assert.doesNotMatch(matchDetailSource, brokenEncoding);
   assert.match(matchDetailSource, /TeamIdentity/);
   assert.match(matchDetailSource, /resolveMatchTeamLogo/);
+  assert.match(matchDetailSource, /Assistant FootIQ/);
+  assert.match(matchDetailSource, /getAssistantMatch/);
   assert.match(matchDetailSource, /getStaticProps/);
   assert.match(matchDetailSource, /getStaticPaths/);
 
@@ -380,6 +413,10 @@ async function run() {
   assert.match(predictionsPageSource, /resolveMatchTeamLogo\(prediction, 'away'\)/);
   assert.match(predictionsPageSource, /calibration_version/);
   assert.match(predictionsPageSource, /Probabilités calibrées/);
+  assert.match(predictionsPageSource, /Assistant/);
+  assert.match(predictionsPageSource, /Cote/);
+  assert.match(predictionsPageSource, /Expected value|EV/);
+  assert.match(predictionsPageSource, /getAssistantPredictions/);
 
   const dashboardPageSource = await readFile(dashboardPage, 'utf8');
   assert.doesNotMatch(dashboardPageSource, brokenEncoding);
@@ -388,6 +425,8 @@ async function run() {
   assert.match(dashboardPageSource, /isUpcoming\(match, referenceTimestamp\)/);
   assert.match(dashboardPageSource, /isPastKickoff\(match, referenceTimestamp\)/);
   assert.match(dashboardPageSource, /TeamCrest name=\{prediction\.home_team\} logoUrl=/);
+  assert.match(dashboardPageSource, /Assistant du jour/);
+  assert.match(dashboardPageSource, /getAssistantDailyBrief/);
   assert.match(dashboardPageSource, /isUpcomingPrediction\(prediction, referenceTimestamp\)/);
   assert.doesNotMatch(dashboardPageSource, /isUpcomingPrediction\(prediction, referenceDayStart\)/);
   assert.doesNotMatch(dashboardPageSource, /\.filter\(\(match\) => String\(match\.status \?\? ''\)\.toUpperCase\(\) !== 'FINISHED'\)/);
@@ -411,6 +450,8 @@ async function run() {
   assert.match(performancePageSource, /Calibration & confiance/);
   assert.match(performancePageSource, /Gouvernance/);
   assert.match(performancePageSource, /Pipeline IA/);
+  assert.match(performancePageSource, /Qualité des recommandations/);
+  assert.match(performancePageSource, /getAssistantDailyBrief/);
   assert.match(performancePageSource, /formatMetricWhenAvailable/);
   assert.match(performancePageSource, /invalid_predictions/);
   assert.match(performancePageSource, /production_metrics/);

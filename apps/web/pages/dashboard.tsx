@@ -1,15 +1,16 @@
 import type { GetServerSideProps } from 'next';
 import Link from 'next/link';
-import type { CSSProperties, ReactNode } from 'react';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { ProtectedRoute } from '~/components/ProtectedRoute';
 import { MiniLineChart, TeamComparisonCurve, TeamCrest } from '~/components/ui';
-import { getMatches, getPredictions, getPublicDashboardSummary } from '~/lib/api';
+import { getAssistantDailyBrief, getMatches, getPredictions, getPublicDashboardSummary } from '~/lib/api';
 import {
   matchHref,
   buildDashboardSummary,
   matches as mockMatches,
   statusClass,
   type DashboardSummary,
+  type BettingAssistantResponse,
   type Match,
   type Prediction,
 } from '~/lib/mock-data';
@@ -86,6 +87,7 @@ export const getServerSideProps: GetServerSideProps<DashboardProps> = async () =
 };
 
 export default function DashboardPage({ matches, predictions, summary, referenceTime }: DashboardProps) {
+  const [assistantBrief, setAssistantBrief] = useState<BettingAssistantResponse | null>(null);
   const referenceTimestamp = new Date(referenceTime).getTime();
   const upcoming = [...matches]
     .filter((match) => isUpcoming(match, referenceTimestamp))
@@ -129,6 +131,20 @@ export default function DashboardPage({ matches, predictions, summary, reference
     summary.avoid_matches_count + summary.trap_matches_count,
     summary.historical_matches_count ?? finished.length,
   ].map((value) => Math.max(10, Math.min(95, Number(value) || 35)));
+
+  useEffect(() => {
+    let cancelled = false;
+    getAssistantDailyBrief()
+      .then((report) => {
+        if (!cancelled) setAssistantBrief(report);
+      })
+      .catch(() => {
+        if (!cancelled) setAssistantBrief(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <ProtectedRoute>
@@ -193,6 +209,17 @@ export default function DashboardPage({ matches, predictions, summary, reference
           </div>
 
           <div className="premiumDashboardGrid">
+            <article className="premiumMiniPanel">
+              <h2>Assistant du jour</h2>
+              <div className="dataList compact">
+                <span>Recommandés <strong>{assistantBrief?.summary.recommended_count ?? 'Données insuffisantes'}</strong></span>
+                <span>Prudence <strong>{assistantBrief?.summary.cautious_count ?? 'Données insuffisantes'}</strong></span>
+                <span>À éviter <strong>{assistantBrief?.summary.avoid_count ?? 'Données insuffisantes'}</strong></span>
+                <span>Cotes manquantes <strong>{assistantBrief?.summary.no_odds_count ?? 'Cote non disponible'}</strong></span>
+              </div>
+              <p>Lecture informative combinant cote, probabilité, value et risque.</p>
+              <Link className="premiumInlineButton" href="/predictions">Ouvrir l'assistant</Link>
+            </article>
             <article className="premiumMiniPanel">
               <h2>Opportunités à valeur attendue</h2>
               {signalPredictions.slice(0, 4).map((prediction) => (

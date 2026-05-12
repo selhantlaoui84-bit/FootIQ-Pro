@@ -28,7 +28,7 @@ export default function AboutPage() {
       </section>
 
       <StatusBanner tone="premium">
-        FootIQ Pro est un support d'aide à la décision. Aucune analyse ne garantit un score, un résultat ou un gain.
+        FootIQ Pro est un support d'aide à la décision. Les analyses restent probabilistes et les résultats incertains.
       </StatusBanner>
     </Layout>
   );

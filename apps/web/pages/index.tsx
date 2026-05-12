@@ -124,7 +124,7 @@ export default function HomePage({ summary }: HomeProps) {
       </section>
 
       <StatusBanner tone="premium">
-        FootIQ Pro est un outil d'analyse statistique et probabiliste. Aucune prédiction ne garantit un résultat.
+        FootIQ Pro est un outil d'analyse statistique et probabiliste. Chaque prédiction conserve une incertitude.
       </StatusBanner>
     </Layout>
   );
