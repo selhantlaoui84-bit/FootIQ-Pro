@@ -3234,3 +3234,468 @@ body::before {
     grid-template-columns: 1fr;
   }
 }
+
+/* AI Stadium Command final visual pass */
+:root {
+  --bg: #050816;
+  --bg-soft: #0b1020;
+  --card: rgba(11, 16, 32, 0.78);
+  --card-strong: rgba(16, 24, 39, 0.92);
+  --border: rgba(36, 48, 71, 0.92);
+  --border-strong: rgba(216, 180, 106, 0.34);
+  --text: #f8fafc;
+  --muted: #94a3b8;
+  --green: #22c55e;
+  --gold: #d8b46a;
+  --cyan: #06b6d4;
+  --violet: #8b5cf6;
+  --red: #ef4444;
+  --amber: #f59e0b;
+  --shadow-premium: 0 22px 70px rgba(0, 0, 0, 0.48);
+  --radius: 8px;
+  --radius-lg: 10px;
+}
+
+html,
+body {
+  background:
+    radial-gradient(circle at 52% -8%, rgba(34, 197, 94, 0.19), transparent 32%),
+    radial-gradient(circle at 85% 10%, rgba(216, 180, 106, 0.13), transparent 24%),
+    linear-gradient(rgba(5, 8, 22, 0.9), rgba(5, 8, 22, 0.96)),
+    #050816;
+}
+
+body::after {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  content: '';
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.72)),
+    radial-gradient(ellipse at 50% 18%, rgba(34, 197, 94, 0.16), transparent 38%),
+    repeating-linear-gradient(90deg, rgba(34, 197, 94, 0.035) 0 1px, transparent 1px 78px),
+    repeating-linear-gradient(0deg, rgba(216, 180, 106, 0.026) 0 1px, transparent 1px 74px);
+}
+
+.appShell {
+  width: 100%;
+  max-width: none;
+  grid-template-columns: 232px minmax(0, 1fr);
+}
+
+.contentShell {
+  padding: 18px 22px 22px;
+}
+
+main {
+  gap: 14px;
+}
+
+.topbar {
+  padding: 18px 12px;
+  gap: 12px;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(34, 197, 94, 0.11), transparent 26%),
+    linear-gradient(180deg, rgba(3, 10, 18, 0.98), rgba(2, 8, 12, 0.995));
+  border-right: 1px solid rgba(216, 180, 106, 0.26);
+}
+
+.premiumLogo {
+  color: #f8fafc;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 23px;
+}
+
+.premiumLogo em,
+.eyebrow,
+.premiumPageIntro h1,
+.hero h1,
+.authCard h1,
+.premiumMiniPanel h2,
+.panelHeading span,
+.card h2 {
+  color: #f4d9a2;
+}
+
+.brandTagline {
+  margin: -8px 0 12px;
+  font-size: 10px;
+}
+
+nav,
+.mainNav {
+  gap: 6px;
+}
+
+nav a,
+.navButton {
+  min-height: 38px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  font-size: 12px;
+}
+
+nav a span[aria-hidden='true'] {
+  width: 21px;
+  height: 21px;
+  border-radius: 5px;
+  font-size: 10px;
+}
+
+nav a.active {
+  background: linear-gradient(90deg, rgba(34, 197, 94, 0.32), rgba(6, 182, 212, 0.08));
+  border-color: rgba(34, 197, 94, 0.48);
+}
+
+.portfolioCard {
+  padding: 12px;
+  border-radius: 8px;
+}
+
+.portfolioCard strong {
+  color: #f4d9a2;
+  font-size: 18px;
+}
+
+.sparkline {
+  height: 34px;
+}
+
+.pageToolbar {
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.toolbarDate,
+.toolbarButton {
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 7px;
+  font-size: 11px;
+}
+
+.pageHeader,
+.premiumPageIntro {
+  max-width: none;
+  margin-bottom: 2px;
+}
+
+.pageHeader h1,
+.premiumPageIntro h1,
+.matchHeader h1,
+h1 {
+  margin-bottom: 6px;
+  color: #f4d9a2;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(30px, 3.7vw, 54px);
+  font-weight: 600;
+  line-height: 1;
+}
+
+h2 {
+  margin-bottom: 10px;
+  font-size: 17px;
+}
+
+h3 {
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+
+p,
+li,
+small,
+.muted {
+  color: #94a3b8;
+}
+
+.card,
+.metric,
+.premiumPanel,
+.premiumMiniPanel,
+.rowCard,
+.notice,
+.authCard,
+.filters,
+.banner,
+.pageHeader:not(.premiumPageIntro) {
+  background:
+    linear-gradient(145deg, rgba(16, 24, 39, 0.88), rgba(4, 12, 22, 0.94)),
+    rgba(11, 16, 32, 0.82);
+  border: 1px solid rgba(36, 48, 71, 0.86);
+  border-radius: 8px;
+  box-shadow:
+    0 16px 48px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.card,
+.premiumPanel,
+.premiumMiniPanel,
+.metric {
+  padding: 14px;
+}
+
+.card:hover,
+.premiumPanel:hover,
+.premiumMiniPanel:hover,
+.metric:hover,
+.rowCard:hover {
+  border-color: rgba(216, 180, 106, 0.4);
+  box-shadow:
+    0 22px 64px rgba(0, 0, 0, 0.5),
+    0 0 24px rgba(34, 197, 94, 0.07);
+}
+
+.dashboardBoard,
+.matchesPremiumLayout,
+.predictionsPremiumLayout,
+.tacticalCommandGrid {
+  display: grid;
+  gap: 12px;
+}
+
+.dashboardShowcase {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.75fr);
+  gap: 12px;
+}
+
+.premiumDashboardGrid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.tacticalCommandGrid {
+  grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.75fr);
+}
+
+.tacticalHeroPanel {
+  grid-row: span 2;
+}
+
+.metrics,
+.compactDataGrid.four,
+.analyticsShowcase,
+.predictionMetrics {
+  gap: 10px;
+}
+
+.metric {
+  min-height: 78px;
+}
+
+.metric span,
+.dataList span {
+  font-size: 12px;
+}
+
+.metric strong {
+  margin-top: 6px;
+  color: #f8fafc;
+  font-size: 22px;
+}
+
+.dataList {
+  gap: 7px;
+}
+
+.dataList span {
+  padding-bottom: 7px;
+}
+
+.button,
+.premiumInlineButton,
+button,
+select,
+input,
+.filterToggle,
+.badge,
+.statusBadge {
+  border-radius: 7px;
+}
+
+.button {
+  min-height: 36px;
+  padding: 0 13px;
+  font-size: 12px;
+}
+
+.button.primary {
+  color: #02120b;
+  background: linear-gradient(135deg, #22c55e, #d8b46a);
+}
+
+.button.secondary,
+.premiumInlineButton {
+  background: rgba(15, 23, 42, 0.78);
+  border-color: rgba(216, 180, 106, 0.27);
+}
+
+.filters {
+  padding: 10px;
+}
+
+input,
+select,
+.filterToggle {
+  min-height: 36px;
+  background: rgba(5, 8, 22, 0.82);
+  border-color: rgba(36, 48, 71, 0.96);
+  font-size: 12px;
+}
+
+.pitchVisual {
+  min-height: 214px;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(34, 197, 94, 0.19), transparent 18%),
+    repeating-linear-gradient(90deg, rgba(34, 197, 94, 0.09) 0 38px, rgba(3, 26, 20, 0.22) 38px 76px),
+    linear-gradient(180deg, rgba(8, 47, 33, 0.86), rgba(2, 14, 19, 0.95));
+}
+
+.probRing,
+.probabilityRing {
+  width: 118px;
+  height: 118px;
+}
+
+.probRing strong,
+.probabilityRing strong {
+  font-size: 27px;
+}
+
+.teamLogo,
+.teamCrest {
+  background:
+    radial-gradient(circle at 50% 50%, rgba(248, 250, 252, 0.92), rgba(226, 232, 240, 0.72));
+  border: 1px solid rgba(216, 180, 106, 0.52);
+}
+
+.teamLogoFallback {
+  color: #0b1020;
+}
+
+.premiumMatchTable .rowCard,
+.premiumPredictionTable .matchCard,
+.metricTableRow,
+.bucketRow,
+.compactFixture,
+.dailyPick,
+.marketLine {
+  background: rgba(5, 8, 22, 0.46);
+  border-bottom: 1px solid rgba(36, 48, 71, 0.72);
+}
+
+.metricTableRow {
+  padding: 9px 10px;
+}
+
+.banner.warning {
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.32);
+}
+
+.banner.info,
+.banner.success {
+  color: #bbf7d0;
+  background: rgba(34, 197, 94, 0.09);
+  border-color: rgba(34, 197, 94, 0.28);
+}
+
+.emptyState {
+  background: rgba(5, 8, 22, 0.46);
+  border: 1px dashed rgba(216, 180, 106, 0.28);
+  border-radius: 8px;
+}
+
+.siteFooter {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(36, 48, 71, 0.72);
+}
+
+.footerInner {
+  font-size: 11px;
+}
+
+@media (max-width: 1180px) {
+  .appShell {
+    grid-template-columns: 1fr;
+  }
+
+  .topbar {
+    position: sticky;
+    min-height: auto;
+    padding: 12px;
+    border-right: 0;
+    border-bottom: 1px solid rgba(216, 180, 106, 0.24);
+  }
+
+  .mainNav {
+    display: flex;
+    flex-direction: row;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .mainNav a {
+    flex: 0 0 auto;
+  }
+
+  .sidebarAccount {
+    display: none;
+  }
+
+  .contentShell {
+    padding: 14px 10px 80px;
+  }
+
+  .dashboardShowcase,
+  .premiumDashboardGrid,
+  .tacticalCommandGrid,
+  .matchesPremiumLayout,
+  .predictionsPremiumLayout,
+  .sectionSplit,
+  .metrics,
+  .compactDataGrid.four,
+  .analyticsShowcase {
+    grid-template-columns: 1fr;
+  }
+
+  .pageToolbar {
+    justify-content: flex-start;
+    overflow-x: auto;
+  }
+}
+
+@media (max-width: 520px) {
+  .pageHeader h1,
+  .premiumPageIntro h1,
+  h1 {
+    font-size: 31px;
+  }
+
+  .heroStats,
+  .probGrid,
+  .fixtureTeams,
+  .tacticalPitch,
+  .matchMetaStrip {
+    grid-template-columns: 1fr;
+  }
+
+  .premiumMatchTable .rowCard,
+  .premiumPredictionTable .matchCard,
+  .rowCard,
+  .metricTableRow {
+    grid-template-columns: 1fr;
+  }
+
+  .card,
+  .premiumPanel,
+  .premiumMiniPanel,
+  .metric {
+    padding: 12px;
+  }
+}
