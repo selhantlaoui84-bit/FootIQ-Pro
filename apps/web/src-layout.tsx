@@ -22,7 +22,7 @@ function formatToday() {
 
 export function Layout({ children }: { children: ReactNode }) {
   const router = useRouter();
-  const { user, isAdmin, loading, signOut } = useAuth();
+  const { user, isAdmin, isSuperAdmin, loading, signOut } = useAuth();
   const hideAuthNavDuringLoginRedirect = router.pathname === '/login' && Boolean(user);
   const isActive = (href: string) => router.pathname === href || router.pathname.startsWith(`${href}/`);
   const today = formatToday();
@@ -67,6 +67,12 @@ export function Layout({ children }: { children: ReactNode }) {
                   Admin
                 </Link>
               )}
+              {isSuperAdmin && (
+                <Link className={isActive('/super-admin') ? 'active' : undefined} href="/super-admin">
+                  <span aria-hidden="true">SA</span>
+                  Super Admin
+                </Link>
+              )}
             </>
           ) : (
             <>
@@ -98,13 +104,13 @@ export function Layout({ children }: { children: ReactNode }) {
                 <strong>FootIQ Pro</strong>
                 <small>Analyste Élite</small>
               </div>
-              <em>PRO</em>
+              <em>{isSuperAdmin ? 'OWNER' : isAdmin ? 'ADMIN' : 'PRO'}</em>
             </div>
             <div className="portfolioCard">
               <span>Solde du portefeuille</span>
-              <strong>24 580,75 €</strong>
-              <small>Évolution (30 jours)</small>
-              <b>+12,47%</b>
+              <strong>Données réelles</strong>
+              <small>Connecté à votre suivi personnel.</small>
+              <b>Risque visible</b>
               <div className="sparkline" aria-hidden="true" />
             </div>
             <button className="navButton logoutButton logoutWide" type="button" onClick={handleLogout}>

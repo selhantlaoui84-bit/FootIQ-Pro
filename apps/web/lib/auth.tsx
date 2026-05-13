@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
+import { getPlatformMe } from '~/lib/api';
 import { authConfigured, supabase } from '~/lib/supabase';
 
 type AuthContextValue = {
@@ -10,6 +11,9 @@ type AuthContextValue = {
   authConfigured: boolean;
   isAuthenticated: boolean;
   isAdmin: boolean;
+  isSuperAdmin: boolean;
+  role: 'user' | 'admin' | 'super_admin';
+  platformUser: any | null;
   adminEmail: string;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signUp: (email: string, password: string) => Promise<{ error?: string; confirmationRequired?: boolean }>;
@@ -28,12 +32,15 @@ function getAdminEmails() {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
+  const [platformUser, setPlatformUser] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(authConfigured);
   const user = session?.user ?? null;
   const adminEmails = useMemo(() => getAdminEmails(), []);
   const adminEmail = adminEmails[0] ?? DEFAULT_ADMIN_EMAIL;
   const isAuthenticated = Boolean(user);
-  const isAdmin = user?.email ? adminEmails.includes(user.email.trim().toLowerCase()) : false;
+  const role = (platformUser?.role === 'super_admin' || platformUser?.role === 'admin' ? platformUser.role : 'user') as 'user' | 'admin' | 'super_admin';
+  const isSuperAdmin = role === 'super_admin';
+  const isAdmin = role === 'admin' || role === 'super_admin';
 
   useEffect(() => {
     if (!supabase) {
@@ -75,6 +82,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  useEffect(() => {
+    if (!session?.access_token) {
+      setPlatformUser(null);
+      return;
+    }
+
+    let mounted = true;
+    getPlatformMe(session.access_token)
+      .then((response) => {
+        if (mounted) setPlatformUser(response?.user ?? null);
+      })
+      .catch(() => {
+        if (mounted) setPlatformUser(null);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [session?.access_token]);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
@@ -84,6 +111,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       authConfigured,
       isAuthenticated,
       isAdmin,
+      isSuperAdmin,
+      role,
+      platformUser,
       adminEmail,
       async signIn(email: string, password: string) {
         if (!supabase) {
@@ -121,9 +151,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         await supabase.auth.signOut();
         setSession(null);
+        setPlatformUser(null);
       },
     }),
-    [adminEmail, isAdmin, isAuthenticated, isLoading, session, user],
+    [adminEmail, isAdmin, isAuthenticated, isLoading, isSuperAdmin, platformUser, role, session, user],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

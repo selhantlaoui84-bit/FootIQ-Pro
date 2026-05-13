@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+﻿import { readFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 
 const refreshProxy = new URL('../pages/api/admin/refresh-data.ts', import.meta.url);
@@ -33,6 +33,13 @@ const billingStatusProxy = new URL('../pages/api/billing/status.ts', import.meta
 const billingSubscriptionProxy = new URL('../pages/api/billing/subscription.ts', import.meta.url);
 const billingCheckoutProxy = new URL('../pages/api/billing/create-checkout-session.ts', import.meta.url);
 const billingPortalProxy = new URL('../pages/api/billing/create-portal-session.ts', import.meta.url);
+const superAdminPage = new URL('../pages/super-admin.tsx', import.meta.url);
+const superAdminOverviewProxy = new URL('../pages/api/super-admin/overview.ts', import.meta.url);
+const superAdminUsersProxy = new URL('../pages/api/super-admin/users/index.ts', import.meta.url);
+const superAdminPaymentsProxy = new URL('../pages/api/super-admin/payments.ts', import.meta.url);
+const superAdminPlansProxy = new URL('../pages/api/super-admin/plans/index.ts', import.meta.url);
+const authMeProxy = new URL('../pages/api/auth/me.ts', import.meta.url);
+const onboarding = new URL('../components/OnboardingModal.tsx', import.meta.url);
 const hourlyCron = new URL('../pages/api/cron/hourly-refresh.ts', import.meta.url);
 const matchFinishedCron = new URL('../pages/api/cron/match-finished-check.ts', import.meta.url);
 const dailyLearningCron = new URL('../pages/api/cron/daily-learning.ts', import.meta.url);
@@ -333,12 +340,14 @@ async function run() {
   assert.doesNotMatch(protectedRouteSource, brokenEncoding);
   assert.match(protectedRouteSource, /if \(loading \|\| !router\.isReady \|\| !requireAuth \|\| isAuthenticated\) return/);
   assert.match(protectedRouteSource, /Accès admin requis/);
+  assert.match(protectedRouteSource, /requireSuperAdmin/);
   assert.doesNotMatch(protectedRouteSource, /requireAdmin && !isAdmin[\s\S]*\/login/);
 
   const authSource = await readFile(authProvider, 'utf8');
   assert.match(authSource, /split\(','\)/);
   assert.match(authSource, /email\.trim\(\)\.toLowerCase\(\)/);
-  assert.match(authSource, /adminEmails\.includes\(user\.email\.trim\(\)\.toLowerCase\(\)\)/);
+  assert.match(authSource, /getPlatformMe/);
+  assert.match(authSource, /role === 'admin' \|\| role === 'super_admin'/);
   assert.match(authSource, /isLoading/);
   assert.match(authSource, /onAuthStateChange/);
   assert.doesNotMatch(authSource, publicAdminKeyPattern);
@@ -571,6 +580,33 @@ async function run() {
   assert.doesNotMatch(layoutSource, brokenEncoding);
   assert.match(layoutSource, /href="\/dashboard"[\s\S]*Tableau de bord[\s\S]*<\/Link>/);
   assert.match(layoutSource, /\{ href: '\/matches', label: 'Matchs'/);
+  assert.match(layoutSource, /href="\/super-admin"/);
+  assert.match(layoutSource, /isSuperAdmin/);
+
+  const superAdminPageSource = await readFile(superAdminPage, 'utf8');
+  assert.doesNotMatch(superAdminPageSource, brokenEncoding);
+  assert.match(superAdminPageSource, /Super Admin SaaS/);
+  assert.match(superAdminPageSource, /samir\.elh@outlook\.fr/);
+  assert.match(superAdminPageSource, /requireSuperAdmin/);
+  assert.match(superAdminPageSource, /Aucun paiement réel enregistré/);
+
+  const superAdminApiSource = await readFile(apiClient, 'utf8');
+  assert.match(superAdminApiSource, /getSuperAdminOverview/);
+  assert.match(superAdminApiSource, /getSuperAdminUsers/);
+  assert.match(superAdminApiSource, /getPayments/);
+  assert.match(superAdminApiSource, /\/api\/super-admin\/overview/);
+
+  for (const proxyFile of [superAdminOverviewProxy, superAdminUsersProxy, superAdminPaymentsProxy, superAdminPlansProxy, authMeProxy]) {
+    const proxySource = await readFile(proxyFile, 'utf8');
+    assert.match(proxySource, /requireBearerToken: true/);
+    assert.doesNotMatch(proxySource, /footiq-pro-production\.up\.railway\.app/);
+    assert.doesNotMatch(proxySource, publicAdminKeyPattern);
+  }
+
+  const onboardingSource = await readFile(onboarding, 'utf8');
+  assert.match(onboardingSource, /completeOnboarding/);
+  assert.match(onboardingSource, /localStorage/);
+  assert.doesNotMatch(onboardingSource, brokenEncoding);
 
   const stylesSource = await readFile(globalStyles, 'utf8');
   assert.match(stylesSource, /\.topbar \{[\s\S]*z-index: 1000/);
@@ -612,4 +648,6 @@ run()
     console.error(error);
     process.exit(1);
   });
+
+
 

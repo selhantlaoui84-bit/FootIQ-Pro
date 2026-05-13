@@ -310,6 +310,121 @@ export async function createPortalSession(): Promise<{ status: string; portal_ur
   }, 15000);
 }
 
+function authHeaders(accessToken?: string | null, extra?: HeadersInit) {
+  const headers = new Headers(extra);
+  if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
+  return headers;
+}
+
+export async function getPlatformMe(accessToken?: string | null): Promise<any> {
+  return fetchProxyJson('/api/auth/me', { headers: authHeaders(accessToken) }, 10000);
+}
+
+export async function completeOnboarding(accessToken?: string | null): Promise<any> {
+  return fetchProxyJson('/api/auth/onboarding', {
+    method: 'POST',
+    headers: authHeaders(accessToken, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ completed: true }),
+  }, 10000);
+}
+
+export async function getSuperAdminOverview(accessToken?: string | null): Promise<any> {
+  return fetchProxyJson('/api/super-admin/overview', { headers: authHeaders(accessToken) }, 15000);
+}
+
+export async function getSuperAdminUsers(filters?: Record<string, string | number>, accessToken?: string | null): Promise<any> {
+  const query = filters ? `?${new URLSearchParams(Object.entries(filters).map(([key, value]) => [key, String(value)]))}` : '';
+  return fetchProxyJson(`/api/super-admin/users${query}`, { headers: authHeaders(accessToken) }, 15000);
+}
+
+export async function getSuperAdminUser(userId: string, accessToken?: string | null): Promise<any> {
+  return fetchProxyJson(`/api/super-admin/users/${encodeURIComponent(userId)}`, { headers: authHeaders(accessToken) }, 15000);
+}
+
+export async function updateSuperAdminUser(userId: string, payload: Record<string, unknown>, accessToken?: string | null): Promise<any> {
+  return fetchProxyJson(`/api/super-admin/users/${encodeURIComponent(userId)}`, {
+    method: 'PATCH',
+    headers: authHeaders(accessToken, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload),
+  }, 15000);
+}
+
+export async function promoteSuperAdminUser(userId: string, payload: Record<string, unknown>, accessToken?: string | null): Promise<any> {
+  return fetchProxyJson(`/api/super-admin/users/${encodeURIComponent(userId)}/promote`, {
+    method: 'POST',
+    headers: authHeaders(accessToken, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload),
+  }, 15000);
+}
+
+export async function suspendSuperAdminUser(userId: string, payload: Record<string, unknown>, accessToken?: string | null): Promise<any> {
+  return fetchProxyJson(`/api/super-admin/users/${encodeURIComponent(userId)}/suspend`, {
+    method: 'POST',
+    headers: authHeaders(accessToken, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload),
+  }, 15000);
+}
+
+export async function restoreSuperAdminUser(userId: string, payload: Record<string, unknown>, accessToken?: string | null): Promise<any> {
+  return fetchProxyJson(`/api/super-admin/users/${encodeURIComponent(userId)}/restore`, {
+    method: 'POST',
+    headers: authHeaders(accessToken, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload),
+  }, 15000);
+}
+
+export async function getSaasPlans(accessToken?: string | null): Promise<any> {
+  return fetchProxyJson('/api/super-admin/plans', { headers: authHeaders(accessToken) }, 15000);
+}
+
+export async function createSaasPlan(payload: Record<string, unknown>, accessToken?: string | null): Promise<any> {
+  return fetchProxyJson('/api/super-admin/plans', {
+    method: 'POST',
+    headers: authHeaders(accessToken, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload),
+  }, 15000);
+}
+
+export async function updateSaasPlan(planId: string, payload: Record<string, unknown>, accessToken?: string | null): Promise<any> {
+  return fetchProxyJson(`/api/super-admin/plans/${encodeURIComponent(planId)}`, {
+    method: 'PATCH',
+    headers: authHeaders(accessToken, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload),
+  }, 15000);
+}
+
+export async function getSubscriptions(filters?: Record<string, string | number>, accessToken?: string | null): Promise<any> {
+  const query = filters ? `?${new URLSearchParams(Object.entries(filters).map(([key, value]) => [key, String(value)]))}` : '';
+  return fetchProxyJson(`/api/super-admin/subscriptions${query}`, { headers: authHeaders(accessToken) }, 15000);
+}
+
+export async function getPayments(filters?: Record<string, string | number>, accessToken?: string | null): Promise<any> {
+  const query = filters ? `?${new URLSearchParams(Object.entries(filters).map(([key, value]) => [key, String(value)]))}` : '';
+  return fetchProxyJson(`/api/super-admin/payments${query}`, { headers: authHeaders(accessToken) }, 15000);
+}
+
+export async function getEntitlements(filters?: Record<string, string | number>, accessToken?: string | null): Promise<any> {
+  const query = filters ? `?${new URLSearchParams(Object.entries(filters).map(([key, value]) => [key, String(value)]))}` : '';
+  return fetchProxyJson(`/api/super-admin/entitlements${query}`, { headers: authHeaders(accessToken) }, 15000);
+}
+
+export async function updateEntitlement(entitlementId: string, payload: Record<string, unknown>, accessToken?: string | null): Promise<any> {
+  return fetchProxyJson(`/api/super-admin/entitlements/${encodeURIComponent(entitlementId)}`, {
+    method: 'PATCH',
+    headers: authHeaders(accessToken, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload),
+  }, 15000);
+}
+
+export async function getSuperAdminAuditLog(filters?: Record<string, string | number>, accessToken?: string | null): Promise<any> {
+  const query = filters ? `?${new URLSearchParams(Object.entries(filters).map(([key, value]) => [key, String(value)]))}` : '';
+  return fetchProxyJson(`/api/super-admin/audit-log${query}`, { headers: authHeaders(accessToken) }, 15000);
+}
+
+export async function getRevenueSummary(accessToken?: string | null): Promise<any> {
+  return fetchProxyJson('/api/super-admin/revenue-summary', { headers: authHeaders(accessToken) }, 15000);
+}
+
 export async function getPrediction(matchId: string): Promise<Prediction> {
   if (IS_BUILD) return getMockPrediction(matchId);
 

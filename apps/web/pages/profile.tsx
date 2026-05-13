@@ -10,7 +10,7 @@ import { Layout } from '~/src-layout';
 
 export default function ProfilePage() {
   const router = useRouter();
-  const { user, isAdmin, adminEmail, signOut } = useAuth();
+  const { user, isAdmin, isSuperAdmin, role, signOut } = useAuth();
   const [subscription, setSubscription] = useState<SubscriptionResponse | null>(null);
   const [billingMessage, setBillingMessage] = useState<string | null>(null);
 
@@ -54,7 +54,7 @@ export default function ProfilePage() {
             <h2>Compte</h2>
             <div className="dataList">
               <span>Email <strong>{user?.email ?? 'N/A'}</strong></span>
-              <span>Rôle <strong>{isAdmin ? 'Admin' : 'Utilisateur'}</strong></span>
+              <span>Rôle <strong>{role}</strong></span>
               <span>Statut <strong>Actif</strong></span>
               <span>Offre <strong>{plan}</strong></span>
               <span>Upgrade <strong>{plan === 'free' ? 'Disponible' : 'Actif'}</strong></span>
@@ -94,8 +94,9 @@ export default function ProfilePage() {
               {isAdmin ? (
                 <Link className="button primary" href="/admin">Admin</Link>
               ) : (
-                <span className="banner warning">L'accès admin est limité à {adminEmail}.</span>
+                <span className="banner warning">Accès admin réservé aux rôles autorisés.</span>
               )}
+              {isSuperAdmin && <Link className="button primary" href="/super-admin">Super Admin</Link>}
             </div>
           </article>
         </section>
