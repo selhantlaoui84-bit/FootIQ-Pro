@@ -7,11 +7,17 @@ type ProtectedRouteProps = {
   children: ReactNode;
   requireAuth?: boolean;
   requireAdmin?: boolean;
+  requireSuperAdmin?: boolean;
 };
 
-export function ProtectedRoute({ children, requireAuth = true, requireAdmin = false }: ProtectedRouteProps) {
+export function ProtectedRoute({
+  children,
+  requireAuth = true,
+  requireAdmin = false,
+  requireSuperAdmin = false,
+}: ProtectedRouteProps) {
   const router = useRouter();
-  const { isAuthenticated, isAdmin, loading, user, adminEmail } = useAuth();
+  const { isAuthenticated, isAdmin, isSuperAdmin, loading, user, adminEmail } = useAuth();
 
   useEffect(() => {
     if (loading || !router.isReady || !requireAuth || isAuthenticated) return;
@@ -25,6 +31,24 @@ export function ProtectedRoute({ children, requireAuth = true, requireAdmin = fa
       <section className="protectedLoading authLockedScreen">
         <div className="skeleton" />
         <p>Vérification de la session...</p>
+      </section>
+    );
+  }
+
+  if (requireSuperAdmin && !isSuperAdmin) {
+    return (
+      <section className="authLockedScreen">
+        <article className="accessDeniedCard">
+          <span className="roleBadge">Accès restreint</span>
+          <h1>Accès refusé</h1>
+          <p>
+            La console Super Admin est réservée au propriétaire FootIQ Pro. Vous êtes connecté avec{' '}
+            {user?.email ?? 'utilisateur inconnu'}.
+          </p>
+          <Link className="button primary" href="/dashboard">
+            Retour au tableau de bord
+          </Link>
+        </article>
       </section>
     );
   }

@@ -304,6 +304,112 @@ Index("ix_user_usage_events_event_type", user_usage_events_table.c.event_type)
 Index("ix_user_usage_events_feature", user_usage_events_table.c.feature)
 Index("ix_user_usage_events_created_at", user_usage_events_table.c.created_at)
 
+users_table = Table(
+    "users",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("email", Text, nullable=False),
+    Column("display_name", Text, nullable=True),
+    Column("role", Text, nullable=False, default="user"),
+    Column("status", Text, nullable=False, default="active"),
+    Column("plan_id", Text, nullable=True),
+    Column("created_at", TIMESTAMP(timezone=True)),
+    Column("updated_at", TIMESTAMP(timezone=True)),
+    Column("last_login_at", TIMESTAMP(timezone=True), nullable=True),
+    Column("metadata_json", Text, nullable=True),
+)
+Index("ux_users_email", users_table.c.email, unique=True)
+Index("ix_users_role", users_table.c.role)
+Index("ix_users_status", users_table.c.status)
+
+saas_plans_table = Table(
+    "saas_plans",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("code", Text, nullable=False),
+    Column("name", Text, nullable=False),
+    Column("description", Text, nullable=True),
+    Column("price_monthly_cents", Integer, default=0),
+    Column("price_yearly_cents", Integer, default=0),
+    Column("currency", Text, nullable=False, default="EUR"),
+    Column("is_active", Boolean, default=True),
+    Column("features_json", Text, nullable=True),
+    Column("limits_json", Text, nullable=True),
+    Column("created_at", TIMESTAMP(timezone=True)),
+    Column("updated_at", TIMESTAMP(timezone=True)),
+)
+Index("ux_saas_plans_code", saas_plans_table.c.code, unique=True)
+Index("ix_saas_plans_is_active", saas_plans_table.c.is_active)
+
+subscriptions_table = Table(
+    "subscriptions",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("user_id", Text, nullable=False),
+    Column("plan_id", Text, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("provider", Text, nullable=False, default="internal"),
+    Column("provider_customer_id", Text, nullable=True),
+    Column("provider_subscription_id", Text, nullable=True),
+    Column("current_period_start", TIMESTAMP(timezone=True), nullable=True),
+    Column("current_period_end", TIMESTAMP(timezone=True), nullable=True),
+    Column("cancel_at_period_end", Boolean, default=False),
+    Column("created_at", TIMESTAMP(timezone=True)),
+    Column("updated_at", TIMESTAMP(timezone=True)),
+)
+Index("ix_subscriptions_user_id", subscriptions_table.c.user_id)
+Index("ix_subscriptions_status", subscriptions_table.c.status)
+
+payments_table = Table(
+    "payments",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("user_id", Text, nullable=False),
+    Column("subscription_id", Text, nullable=True),
+    Column("provider", Text, nullable=False, default="internal"),
+    Column("provider_payment_id", Text, nullable=True),
+    Column("amount_cents", Integer, nullable=False, default=0),
+    Column("currency", Text, nullable=False, default="EUR"),
+    Column("status", Text, nullable=False),
+    Column("paid_at", TIMESTAMP(timezone=True), nullable=True),
+    Column("created_at", TIMESTAMP(timezone=True)),
+    Column("metadata_json", Text, nullable=True),
+)
+Index("ix_payments_user_id", payments_table.c.user_id)
+Index("ix_payments_status", payments_table.c.status)
+
+access_entitlements_table = Table(
+    "access_entitlements",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("user_id", Text, nullable=False),
+    Column("feature_key", Text, nullable=False),
+    Column("enabled", Boolean, default=True),
+    Column("source", Text, nullable=False, default="plan"),
+    Column("expires_at", TIMESTAMP(timezone=True), nullable=True),
+    Column("created_at", TIMESTAMP(timezone=True)),
+    Column("updated_at", TIMESTAMP(timezone=True)),
+)
+Index("ix_access_entitlements_user_id", access_entitlements_table.c.user_id)
+Index("ix_access_entitlements_feature_key", access_entitlements_table.c.feature_key)
+
+super_admin_audit_log_table = Table(
+    "super_admin_audit_log",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("actor_user_id", Text, nullable=True),
+    Column("actor_email", Text, nullable=False),
+    Column("action", Text, nullable=False),
+    Column("target_type", Text, nullable=False),
+    Column("target_id", Text, nullable=True),
+    Column("target_email", Text, nullable=True),
+    Column("before_json", Text, nullable=True),
+    Column("after_json", Text, nullable=True),
+    Column("created_at", TIMESTAMP(timezone=True)),
+)
+Index("ix_super_admin_audit_actor_email", super_admin_audit_log_table.c.actor_email)
+Index("ix_super_admin_audit_created_at", super_admin_audit_log_table.c.created_at)
+
 
 def get_database_url() -> str | None:
     database_url = os.getenv("DATABASE_URL")
@@ -410,6 +516,19 @@ def _ensure_runtime_columns_and_indexes(engine: Engine) -> None:
             "CREATE INDEX IF NOT EXISTS ix_user_usage_events_event_type ON user_usage_events(event_type)",
             "CREATE INDEX IF NOT EXISTS ix_user_usage_events_feature ON user_usage_events(feature)",
             "CREATE INDEX IF NOT EXISTS ix_user_usage_events_created_at ON user_usage_events(created_at)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_users_email ON users(email)",
+            "CREATE INDEX IF NOT EXISTS ix_users_role ON users(role)",
+            "CREATE INDEX IF NOT EXISTS ix_users_status ON users(status)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_saas_plans_code ON saas_plans(code)",
+            "CREATE INDEX IF NOT EXISTS ix_saas_plans_is_active ON saas_plans(is_active)",
+            "CREATE INDEX IF NOT EXISTS ix_subscriptions_user_id ON subscriptions(user_id)",
+            "CREATE INDEX IF NOT EXISTS ix_subscriptions_status ON subscriptions(status)",
+            "CREATE INDEX IF NOT EXISTS ix_payments_user_id ON payments(user_id)",
+            "CREATE INDEX IF NOT EXISTS ix_payments_status ON payments(status)",
+            "CREATE INDEX IF NOT EXISTS ix_access_entitlements_user_id ON access_entitlements(user_id)",
+            "CREATE INDEX IF NOT EXISTS ix_access_entitlements_feature_key ON access_entitlements(feature_key)",
+            "CREATE INDEX IF NOT EXISTS ix_super_admin_audit_actor_email ON super_admin_audit_log(actor_email)",
+            "CREATE INDEX IF NOT EXISTS ix_super_admin_audit_created_at ON super_admin_audit_log(created_at)",
         ]
     elif engine.dialect.name == "sqlite":
         statements = [
@@ -450,6 +569,19 @@ def _ensure_runtime_columns_and_indexes(engine: Engine) -> None:
             "CREATE INDEX IF NOT EXISTS ix_user_usage_events_event_type ON user_usage_events(event_type)",
             "CREATE INDEX IF NOT EXISTS ix_user_usage_events_feature ON user_usage_events(feature)",
             "CREATE INDEX IF NOT EXISTS ix_user_usage_events_created_at ON user_usage_events(created_at)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_users_email ON users(email)",
+            "CREATE INDEX IF NOT EXISTS ix_users_role ON users(role)",
+            "CREATE INDEX IF NOT EXISTS ix_users_status ON users(status)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_saas_plans_code ON saas_plans(code)",
+            "CREATE INDEX IF NOT EXISTS ix_saas_plans_is_active ON saas_plans(is_active)",
+            "CREATE INDEX IF NOT EXISTS ix_subscriptions_user_id ON subscriptions(user_id)",
+            "CREATE INDEX IF NOT EXISTS ix_subscriptions_status ON subscriptions(status)",
+            "CREATE INDEX IF NOT EXISTS ix_payments_user_id ON payments(user_id)",
+            "CREATE INDEX IF NOT EXISTS ix_payments_status ON payments(status)",
+            "CREATE INDEX IF NOT EXISTS ix_access_entitlements_user_id ON access_entitlements(user_id)",
+            "CREATE INDEX IF NOT EXISTS ix_access_entitlements_feature_key ON access_entitlements(feature_key)",
+            "CREATE INDEX IF NOT EXISTS ix_super_admin_audit_actor_email ON super_admin_audit_log(actor_email)",
+            "CREATE INDEX IF NOT EXISTS ix_super_admin_audit_created_at ON super_admin_audit_log(created_at)",
         ]
         with engine.connect() as connection:
             columns = {row._mapping["name"] for row in connection.execute(text("PRAGMA table_info(feature_snapshots)"))}

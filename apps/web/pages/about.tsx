@@ -28,7 +28,7 @@ export default function AboutPage() {
       </section>
 
       <StatusBanner tone="premium">
-        FootIQ Pro est un support d'aide à la décision. Les analyses restent probabilistes et les résultats incertains.
+        FootIQ Pro est un outil d'analyse statistique. Aucune prédiction n'assure un résultat, les paris comportent un risque de perte et l'utilisateur reste responsable de ses décisions.
       </StatusBanner>
     </Layout>
   );

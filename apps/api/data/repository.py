@@ -878,6 +878,65 @@ PLAN_FREE = "free"
 PLAN_PREMIUM = "premium"
 PLAN_PRO = "pro"
 PLAN_ADMIN = "admin"
+ROLE_USER = "user"
+ROLE_ADMIN = "admin"
+ROLE_SUPER_ADMIN = "super_admin"
+SAMIR_SUPER_ADMIN_EMAIL = "samir.elh@outlook.fr"
+SUPER_ADMIN_ENTITLEMENTS = [
+    "admin.access",
+    "super_admin.access",
+    "users.manage",
+    "subscriptions.manage",
+    "payments.manage",
+    "plans.manage",
+    "roles.manage",
+    "platform.monitor",
+    "model.governance",
+    "odds.manage",
+    "bets.monitor",
+    "audit.read",
+    "product.manage",
+    "onboarding.manage",
+    "legal.manage",
+]
+DEFAULT_SAAS_PLANS = [
+    {
+        "code": "free",
+        "name": "Free",
+        "description": "Découverte FootIQ Pro avec limites d'usage.",
+        "price_monthly_cents": 0,
+        "price_yearly_cents": 0,
+        "features": ["dashboard", "prediction_preview", "limited_bets"],
+        "limits": {"prediction_view": 5, "bet_created": 10},
+    },
+    {
+        "code": "pro",
+        "name": "Pro",
+        "description": "Analyse avancée, value bets et suivi complet.",
+        "price_monthly_cents": 2900,
+        "price_yearly_cents": 29000,
+        "features": ["predictions", "value_bets", "assistant", "performance"],
+        "limits": {"prediction_view": 1000, "assistant_request": 200},
+    },
+    {
+        "code": "premium",
+        "name": "Premium",
+        "description": "Expérience complète pour parieur exigeant.",
+        "price_monthly_cents": 1900,
+        "price_yearly_cents": 19000,
+        "features": ["predictions", "real_odds", "value_bets", "my_bets"],
+        "limits": {"prediction_view": 200, "assistant_request": 50},
+    },
+    {
+        "code": "enterprise",
+        "name": "Enterprise",
+        "description": "Pilotage équipe, supervision et droits étendus.",
+        "price_monthly_cents": 9900,
+        "price_yearly_cents": 99000,
+        "features": ["all", "governance", "exports", "priority_support"],
+        "limits": {},
+    },
+]
 VALID_SUBSCRIPTION_PLANS = {PLAN_FREE, PLAN_PREMIUM, PLAN_PRO, PLAN_ADMIN}
 VALID_SUBSCRIPTION_STATUSES = {"active", "trialing", "past_due", "canceled", "incomplete", "free"}
 FEATURE_LIMITS = {
@@ -1141,6 +1200,520 @@ def get_subscription_plan_counts() -> dict:
         if plan in counts:
             counts[plan] = _int_or_zero(row.get("count"))
     return counts
+
+
+def _user_from_row(row: dict | None) -> dict | None:
+    if not row:
+        return None
+    return {
+        "id": row.get("id"),
+        "email": row.get("email"),
+        "display_name": row.get("display_name"),
+        "role": row.get("role") or ROLE_USER,
+        "status": row.get("status") or "active",
+        "plan_id": row.get("plan_id"),
+        "created_at": _iso(row.get("created_at")),
+        "updated_at": _iso(row.get("updated_at")),
+        "last_login_at": _iso(row.get("last_login_at")),
+        "metadata": _loads(row.get("metadata_json")) or {},
+    }
+
+
+def _plan_from_row(row: dict | None) -> dict | None:
+    if not row:
+        return None
+    return {
+        "id": row.get("id"),
+        "code": row.get("code"),
+        "name": row.get("name"),
+        "description": row.get("description"),
+        "price_monthly_cents": _int_or_zero(row.get("price_monthly_cents")),
+        "price_yearly_cents": _int_or_zero(row.get("price_yearly_cents")),
+        "currency": row.get("currency") or "EUR",
+        "is_active": bool(row.get("is_active")) if row.get("is_active") is not None else True,
+        "features": _loads(row.get("features_json")) or [],
+        "limits": _loads(row.get("limits_json")) or {},
+        "created_at": _iso(row.get("created_at")),
+        "updated_at": _iso(row.get("updated_at")),
+    }
+
+
+def _subscription_saas_from_row(row: dict | None) -> dict | None:
+    if not row:
+        return None
+    return {
+        "id": row.get("id"),
+        "user_id": row.get("user_id"),
+        "email": row.get("email"),
+        "plan_id": row.get("plan_id"),
+        "plan_code": row.get("plan_code"),
+        "status": row.get("status"),
+        "provider": row.get("provider") or "internal",
+        "provider_customer_id": row.get("provider_customer_id"),
+        "provider_subscription_id": row.get("provider_subscription_id"),
+        "current_period_start": _iso(row.get("current_period_start")),
+        "current_period_end": _iso(row.get("current_period_end")),
+        "cancel_at_period_end": bool(row.get("cancel_at_period_end")) if row.get("cancel_at_period_end") is not None else False,
+        "created_at": _iso(row.get("created_at")),
+        "updated_at": _iso(row.get("updated_at")),
+    }
+
+
+def _payment_from_row(row: dict | None) -> dict | None:
+    if not row:
+        return None
+    return {
+        "id": row.get("id"),
+        "user_id": row.get("user_id"),
+        "email": row.get("email"),
+        "subscription_id": row.get("subscription_id"),
+        "provider": row.get("provider") or "internal",
+        "provider_payment_id": row.get("provider_payment_id"),
+        "amount_cents": _int_or_zero(row.get("amount_cents")),
+        "currency": row.get("currency") or "EUR",
+        "status": row.get("status"),
+        "paid_at": _iso(row.get("paid_at")),
+        "created_at": _iso(row.get("created_at")),
+        "metadata": _loads(row.get("metadata_json")) or {},
+    }
+
+
+def _entitlement_from_row(row: dict | None) -> dict | None:
+    if not row:
+        return None
+    return {
+        "id": row.get("id"),
+        "user_id": row.get("user_id"),
+        "email": row.get("email"),
+        "feature_key": row.get("feature_key"),
+        "enabled": bool(row.get("enabled")) if row.get("enabled") is not None else True,
+        "source": row.get("source") or "plan",
+        "expires_at": _iso(row.get("expires_at")),
+        "created_at": _iso(row.get("created_at")),
+        "updated_at": _iso(row.get("updated_at")),
+    }
+
+
+def _audit_from_row(row: dict | None) -> dict | None:
+    if not row:
+        return None
+    return {
+        "id": row.get("id"),
+        "actor_user_id": row.get("actor_user_id"),
+        "actor_email": row.get("actor_email"),
+        "action": row.get("action"),
+        "target_type": row.get("target_type"),
+        "target_id": row.get("target_id"),
+        "target_email": row.get("target_email"),
+        "before": _loads(row.get("before_json")),
+        "after": _loads(row.get("after_json")),
+        "created_at": _iso(row.get("created_at")),
+    }
+
+
+def ensure_saas_defaults() -> dict:
+    if not db_available():
+        return {"status": "memory", "plans_seeded": len(DEFAULT_SAAS_PLANS), "super_admin_seeded": True}
+    init_db()
+    for plan in DEFAULT_SAAS_PLANS:
+        upsert_saas_plan(plan, actor_email="system")
+    user = promote_samir_super_admin(actor_email="system")
+    return {"status": "ok", "plans_seeded": len(DEFAULT_SAAS_PLANS), "super_admin": user}
+
+
+def get_or_create_user_by_email(email: str, display_name: str | None = None, role: str = ROLE_USER, status: str = "active") -> dict:
+    safe_email = str(email or "").strip().lower()
+    if not safe_email:
+        raise ValueError("email required")
+    now = _now()
+    if not db_available():
+        return {
+            "id": safe_email,
+            "email": safe_email,
+            "display_name": display_name,
+            "role": role,
+            "status": status,
+            "plan_id": None,
+            "created_at": _iso(now),
+            "updated_at": _iso(now),
+            "last_login_at": None,
+            "metadata": {},
+        }
+    init_db()
+    existing = fetch_one_safe(text("SELECT * FROM users WHERE email = :email LIMIT 1"), {"email": safe_email})
+    if existing:
+        return _user_from_row(existing)
+    user_id = str(uuid.uuid4())
+    execute_safe(
+        text(
+            """
+            INSERT INTO users (id, email, display_name, role, status, created_at, updated_at, metadata_json)
+            VALUES (:id, :email, :display_name, :role, :status, :created_at, :updated_at, :metadata_json)
+            """
+        ),
+        {
+            "id": user_id,
+            "email": safe_email,
+            "display_name": display_name,
+            "role": role,
+            "status": status,
+            "created_at": now,
+            "updated_at": now,
+            "metadata_json": _json({}),
+        },
+    )
+    return get_user_by_id_or_email(user_id)
+
+
+def get_user_by_id_or_email(value: str | None) -> dict | None:
+    if not value:
+        return None
+    if not db_available():
+        email = str(value).strip().lower()
+        if email == SAMIR_SUPER_ADMIN_EMAIL:
+            return get_or_create_user_by_email(email, "Samir", ROLE_SUPER_ADMIN)
+        return None
+    row = fetch_one_safe(
+        text("SELECT * FROM users WHERE id = :value OR email = :email LIMIT 1"),
+        {"value": str(value), "email": str(value).strip().lower()},
+    )
+    return _user_from_row(row)
+
+
+def update_user_role_status(user_id: str, role: str | None = None, status: str | None = None, actor_email: str = "system") -> dict:
+    user = get_user_by_id_or_email(user_id)
+    if not user:
+        raise ValueError("user not found")
+    safe_role = role if role in {ROLE_USER, ROLE_ADMIN, ROLE_SUPER_ADMIN} else user.get("role")
+    safe_status = status if status in {"active", "suspended", "deleted"} else user.get("status")
+    before = user
+    if db_available():
+        execute_safe(
+            text("UPDATE users SET role = :role, status = :status, updated_at = :updated_at WHERE id = :id"),
+            {"role": safe_role, "status": safe_status, "updated_at": _now(), "id": user["id"]},
+        )
+    updated = get_user_by_id_or_email(user["id"]) or {**user, "role": safe_role, "status": safe_status}
+    write_super_admin_audit(actor_email, f"user.{safe_role if role else safe_status}", "user", user["id"], user.get("email"), before, updated)
+    return updated
+
+
+def write_super_admin_audit(
+    actor_email: str,
+    action: str,
+    target_type: str,
+    target_id: str | None = None,
+    target_email: str | None = None,
+    before: dict | None = None,
+    after: dict | None = None,
+    actor_user_id: str | None = None,
+) -> dict:
+    row = {
+        "id": str(uuid.uuid4()),
+        "actor_user_id": actor_user_id,
+        "actor_email": str(actor_email or "system").lower(),
+        "action": action,
+        "target_type": target_type,
+        "target_id": target_id,
+        "target_email": target_email,
+        "before_json": _json(before) if before is not None else None,
+        "after_json": _json(after) if after is not None else None,
+        "created_at": _now(),
+    }
+    if db_available():
+        execute_safe(
+            text(
+                """
+                INSERT INTO super_admin_audit_log (
+                    id, actor_user_id, actor_email, action, target_type, target_id,
+                    target_email, before_json, after_json, created_at
+                )
+                VALUES (
+                    :id, :actor_user_id, :actor_email, :action, :target_type, :target_id,
+                    :target_email, :before_json, :after_json, :created_at
+                )
+                """
+            ),
+            row,
+        )
+    return {**row, "before": before, "after": after, "created_at": _iso(row["created_at"])}
+
+
+def grant_entitlement(user_id: str, feature_key: str, source: str = "manual", actor_email: str = "system") -> dict:
+    user = get_user_by_id_or_email(user_id)
+    if not user:
+        raise ValueError("user not found")
+    now = _now()
+    if db_available():
+        existing = fetch_one_safe(
+            text("SELECT * FROM access_entitlements WHERE user_id = :user_id AND feature_key = :feature_key LIMIT 1"),
+            {"user_id": user["id"], "feature_key": feature_key},
+        )
+        if existing:
+            execute_safe(
+                text("UPDATE access_entitlements SET enabled = true, source = :source, updated_at = :updated_at WHERE id = :id"),
+                {"source": source, "updated_at": now, "id": existing["id"]},
+            )
+        else:
+            execute_safe(
+                text(
+                    """
+                    INSERT INTO access_entitlements (id, user_id, feature_key, enabled, source, created_at, updated_at)
+                    VALUES (:id, :user_id, :feature_key, true, :source, :created_at, :updated_at)
+                    """
+                ),
+                {"id": str(uuid.uuid4()), "user_id": user["id"], "feature_key": feature_key, "source": source, "created_at": now, "updated_at": now},
+            )
+    entitlement = get_entitlement_for_user(user["id"], feature_key)
+    write_super_admin_audit(actor_email, "entitlement.grant", "entitlement", entitlement.get("id") if entitlement else None, user.get("email"), None, entitlement)
+    return entitlement or {"user_id": user["id"], "feature_key": feature_key, "enabled": True, "source": source}
+
+
+def get_entitlement_for_user(user_id: str, feature_key: str) -> dict | None:
+    if not db_available():
+        return {"id": None, "user_id": user_id, "feature_key": feature_key, "enabled": True, "source": "super_admin"} if user_id else None
+    row = fetch_one_safe(
+        text(
+            """
+            SELECT e.*, u.email AS email
+            FROM access_entitlements e
+            LEFT JOIN users u ON u.id = e.user_id
+            WHERE e.user_id = :user_id AND e.feature_key = :feature_key
+            LIMIT 1
+            """
+        ),
+        {"user_id": user_id, "feature_key": feature_key},
+    )
+    return _entitlement_from_row(row)
+
+
+def promote_samir_super_admin(actor_email: str = "system") -> dict:
+    user = get_or_create_user_by_email(SAMIR_SUPER_ADMIN_EMAIL, display_name="Samir", role=ROLE_SUPER_ADMIN, status="active")
+    before = dict(user)
+    if db_available():
+        execute_safe(
+            text("UPDATE users SET role = :role, status = 'active', updated_at = :updated_at WHERE id = :id"),
+            {"role": ROLE_SUPER_ADMIN, "updated_at": _now(), "id": user["id"]},
+        )
+    user = get_user_by_id_or_email(user["id"]) or {**user, "role": ROLE_SUPER_ADMIN, "status": "active"}
+    for feature in SUPER_ADMIN_ENTITLEMENTS:
+        grant_entitlement(user["id"], feature, source="super_admin", actor_email=actor_email)
+    write_super_admin_audit(actor_email, "super_admin.seed", "user", user["id"], user.get("email"), before, user)
+    return user
+
+
+def upsert_saas_plan(payload: dict, actor_email: str = "system") -> dict:
+    code = str(payload.get("code") or "").strip().lower()
+    if code not in {"free", "pro", "premium", "enterprise"}:
+        raise ValueError("invalid plan code")
+    now = _now()
+    existing = get_saas_plan_by_code(code)
+    row = {
+        "id": existing.get("id") if existing else str(uuid.uuid4()),
+        "code": code,
+        "name": payload.get("name") or code.title(),
+        "description": payload.get("description"),
+        "price_monthly_cents": _int_or_zero(payload.get("price_monthly_cents")),
+        "price_yearly_cents": _int_or_zero(payload.get("price_yearly_cents")),
+        "currency": payload.get("currency") or "EUR",
+        "is_active": bool(payload.get("is_active", True)),
+        "features_json": _json(payload.get("features") or []),
+        "limits_json": _json(payload.get("limits") or {}),
+        "created_at": now,
+        "updated_at": now,
+    }
+    if db_available():
+        if existing:
+            execute_safe(
+                text(
+                    """
+                    UPDATE saas_plans
+                    SET name = :name, description = :description, price_monthly_cents = :price_monthly_cents,
+                        price_yearly_cents = :price_yearly_cents, currency = :currency, is_active = :is_active,
+                        features_json = :features_json, limits_json = :limits_json, updated_at = :updated_at
+                    WHERE id = :id
+                    """
+                ),
+                row,
+            )
+        else:
+            execute_safe(
+                text(
+                    """
+                    INSERT INTO saas_plans (
+                        id, code, name, description, price_monthly_cents, price_yearly_cents,
+                        currency, is_active, features_json, limits_json, created_at, updated_at
+                    )
+                    VALUES (
+                        :id, :code, :name, :description, :price_monthly_cents, :price_yearly_cents,
+                        :currency, :is_active, :features_json, :limits_json, :created_at, :updated_at
+                    )
+                    """
+                ),
+                row,
+            )
+    plan = get_saas_plan_by_code(code) or _plan_from_row(row)
+    write_super_admin_audit(actor_email, "plan.upsert", "plan", plan.get("id") if plan else row["id"], None, existing, plan)
+    return plan
+
+
+def get_saas_plan_by_code(code: str) -> dict | None:
+    if not db_available():
+        return _plan_from_row(next((plan for plan in DEFAULT_SAAS_PLANS if plan["code"] == code), None))
+    row = fetch_one_safe(text("SELECT * FROM saas_plans WHERE code = :code LIMIT 1"), {"code": code})
+    return _plan_from_row(row)
+
+
+def list_saas_plans() -> list[dict]:
+    if not db_available():
+        return [_plan_from_row({**plan, "id": plan["code"], "currency": "EUR", "is_active": True, "features_json": _json(plan["features"]), "limits_json": _json(plan["limits"])}) for plan in DEFAULT_SAAS_PLANS]
+    rows = fetch_all_safe(text("SELECT * FROM saas_plans ORDER BY price_monthly_cents ASC, code ASC"))
+    return [item for item in (_plan_from_row(row) for row in rows) if item]
+
+
+def list_saas_users(limit: int = 100) -> list[dict]:
+    if not db_available():
+        return [promote_samir_super_admin()]
+    rows = fetch_all_safe(text("SELECT * FROM users ORDER BY created_at DESC LIMIT :limit"), {"limit": max(1, min(int(limit or 100), 500))})
+    return [item for item in (_user_from_row(row) for row in rows) if item]
+
+
+def list_saas_subscriptions(limit: int = 100) -> list[dict]:
+    if not db_available():
+        return []
+    rows = fetch_all_safe(
+        text(
+            """
+            SELECT s.*, u.email AS email, p.code AS plan_code
+            FROM subscriptions s
+            LEFT JOIN users u ON u.id = s.user_id
+            LEFT JOIN saas_plans p ON p.id = s.plan_id
+            ORDER BY s.updated_at DESC
+            LIMIT :limit
+            """
+        ),
+        {"limit": max(1, min(int(limit or 100), 500))},
+    )
+    return [item for item in (_subscription_saas_from_row(row) for row in rows) if item]
+
+
+def list_saas_payments(limit: int = 100) -> list[dict]:
+    if not db_available():
+        return []
+    rows = fetch_all_safe(
+        text(
+            """
+            SELECT p.*, u.email AS email
+            FROM payments p
+            LEFT JOIN users u ON u.id = p.user_id
+            ORDER BY p.created_at DESC
+            LIMIT :limit
+            """
+        ),
+        {"limit": max(1, min(int(limit or 100), 500))},
+    )
+    return [item for item in (_payment_from_row(row) for row in rows) if item]
+
+
+def list_saas_entitlements(limit: int = 200) -> list[dict]:
+    if not db_available():
+        user = promote_samir_super_admin()
+        return [{"id": None, "user_id": user["id"], "email": user["email"], "feature_key": feature, "enabled": True, "source": "super_admin"} for feature in SUPER_ADMIN_ENTITLEMENTS]
+    rows = fetch_all_safe(
+        text(
+            """
+            SELECT e.*, u.email AS email
+            FROM access_entitlements e
+            LEFT JOIN users u ON u.id = e.user_id
+            ORDER BY e.updated_at DESC
+            LIMIT :limit
+            """
+        ),
+        {"limit": max(1, min(int(limit or 200), 1000))},
+    )
+    return [item for item in (_entitlement_from_row(row) for row in rows) if item]
+
+
+def update_entitlement(entitlement_id: str, payload: dict, actor_email: str = "system") -> dict:
+    if not db_available():
+        raise ValueError("database required")
+    existing = fetch_one_safe(text("SELECT * FROM access_entitlements WHERE id = :id LIMIT 1"), {"id": entitlement_id})
+    if not existing:
+        raise ValueError("entitlement not found")
+    enabled = bool(payload.get("enabled", existing.get("enabled")))
+    source = payload.get("source") or existing.get("source") or "manual"
+    execute_safe(
+        text("UPDATE access_entitlements SET enabled = :enabled, source = :source, updated_at = :updated_at WHERE id = :id"),
+        {"enabled": enabled, "source": source, "updated_at": _now(), "id": entitlement_id},
+    )
+    row = fetch_one_safe(text("SELECT * FROM access_entitlements WHERE id = :id LIMIT 1"), {"id": entitlement_id})
+    updated = _entitlement_from_row(row)
+    write_super_admin_audit(actor_email, "entitlement.update", "entitlement", entitlement_id, None, _entitlement_from_row(existing), updated)
+    return updated
+
+
+def list_super_admin_audit_log(limit: int = 100) -> list[dict]:
+    if not db_available():
+        return []
+    rows = fetch_all_safe(text("SELECT * FROM super_admin_audit_log ORDER BY created_at DESC LIMIT :limit"), {"limit": max(1, min(int(limit or 100), 500))})
+    return [item for item in (_audit_from_row(row) for row in rows) if item]
+
+
+def build_revenue_summary() -> dict:
+    payments = list_saas_payments(limit=500)
+    succeeded = [item for item in payments if item.get("status") == "succeeded"]
+    failed = [item for item in payments if item.get("status") == "failed"]
+    return {
+        "status": "ok",
+        "currency": "EUR",
+        "mrr_cents": 0,
+        "revenue_30_days_cents": sum(_int_or_zero(item.get("amount_cents")) for item in succeeded),
+        "succeeded_payments": len(succeeded),
+        "failed_payments": len(failed),
+        "payments_count": len(payments),
+        "note": "Aucun paiement réel enregistré." if not payments else None,
+    }
+
+
+def build_super_admin_overview() -> dict:
+    ensure_saas_defaults()
+    users = list_saas_users(limit=500)
+    subscriptions = list_saas_subscriptions(limit=500)
+    payments = list_saas_payments(limit=500)
+    plans = list_saas_plans()
+    active_users = [item for item in users if item.get("status") == "active"]
+    paying = [item for item in subscriptions if item.get("status") in {"trialing", "active"}]
+    failed_payments = [item for item in payments if item.get("status") == "failed"]
+    return {
+        "status": "ok",
+        "storage": "postgresql" if db_available() else "memory",
+        "total_users": len(users),
+        "active_users": len(active_users),
+        "paying_subscribers": len(paying),
+        "trial_users": len([item for item in subscriptions if item.get("status") == "trialing"]),
+        "monthly_revenue_cents": 0,
+        "failed_payments": len(failed_payments),
+        "active_plans": len([item for item in plans if item.get("is_active")]),
+        "churn_risk_count": len([item for item in subscriptions if item.get("status") in {"past_due", "unpaid"}]),
+        "latest_signups": users[:5],
+        "latest_payments": payments[:5],
+        "system_status": {"billing": "configured" if payments else "no_real_payments", "secrets": "server_side"},
+    }
+
+
+def update_user_metadata(email_or_id: str, metadata_patch: dict, actor_email: str = "system") -> dict:
+    user = get_user_by_id_or_email(email_or_id)
+    if not user:
+        user = get_or_create_user_by_email(email_or_id)
+    before = dict(user)
+    metadata = {**(user.get("metadata") or {}), **(metadata_patch or {})}
+    if db_available():
+        execute_safe(
+            text("UPDATE users SET metadata_json = :metadata_json, updated_at = :updated_at WHERE id = :id"),
+            {"metadata_json": _json(metadata), "updated_at": _now(), "id": user["id"]},
+        )
+    updated = get_user_by_id_or_email(user["id"]) or {**user, "metadata": metadata}
+    write_super_admin_audit(actor_email, "user.metadata.update", "user", user["id"], user.get("email"), before, updated)
+    return updated
 
 
 def save_refresh_log(

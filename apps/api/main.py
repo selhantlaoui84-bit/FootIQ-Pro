@@ -5,6 +5,7 @@ from collections import Counter
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
+import httpx
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -60,6 +61,10 @@ from services.ml_shadow import compare_shadow_to_production, generate_shadow_pre
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    try:
+        repository.ensure_saas_defaults()
+    except Exception:
+        pass
     yield
 
 
@@ -1034,12 +1039,92 @@ def _request_user_id(x_user_id: str | None = Header(default=None, alias="X-User-
     return x_user_id or "local-user"
 
 
+def _bearer_token(request: Request) -> str | None:
+    authorization = request.headers.get("authorization") or ""
+    if not authorization.lower().startswith("bearer "):
+        return None
+    return authorization.split(" ", 1)[1].strip()
+
+
+def _supabase_config() -> tuple[str | None, str | None]:
+    url = os.getenv("SUPABASE_URL") or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
+    key = os.getenv("SUPABASE_ANON_KEY") or os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+    return (url.rstrip("/") if url else None, key)
+
+
+def _validate_supabase_token(token: str | None) -> dict:
+    if not token:
+        raise HTTPException(status_code=401, detail="Authentication token required.")
+    supabase_url, supabase_key = _supabase_config()
+    if token.startswith("test:") and os.getenv("FOOTIQ_ALLOW_TEST_AUTH_TOKENS") == "1":
+        email = token.split(":", 1)[1].strip().lower()
+        return {"id": email, "email": email}
+    if not supabase_url or not supabase_key:
+        raise HTTPException(status_code=503, detail="Supabase auth is not configured on backend.")
+    try:
+        with httpx.Client(timeout=8) as client:
+            response = client.get(
+                f"{supabase_url}/auth/v1/user",
+                headers={"Authorization": f"Bearer {token}", "apikey": supabase_key},
+            )
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Supabase auth unavailable: {exc}") from exc
+    if response.status_code != 200:
+        raise HTTPException(status_code=401, detail="Invalid authentication token.")
+    payload = response.json()
+    email = str(payload.get("email") or "").strip().lower()
+    if not email:
+        raise HTTPException(status_code=401, detail="Authenticated user email missing.")
+    return {"id": payload.get("id") or email, "email": email, "raw": payload}
+
+
+def _current_platform_user(request: Request) -> dict:
+    identity = _validate_supabase_token(_bearer_token(request))
+    user = repository.get_user_by_id_or_email(identity["email"])
+    if not user:
+        user = repository.get_or_create_user_by_email(identity["email"], display_name=identity["email"].split("@")[0])
+    return user
+
+
+def _require_platform_role(request: Request, allowed_roles: set[str]) -> dict:
+    user = _current_platform_user(request)
+    if user.get("status") != "active":
+        raise HTTPException(status_code=403, detail="User account is not active.")
+    if user.get("role") not in allowed_roles:
+        raise HTTPException(status_code=403, detail="Insufficient platform role.")
+    return user
+
+
+def require_admin_role(request: Request) -> dict:
+    return _require_platform_role(request, {repository.ROLE_ADMIN, repository.ROLE_SUPER_ADMIN})
+
+
+def require_super_admin(request: Request) -> dict:
+    return _require_platform_role(request, {repository.ROLE_SUPER_ADMIN})
+
+
 @app.get("/billing/status")
 def billing_status():
     overview = build_billing_status()
     overview["storage"] = "postgresql" if repository.db_available() else "memory"
     overview["plan_counts"] = repository.get_subscription_plan_counts()
     return overview
+
+
+@app.get("/auth/me")
+def auth_me(request: Request):
+    user = _current_platform_user(request)
+    subscription = repository.get_user_subscription(user.get("id") or user.get("email"))
+    return {"status": "ok", "user": user, "role": user.get("role"), "subscription": subscription}
+
+
+@app.post("/auth/onboarding")
+async def auth_onboarding(request: Request):
+    user = _current_platform_user(request)
+    body = await request.json()
+    completed = bool(body.get("completed", True))
+    updated = repository.update_user_metadata(user["id"], {"onboarding_completed": completed}, actor_email=user.get("email") or "user")
+    return {"status": "ok", "user": updated, "onboarding_completed": completed}
 
 
 @app.get("/billing/subscription")
@@ -1083,6 +1168,162 @@ async def billing_webhook(request: Request, stripe_signature: str | None = Heade
     if result.get("status") == "invalid_signature":
         raise HTTPException(status_code=400, detail=result.get("detail"))
     return result
+
+
+@app.get("/super-admin/overview")
+def super_admin_overview(request: Request):
+    require_super_admin(request)
+    return repository.build_super_admin_overview()
+
+
+@app.get("/super-admin/users")
+def super_admin_users(request: Request, limit: int = Query(default=100, ge=1, le=500)):
+    require_super_admin(request)
+    items = repository.list_saas_users(limit=limit)
+    return {"status": "ok", "items_count": len(items), "items": items}
+
+
+@app.get("/super-admin/users/{user_id}")
+def super_admin_user_detail(user_id: str, request: Request):
+    require_super_admin(request)
+    user = repository.get_user_by_id_or_email(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"status": "ok", "user": user}
+
+
+@app.patch("/super-admin/users/{user_id}")
+async def super_admin_update_user(user_id: str, request: Request):
+    actor = require_super_admin(request)
+    body = await request.json()
+    if not body.get("confirm"):
+        raise HTTPException(status_code=400, detail="confirm: true required")
+    try:
+        user = repository.update_user_role_status(user_id, body.get("role"), body.get("status"), actor_email=actor.get("email") or "super_admin")
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return {"status": "ok", "user": user}
+
+
+@app.post("/super-admin/users/{user_id}/promote")
+async def super_admin_promote_user(user_id: str, request: Request):
+    actor = require_super_admin(request)
+    body = await request.json()
+    if not body.get("confirm"):
+        raise HTTPException(status_code=400, detail="confirm: true required")
+    role = body.get("role") if body.get("role") in {repository.ROLE_ADMIN, repository.ROLE_SUPER_ADMIN} else repository.ROLE_ADMIN
+    try:
+        user = repository.update_user_role_status(user_id, role=role, status="active", actor_email=actor.get("email") or "super_admin")
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return {"status": "ok", "user": user}
+
+
+@app.post("/super-admin/users/{user_id}/suspend")
+async def super_admin_suspend_user(user_id: str, request: Request):
+    actor = require_super_admin(request)
+    body = await request.json()
+    if not body.get("confirm"):
+        raise HTTPException(status_code=400, detail="confirm: true required")
+    try:
+        user = repository.update_user_role_status(user_id, status="suspended", actor_email=actor.get("email") or "super_admin")
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return {"status": "ok", "user": user}
+
+
+@app.post("/super-admin/users/{user_id}/restore")
+async def super_admin_restore_user(user_id: str, request: Request):
+    actor = require_super_admin(request)
+    body = await request.json()
+    if not body.get("confirm"):
+        raise HTTPException(status_code=400, detail="confirm: true required")
+    try:
+        user = repository.update_user_role_status(user_id, status="active", actor_email=actor.get("email") or "super_admin")
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return {"status": "ok", "user": user}
+
+
+@app.get("/super-admin/plans")
+def super_admin_plans(request: Request):
+    require_super_admin(request)
+    items = repository.list_saas_plans()
+    return {"status": "ok", "items_count": len(items), "items": items}
+
+
+@app.post("/super-admin/plans")
+async def super_admin_create_plan(request: Request):
+    actor = require_super_admin(request)
+    body = await request.json()
+    if not body.get("confirm"):
+        raise HTTPException(status_code=400, detail="confirm: true required")
+    try:
+        plan = repository.upsert_saas_plan(body, actor_email=actor.get("email") or "super_admin")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"status": "ok", "plan": plan}
+
+
+@app.patch("/super-admin/plans/{plan_id}")
+async def super_admin_update_plan(plan_id: str, request: Request):
+    actor = require_super_admin(request)
+    body = await request.json()
+    if not body.get("confirm"):
+        raise HTTPException(status_code=400, detail="confirm: true required")
+    body["code"] = body.get("code") or plan_id
+    try:
+        plan = repository.upsert_saas_plan(body, actor_email=actor.get("email") or "super_admin")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"status": "ok", "plan": plan}
+
+
+@app.get("/super-admin/subscriptions")
+def super_admin_subscriptions(request: Request, limit: int = Query(default=100, ge=1, le=500)):
+    require_super_admin(request)
+    items = repository.list_saas_subscriptions(limit=limit)
+    return {"status": "ok", "items_count": len(items), "items": items, "empty_detail": "Aucun abonnement réel enregistré." if not items else None}
+
+
+@app.get("/super-admin/payments")
+def super_admin_payments(request: Request, limit: int = Query(default=100, ge=1, le=500)):
+    require_super_admin(request)
+    items = repository.list_saas_payments(limit=limit)
+    return {"status": "ok", "items_count": len(items), "items": items, "empty_detail": "Aucun paiement réel enregistré." if not items else None}
+
+
+@app.get("/super-admin/entitlements")
+def super_admin_entitlements(request: Request, limit: int = Query(default=200, ge=1, le=1000)):
+    require_super_admin(request)
+    items = repository.list_saas_entitlements(limit=limit)
+    return {"status": "ok", "items_count": len(items), "items": items}
+
+
+@app.patch("/super-admin/entitlements/{entitlement_id}")
+async def super_admin_update_entitlement(entitlement_id: str, request: Request):
+    actor = require_super_admin(request)
+    body = await request.json()
+    if not body.get("confirm"):
+        raise HTTPException(status_code=400, detail="confirm: true required")
+    try:
+        entitlement = repository.update_entitlement(entitlement_id, body, actor_email=actor.get("email") or "super_admin")
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return {"status": "ok", "entitlement": entitlement}
+
+
+@app.get("/super-admin/audit-log")
+def super_admin_audit_log(request: Request, limit: int = Query(default=100, ge=1, le=500)):
+    require_super_admin(request)
+    items = repository.list_super_admin_audit_log(limit=limit)
+    return {"status": "ok", "items_count": len(items), "items": items}
+
+
+@app.get("/super-admin/revenue-summary")
+def super_admin_revenue_summary(request: Request):
+    require_super_admin(request)
+    return repository.build_revenue_summary()
 
 
 @app.get("/user-bets")

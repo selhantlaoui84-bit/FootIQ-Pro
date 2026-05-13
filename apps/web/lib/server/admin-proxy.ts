@@ -2,8 +2,9 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 
 type ProxyOptions = {
   backendPath: string;
-  method?: 'GET' | 'POST';
+  method?: 'GET' | 'POST' | 'PATCH';
   requireAdminKey?: boolean;
+  requireBearerToken?: boolean;
   timeoutMs?: number;
   timeoutDetail?: string;
 };
@@ -51,7 +52,15 @@ export async function proxyBackendRequest(
     headers['X-Admin-Key'] = adminKey;
   }
 
-  if (method === 'POST' && req.body && Object.keys(req.body).length > 0) {
+  const authorization = req.headers.authorization;
+  if (options.requireBearerToken) {
+    if (!authorization || Array.isArray(authorization) || !authorization.toLowerCase().startsWith('bearer ')) {
+      return res.status(401).json({ detail: 'Authorization bearer token required' });
+    }
+    headers.Authorization = authorization;
+  }
+
+  if ((method === 'POST' || method === 'PATCH') && req.body && Object.keys(req.body).length > 0) {
     headers['Content-Type'] = 'application/json';
     body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
   }

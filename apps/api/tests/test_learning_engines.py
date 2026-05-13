@@ -3,7 +3,9 @@ import asyncio
 from pathlib import Path
 from unittest.mock import patch
 
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
+from sqlalchemy.pool import StaticPool
 
 import main
 from data import database, repository
@@ -166,7 +168,12 @@ class LearningEngineTests(unittest.TestCase):
             self.engine.dispose()
 
     def use_sqlite_registry(self):
-        self.engine = create_engine("sqlite:///:memory:", future=True)
+        self.engine = create_engine(
+            "sqlite:///:memory:",
+            future=True,
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
         database.metadata.create_all(self.engine)
         self.patches.extend(
             [
@@ -1354,6 +1361,60 @@ class LearningEngineTests(unittest.TestCase):
 
         self.assertEqual(repository.get_user_plan("billing-u4"), "premium")
         self.assertEqual(repository.get_user_plan("billing-u5"), "free")
+
+    def test_saas_tables_seed_samir_super_admin(self):
+        self.use_sqlite_registry()
+
+        result = repository.ensure_saas_defaults()
+        user = repository.get_user_by_id_or_email("samir.elh@outlook.fr")
+        entitlements = repository.list_saas_entitlements(limit=100)
+        audit = repository.list_super_admin_audit_log(limit=100)
+        plans = repository.list_saas_plans()
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(user["role"], "super_admin")
+        self.assertEqual(user["status"], "active")
+        self.assertGreaterEqual(len(plans), 4)
+        self.assertTrue(any(item["feature_key"] == "super_admin.access" for item in entitlements))
+        self.assertTrue(any(item["action"] == "super_admin.seed" for item in audit))
+
+    def test_samir_super_admin_seed_is_idempotent(self):
+        self.use_sqlite_registry()
+
+        first = repository.promote_samir_super_admin()
+        second = repository.promote_samir_super_admin()
+        users = repository.list_saas_users(limit=20)
+
+        self.assertEqual(first["id"], second["id"])
+        self.assertEqual(len([item for item in users if item["email"] == "samir.elh@outlook.fr"]), 1)
+
+    def test_super_admin_overview_protected_and_accepts_super_admin(self):
+        self.use_sqlite_registry()
+        repository.ensure_saas_defaults()
+
+        with patch.dict("os.environ", {"FOOTIQ_ALLOW_TEST_AUTH_TOKENS": "1"}):
+            client = TestClient(main.app)
+            missing = client.get("/super-admin/overview")
+            simple = client.get("/super-admin/overview", headers={"Authorization": "Bearer test:user@example.com"})
+            allowed = client.get("/super-admin/overview", headers={"Authorization": "Bearer test:samir.elh@outlook.fr"})
+
+        self.assertEqual(missing.status_code, 401)
+        self.assertEqual(simple.status_code, 403)
+        self.assertEqual(allowed.status_code, 200)
+        self.assertEqual(allowed.json()["status"], "ok")
+
+    def test_super_admin_lists_empty_payments_without_fake_data(self):
+        self.use_sqlite_registry()
+        repository.ensure_saas_defaults()
+
+        with patch.dict("os.environ", {"FOOTIQ_ALLOW_TEST_AUTH_TOKENS": "1"}):
+            client = TestClient(main.app)
+            response = client.get("/super-admin/payments", headers={"Authorization": "Bearer test:samir.elh@outlook.fr"})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["items_count"], 0)
+        self.assertEqual(payload["empty_detail"], "Aucun paiement réel enregistré.")
 
 
 if __name__ == "__main__":
