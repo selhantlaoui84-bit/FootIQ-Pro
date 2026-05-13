@@ -41,7 +41,7 @@ from services.odds_engine import (
 )
 from services.odds_provider import fetch_real_odds_for_matches, is_odds_configured
 from services.betting_assistant import analyze_prediction
-from services.billing_service import create_checkout_session, map_price_to_plan, sync_subscription_from_stripe
+from services.billing_service import create_checkout_session, create_checkout_session_for_user, handle_stripe_webhook, map_price_to_plan, sync_subscription_from_stripe
 from services.user_learning_engine import detect_risky_patterns, detect_user_strengths
 from services.value_bet_engine import evaluate_value_bet
 from services.pipeline_orchestrator import run_hourly_data_pipeline, run_pipeline_step
@@ -1415,6 +1415,108 @@ class LearningEngineTests(unittest.TestCase):
         payload = response.json()
         self.assertEqual(payload["items_count"], 0)
         self.assertEqual(payload["empty_detail"], "Aucun paiement réel enregistré.")
+
+
+    def test_plan_entitlement_mapping_and_super_admin_access(self):
+        self.use_sqlite_registry()
+        repository.ensure_saas_defaults()
+        user = repository.get_or_create_user_by_email("pro-user@example.com")
+        repository.sync_entitlements_for_subscription(user["id"], "pro")
+
+        self.assertTrue(repository.has_entitlement(user["id"], "odds.real"))
+        self.assertFalse(repository.has_entitlement(user["id"], "assistant.advanced"))
+        self.assertTrue(repository.has_entitlement("samir.elh@outlook.fr", "payments.manage"))
+
+    def test_create_checkout_session_refuses_unknown_plan(self):
+        self.use_sqlite_registry()
+        user = repository.get_or_create_user_by_email("checkout@example.com")
+        report = create_checkout_session_for_user(user, "unknown", "monthly")
+
+        self.assertEqual(report["status"], "invalid_plan")
+
+    def test_create_checkout_session_ok_when_stripe_mocked(self):
+        self.use_sqlite_registry()
+        repository.ensure_saas_defaults()
+        user = repository.get_or_create_user_by_email("checkout-ok@example.com")
+
+        with patch.dict("os.environ", {
+            "STRIPE_SECRET_KEY": "sk_test_x",
+            "APP_BASE_URL": "https://app.example.test",
+            "STRIPE_PRICE_PRO_MONTHLY": "price_pro",
+        }, clear=False), patch("services.billing_service._stripe_request") as stripe_request:
+            stripe_request.side_effect = [{"id": "cus_123"}, {"id": "cs_123", "url": "https://checkout.stripe.test/session"}]
+            report = create_checkout_session_for_user(user, "pro", "monthly")
+
+        self.assertEqual(report["status"], "ok")
+        self.assertEqual(report["checkout_url"], "https://checkout.stripe.test/session")
+
+    def test_webhook_invalid_signature_refused(self):
+        with patch.dict("os.environ", {"STRIPE_WEBHOOK_SECRET": "whsec_test"}, clear=False):
+            report = handle_stripe_webhook(b"{}", "t=1,v1=bad")
+
+        self.assertEqual(report["status"], "invalid_signature")
+
+    def test_webhook_idempotent_and_invoice_payments(self):
+        self.use_sqlite_registry()
+        repository.ensure_saas_defaults()
+        user = repository.get_or_create_user_by_email("paid@example.com")
+        event = {
+            "id": "evt_paid_1",
+            "type": "invoice.paid",
+            "data": {
+                "object": {
+                    "id": "in_1",
+                    "object": "invoice",
+                    "customer": "cus_paid",
+                    "subscription": "sub_paid",
+                    "amount_paid": 2900,
+                    "currency": "eur",
+                    "metadata": {"user_id": user["id"], "plan_code": "pro"},
+                    "lines": {"data": [{"price": {"id": "price_pro"}}]},
+                    "status_transitions": {"paid_at": 1760000000},
+                }
+            },
+        }
+        with patch.dict("os.environ", {"STRIPE_PRICE_PRO_MONTHLY": "price_pro"}, clear=False):
+            first = handle_stripe_webhook(event)
+            second = handle_stripe_webhook(event)
+
+        self.assertEqual(first["status"], "ok")
+        self.assertTrue(second["idempotent"])
+        self.assertEqual(repository.list_saas_payments(limit=10)[0]["status"], "succeeded")
+
+    def test_subscription_deleted_revokes_paid_entitlements(self):
+        self.use_sqlite_registry()
+        repository.ensure_saas_defaults()
+        user = repository.get_or_create_user_by_email("cancel@example.com")
+        repository.sync_entitlements_for_subscription(user["id"], "premium")
+        event = {
+            "id": "evt_deleted_1",
+            "type": "customer.subscription.deleted",
+            "data": {
+                "object": {
+                    "id": "sub_cancel",
+                    "customer": "cus_cancel",
+                    "status": "canceled",
+                    "metadata": {"user_id": user["id"], "plan_code": "premium"},
+                }
+            },
+        }
+
+        report = handle_stripe_webhook(event)
+
+        self.assertEqual(report["status"], "ok")
+        self.assertFalse(repository.has_entitlement(user["id"], "assistant.advanced"))
+        self.assertTrue(repository.has_entitlement(user["id"], "predictions.basic"))
+
+    def test_production_health_does_not_leak_secrets(self):
+        with patch.dict("os.environ", {"STRIPE_SECRET_KEY": "sk_test_secret", "STRIPE_WEBHOOK_SECRET": "whsec_secret"}, clear=False):
+            payload = main.production_health()
+        serialized = str(payload)
+
+        self.assertIn(payload["stripe"], {"configured", "missing"})
+        self.assertNotIn("sk_test_secret", serialized)
+        self.assertNotIn("whsec_secret", serialized)
 
 
 if __name__ == "__main__":

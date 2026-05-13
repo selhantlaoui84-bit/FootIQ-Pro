@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createCheckoutSession, getBillingStatus } from '~/lib/api';
+import { useAuth } from '~/lib/auth';
 import type { BillingStatusResponse } from '~/lib/mock-data';
 import { Layout } from '~/src-layout';
 
@@ -22,12 +23,19 @@ const plans = [
     price: '49 € / mois',
     features: ['Tout Premium', 'Analyses avancées', 'Backtesting détaillé', 'Fiabilité marchés/compétitions', 'Historique étendu'],
   },
+  {
+    id: 'enterprise',
+    name: 'Enterprise',
+    price: 'Sur devis',
+    features: ['Multi-utilisateur', 'Exports', 'Support prioritaire', 'Limites sur mesure'],
+  },
 ] as const;
 
 export default function PricingPage() {
   const [billing, setBilling] = useState<BillingStatusResponse | null>(null);
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { isAuthenticated, session } = useAuth();
 
   useEffect(() => {
     getBillingStatus().then(setBilling).catch(() => setBilling({ status: 'error', billing_configured: false, plans: ['free', 'premium', 'pro'] }));
@@ -36,11 +44,15 @@ export default function PricingPage() {
   const billingReady = Boolean(billing?.billing_configured);
   const title = useMemo(() => (billingReady ? 'Choisissez votre plan' : 'Paiement bientôt disponible'), [billingReady]);
 
-  async function handleUpgrade(plan: 'premium' | 'pro') {
+  async function handleUpgrade(plan: 'premium' | 'pro' | 'enterprise') {
+    if (!isAuthenticated || !session?.access_token) {
+      window.location.href = '/login?next=/pricing';
+      return;
+    }
     setLoadingPlan(plan);
     setError(null);
     try {
-      const response = await createCheckoutSession(plan, 'monthly');
+      const response = await createCheckoutSession(plan, 'monthly', session.access_token);
       if (response.status === 'ok' && response.checkout_url) {
         window.location.href = response.checkout_url;
         return;

@@ -3,10 +3,9 @@ import { proxyBackendRequest } from '~/lib/server/admin-proxy';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   return proxyBackendRequest(req, res, {
-    backendPath: '/billing/create-checkout-session',
-    method: 'POST',
-    requireBearerToken: true,
-    timeoutMs: 20000,
-    timeoutDetail: 'Stripe Checkout request timed out.',
+    backendPath: '/system/production-health',
+    method: 'GET',
+    timeoutMs: 10000,
+    timeoutDetail: 'Production health request timed out.',
   });
 }

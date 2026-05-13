@@ -290,24 +290,32 @@ export async function getBillingStatus(): Promise<BillingStatusResponse> {
   return fetchProxyJson<BillingStatusResponse>('/api/billing/status', undefined, 10000);
 }
 
-export async function getMySubscription(): Promise<SubscriptionResponse> {
+export async function getMySubscription(accessToken?: string | null): Promise<SubscriptionResponse> {
   if (IS_BUILD) return mockSubscription;
-  return fetchProxyJson<SubscriptionResponse>('/api/billing/subscription', undefined, 10000);
+  return fetchProxyJson<SubscriptionResponse>('/api/billing/subscription', { headers: authHeaders(accessToken) }, 10000);
 }
 
-export async function createCheckoutSession(plan: 'premium' | 'pro', interval: 'monthly' | 'yearly' = 'monthly'): Promise<{ status: string; checkout_url?: string; detail?: string }> {
+export async function createCheckoutSession(
+  plan: 'premium' | 'pro' | 'enterprise',
+  interval: 'monthly' | 'yearly' = 'monthly',
+  accessToken?: string | null,
+): Promise<{ status: string; checkout_url?: string; detail?: string }> {
   return fetchProxyJson('/api/billing/create-checkout-session', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ plan, interval }),
+    headers: authHeaders(accessToken, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ plan_code: plan, billing_interval: interval }),
   }, 15000);
 }
 
-export async function createPortalSession(): Promise<{ status: string; portal_url?: string; detail?: string }> {
+export async function createPortalSession(accessToken?: string | null): Promise<{ status: string; portal_url?: string; detail?: string }> {
   return fetchProxyJson('/api/billing/create-portal-session', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders(accessToken, { 'Content-Type': 'application/json' }),
   }, 15000);
+}
+
+export async function getProductionHealth(): Promise<any> {
+  return fetchProxyJson('/api/system/production-health', undefined, 10000);
 }
 
 function authHeaders(accessToken?: string | null, extra?: HeadersInit) {

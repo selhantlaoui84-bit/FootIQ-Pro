@@ -1,5 +1,6 @@
 ﻿import json
 import logging
+import os
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -878,6 +879,7 @@ PLAN_FREE = "free"
 PLAN_PREMIUM = "premium"
 PLAN_PRO = "pro"
 PLAN_ADMIN = "admin"
+PLAN_ENTERPRISE = "enterprise"
 ROLE_USER = "user"
 ROLE_ADMIN = "admin"
 ROLE_SUPER_ADMIN = "super_admin"
@@ -899,6 +901,65 @@ SUPER_ADMIN_ENTITLEMENTS = [
     "onboarding.manage",
     "legal.manage",
 ]
+PLAN_ENTITLEMENTS = {
+    PLAN_FREE: [
+        "predictions.basic",
+        "matches.basic",
+        "dashboard.basic",
+        "limited_predictions_per_day",
+    ],
+    PLAN_PRO: [
+        "predictions.basic",
+        "matches.basic",
+        "dashboard.basic",
+        "predictions.advanced",
+        "odds.real",
+        "value_bets",
+        "bets.track",
+        "performance.basic",
+        "assistant.basic",
+    ],
+    PLAN_PREMIUM: [
+        "predictions.basic",
+        "matches.basic",
+        "dashboard.basic",
+        "predictions.advanced",
+        "odds.real",
+        "value_bets",
+        "bets.track",
+        "performance.basic",
+        "assistant.basic",
+        "assistant.advanced",
+        "performance.advanced",
+        "analysis.advanced",
+        "alerts.intelligent",
+        "bankroll.insights",
+        "shadow_insights_read",
+    ],
+    PLAN_ENTERPRISE: [
+        "predictions.basic",
+        "matches.basic",
+        "dashboard.basic",
+        "predictions.advanced",
+        "odds.real",
+        "value_bets",
+        "bets.track",
+        "performance.basic",
+        "assistant.basic",
+        "assistant.advanced",
+        "performance.advanced",
+        "analysis.advanced",
+        "alerts.intelligent",
+        "bankroll.insights",
+        "shadow_insights_read",
+        "multi_user",
+        "export.reports",
+        "priority_support",
+        "custom_limits",
+        "team_management",
+    ],
+    ROLE_SUPER_ADMIN: SUPER_ADMIN_ENTITLEMENTS,
+}
 DEFAULT_SAAS_PLANS = [
     {
         "code": "free",
@@ -937,8 +998,8 @@ DEFAULT_SAAS_PLANS = [
         "limits": {},
     },
 ]
-VALID_SUBSCRIPTION_PLANS = {PLAN_FREE, PLAN_PREMIUM, PLAN_PRO, PLAN_ADMIN}
-VALID_SUBSCRIPTION_STATUSES = {"active", "trialing", "past_due", "canceled", "incomplete", "free"}
+VALID_SUBSCRIPTION_PLANS = {PLAN_FREE, PLAN_PREMIUM, PLAN_PRO, PLAN_ENTERPRISE, PLAN_ADMIN}
+VALID_SUBSCRIPTION_STATUSES = {"active", "trialing", "past_due", "canceled", "incomplete", "free", "unpaid", "expired"}
 FEATURE_LIMITS = {
     PLAN_FREE: {
         "prediction_view": 5,
@@ -962,6 +1023,7 @@ FEATURE_LIMITS = {
         "performance_view": 500,
     },
     PLAN_ADMIN: {},
+    PLAN_ENTERPRISE: {},
 }
 
 
@@ -1212,6 +1274,7 @@ def _user_from_row(row: dict | None) -> dict | None:
         "role": row.get("role") or ROLE_USER,
         "status": row.get("status") or "active",
         "plan_id": row.get("plan_id"),
+        "stripe_customer_id": row.get("stripe_customer_id"),
         "created_at": _iso(row.get("created_at")),
         "updated_at": _iso(row.get("updated_at")),
         "last_login_at": _iso(row.get("last_login_at")),
@@ -1334,6 +1397,7 @@ def get_or_create_user_by_email(email: str, display_name: str | None = None, rol
             "role": role,
             "status": status,
             "plan_id": None,
+            "stripe_customer_id": None,
             "created_at": _iso(now),
             "updated_at": _iso(now),
             "last_login_at": None,
@@ -1347,8 +1411,8 @@ def get_or_create_user_by_email(email: str, display_name: str | None = None, rol
     execute_safe(
         text(
             """
-            INSERT INTO users (id, email, display_name, role, status, created_at, updated_at, metadata_json)
-            VALUES (:id, :email, :display_name, :role, :status, :created_at, :updated_at, :metadata_json)
+            INSERT INTO users (id, email, display_name, role, status, created_at, updated_at, metadata_json, stripe_customer_id)
+            VALUES (:id, :email, :display_name, :role, :status, :created_at, :updated_at, :metadata_json, :stripe_customer_id)
             """
         ),
         {
@@ -1360,6 +1424,7 @@ def get_or_create_user_by_email(email: str, display_name: str | None = None, rol
             "created_at": now,
             "updated_at": now,
             "metadata_json": _json({}),
+            "stripe_customer_id": None,
         },
     )
     return get_user_by_id_or_email(user_id)
@@ -1376,6 +1441,28 @@ def get_user_by_id_or_email(value: str | None) -> dict | None:
     row = fetch_one_safe(
         text("SELECT * FROM users WHERE id = :value OR email = :email LIMIT 1"),
         {"value": str(value), "email": str(value).strip().lower()},
+    )
+    return _user_from_row(row)
+
+
+def set_user_stripe_customer_id(user_id_or_email: str, stripe_customer_id: str) -> dict | None:
+    user = get_user_by_id_or_email(user_id_or_email)
+    if not user or not stripe_customer_id:
+        return user
+    if db_available():
+        execute_safe(
+            text("UPDATE users SET stripe_customer_id = :stripe_customer_id, updated_at = :updated_at WHERE id = :id"),
+            {"stripe_customer_id": stripe_customer_id, "updated_at": _now(), "id": user["id"]},
+        )
+    return get_user_by_id_or_email(user["id"]) or {**user, "stripe_customer_id": stripe_customer_id}
+
+
+def get_user_by_stripe_customer(stripe_customer_id: str | None) -> dict | None:
+    if not stripe_customer_id or not db_available():
+        return None
+    row = fetch_one_safe(
+        text("SELECT * FROM users WHERE stripe_customer_id = :stripe_customer_id LIMIT 1"),
+        {"stripe_customer_id": stripe_customer_id},
     )
     return _user_from_row(row)
 
@@ -1486,6 +1573,81 @@ def get_entitlement_for_user(user_id: str, feature_key: str) -> dict | None:
     return _entitlement_from_row(row)
 
 
+def is_super_admin(value: str | None) -> bool:
+    user = get_user_by_id_or_email(value)
+    return bool(user and user.get("role") == ROLE_SUPER_ADMIN and user.get("status") == "active")
+
+
+def get_user_entitlements(user_id_or_email: str | None) -> list[dict]:
+    user = get_user_by_id_or_email(user_id_or_email)
+    if not user:
+        return []
+    if user.get("role") == ROLE_SUPER_ADMIN:
+        return [
+            {"id": None, "user_id": user["id"], "email": user.get("email"), "feature_key": feature, "enabled": True, "source": "super_admin"}
+            for feature in sorted(set(SUPER_ADMIN_ENTITLEMENTS + PLAN_ENTITLEMENTS.get(PLAN_ENTERPRISE, [])))
+        ]
+    if not db_available():
+        return [
+            {"id": None, "user_id": user["id"], "email": user.get("email"), "feature_key": feature, "enabled": True, "source": "plan"}
+            for feature in PLAN_ENTITLEMENTS.get(get_user_plan(user["id"]), PLAN_ENTITLEMENTS[PLAN_FREE])
+        ]
+    rows = fetch_all_safe(
+        text(
+            """
+            SELECT e.*, u.email AS email
+            FROM access_entitlements e
+            LEFT JOIN users u ON u.id = e.user_id
+            WHERE e.user_id = :user_id AND e.enabled = true
+            ORDER BY e.feature_key ASC
+            """
+        ),
+        {"user_id": user["id"]},
+    )
+    return [item for item in (_entitlement_from_row(row) for row in rows) if item]
+
+
+def has_entitlement(user_id_or_email: str | None, feature_key: str) -> bool:
+    if not user_id_or_email or not feature_key:
+        return False
+    user = get_user_by_id_or_email(user_id_or_email)
+    if not user or user.get("status") != "active":
+        return False
+    if user.get("role") == ROLE_SUPER_ADMIN:
+        return True
+    entitlement = get_entitlement_for_user(user["id"], feature_key)
+    return bool(entitlement and entitlement.get("enabled"))
+
+
+def revoke_plan_entitlements(user_id_or_email: str, actor_email: str = "system") -> int:
+    user = get_user_by_id_or_email(user_id_or_email)
+    if not user or not db_available():
+        return 0
+    before = get_user_entitlements(user["id"])
+    execute_safe(
+        text("UPDATE access_entitlements SET enabled = false, updated_at = :updated_at WHERE user_id = :user_id AND source = 'plan'"),
+        {"updated_at": _now(), "user_id": user["id"]},
+    )
+    after = get_user_entitlements(user["id"])
+    write_super_admin_audit(actor_email, "entitlements.plan.revoke", "user", user["id"], user.get("email"), {"entitlements": before}, {"entitlements": after})
+    return len(before)
+
+
+def sync_entitlements_for_subscription(user_id_or_email: str, plan_code: str, source: str = "plan", actor_email: str = "stripe") -> list[dict]:
+    user = get_user_by_id_or_email(user_id_or_email)
+    if not user:
+        return []
+    safe_plan = plan_code if plan_code in PLAN_ENTITLEMENTS else PLAN_FREE
+    if user.get("role") == ROLE_SUPER_ADMIN:
+        safe_plan = ROLE_SUPER_ADMIN
+    if source == "plan":
+        revoke_plan_entitlements(user["id"], actor_email=actor_email)
+    created = []
+    for feature in PLAN_ENTITLEMENTS.get(safe_plan, PLAN_ENTITLEMENTS[PLAN_FREE]):
+        created.append(grant_entitlement(user["id"], feature, source=source, actor_email=actor_email))
+    return created
+
+
 def promote_samir_super_admin(actor_email: str = "system") -> dict:
     user = get_or_create_user_by_email(SAMIR_SUPER_ADMIN_EMAIL, display_name="Samir", role=ROLE_SUPER_ADMIN, status="active")
     before = dict(user)
@@ -1577,6 +1739,266 @@ def list_saas_users(limit: int = 100) -> list[dict]:
     return [item for item in (_user_from_row(row) for row in rows) if item]
 
 
+def get_active_saas_subscription(user_id_or_email: str) -> dict | None:
+    user = get_user_by_id_or_email(user_id_or_email)
+    if not user or not db_available():
+        return None
+    row = fetch_one_safe(
+        text(
+            """
+            SELECT s.*, u.email AS email, p.code AS plan_code
+            FROM subscriptions s
+            LEFT JOIN users u ON u.id = s.user_id
+            LEFT JOIN saas_plans p ON p.id = s.plan_id
+            WHERE s.user_id = :user_id AND s.status IN ('active', 'trialing')
+            ORDER BY s.updated_at DESC
+            LIMIT 1
+            """
+        ),
+        {"user_id": user["id"]},
+    )
+    return _subscription_saas_from_row(row)
+
+
+def get_saas_subscription_by_provider(provider_subscription_id: str | None) -> dict | None:
+    if not provider_subscription_id or not db_available():
+        return None
+    row = fetch_one_safe(
+        text(
+            """
+            SELECT s.*, u.email AS email, p.code AS plan_code
+            FROM subscriptions s
+            LEFT JOIN users u ON u.id = s.user_id
+            LEFT JOIN saas_plans p ON p.id = s.plan_id
+            WHERE s.provider_subscription_id = :provider_subscription_id
+            ORDER BY s.updated_at DESC
+            LIMIT 1
+            """
+        ),
+        {"provider_subscription_id": provider_subscription_id},
+    )
+    return _subscription_saas_from_row(row)
+
+
+def get_saas_subscription_by_customer(provider_customer_id: str | None) -> dict | None:
+    if not provider_customer_id or not db_available():
+        return None
+    row = fetch_one_safe(
+        text(
+            """
+            SELECT s.*, u.email AS email, p.code AS plan_code
+            FROM subscriptions s
+            LEFT JOIN users u ON u.id = s.user_id
+            LEFT JOIN saas_plans p ON p.id = s.plan_id
+            WHERE s.provider_customer_id = :provider_customer_id
+            ORDER BY s.updated_at DESC
+            LIMIT 1
+            """
+        ),
+        {"provider_customer_id": provider_customer_id},
+    )
+    return _subscription_saas_from_row(row)
+
+
+def upsert_saas_subscription(
+    user_id_or_email: str,
+    plan_code: str,
+    status: str,
+    provider: str = "stripe",
+    provider_customer_id: str | None = None,
+    provider_subscription_id: str | None = None,
+    current_period_start=None,
+    current_period_end=None,
+    cancel_at_period_end: bool = False,
+) -> dict:
+    user = get_user_by_id_or_email(user_id_or_email)
+    if not user and "@" in str(user_id_or_email or ""):
+        user = get_or_create_user_by_email(str(user_id_or_email))
+    if not user:
+        raise ValueError("user not found")
+    plan = get_saas_plan_by_code(plan_code) or get_saas_plan_by_code(PLAN_FREE)
+    if not plan:
+        raise ValueError("plan not found")
+    safe_status = status if status in {"trialing", "active", "past_due", "canceled", "unpaid", "expired", "incomplete"} else "incomplete"
+    now = _now()
+    existing = None
+    if provider_subscription_id:
+        existing = get_saas_subscription_by_provider(provider_subscription_id)
+    if not existing:
+        existing = get_active_saas_subscription(user["id"])
+    row = {
+        "id": (existing or {}).get("id") or str(uuid.uuid4()),
+        "user_id": user["id"],
+        "plan_id": plan["id"],
+        "status": safe_status,
+        "provider": provider,
+        "provider_customer_id": provider_customer_id,
+        "provider_subscription_id": provider_subscription_id,
+        "current_period_start": _parse_datetime(current_period_start),
+        "current_period_end": _parse_datetime(current_period_end),
+        "cancel_at_period_end": bool(cancel_at_period_end),
+        "created_at": now,
+        "updated_at": now,
+    }
+    if db_available():
+        if existing:
+            execute_safe(
+                text(
+                    """
+                    UPDATE subscriptions
+                    SET plan_id = :plan_id, status = :status, provider = :provider,
+                        provider_customer_id = COALESCE(:provider_customer_id, provider_customer_id),
+                        provider_subscription_id = COALESCE(:provider_subscription_id, provider_subscription_id),
+                        current_period_start = COALESCE(:current_period_start, current_period_start),
+                        current_period_end = COALESCE(:current_period_end, current_period_end),
+                        cancel_at_period_end = :cancel_at_period_end,
+                        updated_at = :updated_at
+                    WHERE id = :id
+                    """
+                ),
+                row,
+            )
+        else:
+            execute_safe(
+                text(
+                    """
+                    INSERT INTO subscriptions (
+                        id, user_id, plan_id, status, provider, provider_customer_id,
+                        provider_subscription_id, current_period_start, current_period_end,
+                        cancel_at_period_end, created_at, updated_at
+                    )
+                    VALUES (
+                        :id, :user_id, :plan_id, :status, :provider, :provider_customer_id,
+                        :provider_subscription_id, :current_period_start, :current_period_end,
+                        :cancel_at_period_end, :created_at, :updated_at
+                    )
+                    """
+                ),
+                row,
+            )
+        if provider_customer_id:
+            set_user_stripe_customer_id(user["id"], provider_customer_id)
+    updated = get_saas_subscription_by_provider(provider_subscription_id) if provider_subscription_id else get_active_saas_subscription(user["id"])
+    return updated or _subscription_saas_from_row({**row, "email": user.get("email"), "plan_code": plan.get("code")})
+
+
+def record_saas_payment(
+    user_id_or_email: str,
+    provider_payment_id: str | None,
+    amount_cents: int,
+    currency: str = "EUR",
+    status: str = "pending",
+    subscription_id: str | None = None,
+    provider: str = "stripe",
+    paid_at=None,
+    metadata: dict | None = None,
+) -> dict:
+    user = get_user_by_id_or_email(user_id_or_email)
+    if not user:
+        raise ValueError("user not found")
+    now = _now()
+    existing = None
+    if provider_payment_id and db_available():
+        existing = fetch_one_safe(text("SELECT * FROM payments WHERE provider_payment_id = :provider_payment_id LIMIT 1"), {"provider_payment_id": provider_payment_id})
+    row = {
+        "id": (existing or {}).get("id") or str(uuid.uuid4()),
+        "user_id": user["id"],
+        "subscription_id": subscription_id,
+        "provider": provider,
+        "provider_payment_id": provider_payment_id,
+        "amount_cents": _int_or_zero(amount_cents),
+        "currency": str(currency or "EUR").upper(),
+        "status": status if status in {"succeeded", "pending", "failed", "refunded"} else "pending",
+        "paid_at": _parse_datetime(paid_at),
+        "created_at": now,
+        "metadata_json": _json(metadata or {}),
+    }
+    if db_available():
+        if existing:
+            execute_safe(
+                text(
+                    """
+                    UPDATE payments
+                    SET status = :status, amount_cents = :amount_cents, currency = :currency,
+                        paid_at = COALESCE(:paid_at, paid_at), metadata_json = :metadata_json
+                    WHERE id = :id
+                    """
+                ),
+                row,
+            )
+        else:
+            execute_safe(
+                text(
+                    """
+                    INSERT INTO payments (
+                        id, user_id, subscription_id, provider, provider_payment_id,
+                        amount_cents, currency, status, paid_at, created_at, metadata_json
+                    )
+                    VALUES (
+                        :id, :user_id, :subscription_id, :provider, :provider_payment_id,
+                        :amount_cents, :currency, :status, :paid_at, :created_at, :metadata_json
+                    )
+                    """
+                ),
+                row,
+            )
+    return _payment_from_row({**row, "email": user.get("email")})
+
+
+def stripe_webhook_event_status(stripe_event_id: str | None) -> dict | None:
+    if not stripe_event_id or not db_available():
+        return None
+    row = fetch_one_safe(text("SELECT * FROM stripe_webhook_events WHERE stripe_event_id = :stripe_event_id LIMIT 1"), {"stripe_event_id": stripe_event_id})
+    return dict(row) if row else None
+
+
+def record_stripe_webhook_event(stripe_event_id: str, event_type: str, status: str, payload: dict | None = None, error: str | None = None) -> dict:
+    row = {
+        "id": str(uuid.uuid4()),
+        "stripe_event_id": stripe_event_id,
+        "type": event_type,
+        "processed_at": _now(),
+        "status": status,
+        "error": error,
+        "payload_json": _json(payload or {}),
+    }
+    if db_available():
+        execute_safe(
+            text(
+                """
+                INSERT INTO stripe_webhook_events (id, stripe_event_id, type, processed_at, status, error, payload_json)
+                VALUES (:id, :stripe_event_id, :type, :processed_at, :status, :error, :payload_json)
+                ON CONFLICT (stripe_event_id) DO UPDATE SET
+                    processed_at = EXCLUDED.processed_at,
+                    status = EXCLUDED.status,
+                    error = EXCLUDED.error,
+                    payload_json = EXCLUDED.payload_json
+                """
+            ),
+            row,
+        )
+    return {**row, "processed_at": _iso(row["processed_at"])}
+
+
+def list_stripe_webhook_events(limit: int = 50) -> list[dict]:
+    if not db_available():
+        return []
+    rows = fetch_all_safe(
+        text("SELECT * FROM stripe_webhook_events ORDER BY processed_at DESC LIMIT :limit"),
+        {"limit": max(1, min(int(limit or 50), 200))},
+    )
+    return [
+        {
+            "stripe_event_id": row.get("stripe_event_id"),
+            "type": row.get("type"),
+            "processed_at": _iso(row.get("processed_at")),
+            "status": row.get("status"),
+            "error": row.get("error"),
+        }
+        for row in rows
+    ]
+
+
 def list_saas_subscriptions(limit: int = 100) -> list[dict]:
     if not db_available():
         return []
@@ -1660,12 +2082,15 @@ def list_super_admin_audit_log(limit: int = 100) -> list[dict]:
 
 def build_revenue_summary() -> dict:
     payments = list_saas_payments(limit=500)
+    subscriptions = list_saas_subscriptions(limit=500)
+    plan_lookup = {plan.get("code"): plan for plan in list_saas_plans()}
     succeeded = [item for item in payments if item.get("status") == "succeeded"]
     failed = [item for item in payments if item.get("status") == "failed"]
+    active = [item for item in subscriptions if item.get("status") in {"active", "trialing"}]
     return {
         "status": "ok",
         "currency": "EUR",
-        "mrr_cents": 0,
+        "mrr_cents": sum(_int_or_zero((plan_lookup.get(item.get("plan_code")) or {}).get("price_monthly_cents")) for item in active),
         "revenue_30_days_cents": sum(_int_or_zero(item.get("amount_cents")) for item in succeeded),
         "succeeded_payments": len(succeeded),
         "failed_payments": len(failed),
@@ -1680,9 +2105,12 @@ def build_super_admin_overview() -> dict:
     subscriptions = list_saas_subscriptions(limit=500)
     payments = list_saas_payments(limit=500)
     plans = list_saas_plans()
+    webhook_events = list_stripe_webhook_events(limit=10)
     active_users = [item for item in users if item.get("status") == "active"]
     paying = [item for item in subscriptions if item.get("status") in {"trialing", "active"}]
     failed_payments = [item for item in payments if item.get("status") == "failed"]
+    plan_lookup = {plan.get("code"): plan for plan in plans}
+    mrr = sum(_int_or_zero((plan_lookup.get(item.get("plan_code")) or {}).get("price_monthly_cents")) for item in paying)
     return {
         "status": "ok",
         "storage": "postgresql" if db_available() else "memory",
@@ -1690,13 +2118,23 @@ def build_super_admin_overview() -> dict:
         "active_users": len(active_users),
         "paying_subscribers": len(paying),
         "trial_users": len([item for item in subscriptions if item.get("status") == "trialing"]),
-        "monthly_revenue_cents": 0,
+        "monthly_revenue_cents": mrr,
         "failed_payments": len(failed_payments),
         "active_plans": len([item for item in plans if item.get("is_active")]),
         "churn_risk_count": len([item for item in subscriptions if item.get("status") in {"past_due", "unpaid"}]),
         "latest_signups": users[:5],
         "latest_payments": payments[:5],
-        "system_status": {"billing": "configured" if payments else "no_real_payments", "secrets": "server_side"},
+        "latest_webhook_events": webhook_events,
+        "stripe_customers_count": len([item for item in users if item.get("stripe_customer_id")]),
+        "active_subscriptions": len([item for item in subscriptions if item.get("status") == "active"]),
+        "past_due_subscriptions": len([item for item in subscriptions if item.get("status") in {"past_due", "unpaid"}]),
+        "users_without_customer": len([item for item in users if not item.get("stripe_customer_id")]),
+        "system_status": {
+            "billing": "configured" if payments or subscriptions else "no_real_payments",
+            "stripe": "configured" if os.getenv("STRIPE_SECRET_KEY") else "missing",
+            "webhooks": "received" if webhook_events else "none",
+            "secrets": "server_side",
+        },
     }
 
 

@@ -33,6 +33,8 @@ const billingStatusProxy = new URL('../pages/api/billing/status.ts', import.meta
 const billingSubscriptionProxy = new URL('../pages/api/billing/subscription.ts', import.meta.url);
 const billingCheckoutProxy = new URL('../pages/api/billing/create-checkout-session.ts', import.meta.url);
 const billingPortalProxy = new URL('../pages/api/billing/create-portal-session.ts', import.meta.url);
+const stripeWebhookProxy = new URL('../pages/api/webhooks/stripe.ts', import.meta.url);
+const productionHealthProxy = new URL('../pages/api/system/production-health.ts', import.meta.url);
 const superAdminPage = new URL('../pages/super-admin.tsx', import.meta.url);
 const superAdminOverviewProxy = new URL('../pages/api/super-admin/overview.ts', import.meta.url);
 const superAdminUsersProxy = new URL('../pages/api/super-admin/users/index.ts', import.meta.url);
@@ -58,6 +60,9 @@ const profilePage = new URL('../pages/profile.tsx', import.meta.url);
 const performancePage = new URL('../pages/performance.tsx', import.meta.url);
 const upgradePrompt = new URL('../components/UpgradePrompt.tsx', import.meta.url);
 const premiumGate = new URL('../components/PremiumGate.tsx', import.meta.url);
+const entitlementGate = new URL('../components/EntitlementGate.tsx', import.meta.url);
+const upgradeCard = new URL('../components/UpgradeCard.tsx', import.meta.url);
+const entitlementHelpers = new URL('../lib/entitlements.ts', import.meta.url);
 const featureAccess = new URL('../lib/feature-access.ts', import.meta.url);
 const uiComponents = new URL('../components/ui.tsx', import.meta.url);
 const teamAssets = new URL('../lib/team-assets.ts', import.meta.url);
@@ -168,8 +173,6 @@ async function run() {
     [await readFile(matchValueBetsProxy, 'utf8'), /\/value-bets\/match\/\$\{encodeURIComponent\(id\)\}/],
     [await readFile(billingStatusProxy, 'utf8'), /\/billing\/status/],
     [await readFile(billingSubscriptionProxy, 'utf8'), /\/billing\/subscription/],
-    [await readFile(billingCheckoutProxy, 'utf8'), /\/billing\/create-checkout-session/],
-    [await readFile(billingPortalProxy, 'utf8'), /\/billing\/create-portal-session/],
   ];
 
   for (const [source, pathPattern] of publicProxyChecks) {
@@ -395,6 +398,7 @@ async function run() {
   assert.match(apiClientSource, /getMySubscription/);
   assert.match(apiClientSource, /createCheckoutSession/);
   assert.match(apiClientSource, /createPortalSession/);
+  assert.match(apiClientSource, /getProductionHealth/);
   assert.match(apiClientSource, /\/api\/assistant\/predictions/);
   assert.match(apiClientSource, /\/api\/assistant\/match\/\$\{encodeURIComponent\(matchId\)\}/);
   assert.match(apiClientSource, /\/api\/assistant\/daily-brief/);
@@ -406,6 +410,7 @@ async function run() {
   assert.match(apiClientSource, /\/api\/billing\/subscription/);
   assert.match(apiClientSource, /\/api\/billing\/create-checkout-session/);
   assert.match(apiClientSource, /\/api\/billing\/create-portal-session/);
+  assert.match(apiClientSource, /\/api\/system\/production-health/);
   assert.match(apiClientSource, /fetchProxyJson<RefreshJobStatus>\(`\/api\/admin\/shadow-prediction-job-status/);
   assert.match(apiClientSource, /Impossible de charger \/features\/summary depuis le backend\./);
   assert.doesNotMatch(apiClientSource, /safeFetchJson/);
@@ -463,12 +468,15 @@ async function run() {
   assert.match(pricingSource, /Pricing/);
   assert.match(pricingSource, /Bientôt disponible/);
   assert.match(pricingSource, /createCheckoutSession/);
+  assert.match(apiClientSource, /plan_code/);
+  assert.match(apiClientSource, /billing_interval/);
 
   const profileSource = await readFile(profilePage, 'utf8');
   assert.doesNotMatch(profileSource, brokenEncoding);
   assert.match(profileSource, /Abonnement/);
   assert.match(profileSource, /getMySubscription/);
   assert.match(profileSource, /createPortalSession/);
+  assert.match(profileSource, /Gérer l'abonnement|GÃ©rer l'abonnement/);
 
   const upgradePromptSource = await readFile(upgradePrompt, 'utf8');
   assert.match(upgradePromptSource, /export function UpgradePrompt/);
@@ -477,6 +485,18 @@ async function run() {
   const premiumGateSource = await readFile(premiumGate, 'utf8');
   assert.match(premiumGateSource, /export function PremiumGate/);
   assert.match(premiumGateSource, /canAccessFeature/);
+
+  const entitlementGateSource = await readFile(entitlementGate, 'utf8');
+  assert.match(entitlementGateSource, /export function EntitlementGate/);
+  assert.match(entitlementGateSource, /hasEntitlement/);
+
+  const upgradeCardSource = await readFile(upgradeCard, 'utf8');
+  assert.match(upgradeCardSource, /export function UpgradeCard/);
+  assert.match(upgradeCardSource, /\/pricing/);
+
+  const entitlementHelperSource = await readFile(entitlementHelpers, 'utf8');
+  assert.match(entitlementHelperSource, /requireEntitlement/);
+  assert.match(entitlementHelperSource, /value_bets/);
 
   const featureAccessSource = await readFile(featureAccess, 'utf8');
   assert.match(featureAccessSource, /canViewValueBets/);
@@ -589,12 +609,32 @@ async function run() {
   assert.match(superAdminPageSource, /samir\.elh@outlook\.fr/);
   assert.match(superAdminPageSource, /requireSuperAdmin/);
   assert.match(superAdminPageSource, /Aucun paiement réel enregistré/);
+  assert.match(superAdminPageSource, /Production Health/);
 
   const superAdminApiSource = await readFile(apiClient, 'utf8');
   assert.match(superAdminApiSource, /getSuperAdminOverview/);
   assert.match(superAdminApiSource, /getSuperAdminUsers/);
   assert.match(superAdminApiSource, /getPayments/);
   assert.match(superAdminApiSource, /\/api\/super-admin\/overview/);
+  assert.match(superAdminApiSource, /\/api\/billing\/create-checkout-session/);
+  assert.match(superAdminApiSource, /\/api\/billing\/create-portal-session/);
+
+  const checkoutProxySource = await readFile(billingCheckoutProxy, 'utf8');
+  assert.match(checkoutProxySource, /requireBearerToken: true/);
+  assert.match(checkoutProxySource, /\/billing\/create-checkout-session/);
+
+  const portalProxySource = await readFile(billingPortalProxy, 'utf8');
+  assert.match(portalProxySource, /requireBearerToken: true/);
+  assert.match(portalProxySource, /\/billing\/create-portal-session/);
+
+  const webhookSource = await readFile(stripeWebhookProxy, 'utf8');
+  assert.match(webhookSource, /bodyParser: false/);
+  assert.match(webhookSource, /Stripe-Signature/);
+  assert.match(webhookSource, /\/billing\/webhook/);
+  assert.doesNotMatch(webhookSource, /STRIPE_SECRET_KEY|STRIPE_WEBHOOK_SECRET/);
+
+  const productionHealthSource = await readFile(productionHealthProxy, 'utf8');
+  assert.match(productionHealthSource, /\/system\/production-health/);
 
   for (const proxyFile of [superAdminOverviewProxy, superAdminUsersProxy, superAdminPaymentsProxy, superAdminPlansProxy, authMeProxy]) {
     const proxySource = await readFile(proxyFile, 'utf8');

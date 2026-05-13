@@ -10,13 +10,13 @@ import { Layout } from '~/src-layout';
 
 export default function ProfilePage() {
   const router = useRouter();
-  const { user, isAdmin, isSuperAdmin, role, signOut } = useAuth();
+  const { user, isAdmin, isSuperAdmin, role, session, signOut } = useAuth();
   const [subscription, setSubscription] = useState<SubscriptionResponse | null>(null);
   const [billingMessage, setBillingMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    getMySubscription().then(setSubscription).catch(() => setSubscription(null));
-  }, []);
+    getMySubscription(session?.access_token).then(setSubscription).catch(() => setSubscription(null));
+  }, [session?.access_token]);
 
   async function handleSignOut() {
     await signOut();
@@ -26,7 +26,7 @@ export default function ProfilePage() {
   async function handlePortal() {
     setBillingMessage(null);
     try {
-      const response = await createPortalSession();
+      const response = await createPortalSession(session?.access_token);
       if (response.status === 'ok' && response.portal_url) {
         window.location.href = response.portal_url;
         return;
