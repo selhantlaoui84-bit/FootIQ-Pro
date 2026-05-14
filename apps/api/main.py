@@ -43,7 +43,9 @@ from services.betting_assistant import analyze_prediction, generate_daily_assist
 from services.billing_service import (
     billing_status as build_billing_status,
     create_checkout_session,
+    create_checkout_session_for_user,
     create_customer_portal_session,
+    create_customer_portal_session_for_user,
     handle_stripe_webhook,
 )
 from services.odds_engine import implied_probability_from_odds
@@ -1128,37 +1130,48 @@ async def auth_onboarding(request: Request):
 
 
 @app.get("/billing/subscription")
-def billing_subscription(x_user_id: str | None = Header(default=None, alias="X-User-Id")):
-    user_id = x_user_id or "local-user"
+def billing_subscription(request: Request, x_user_id: str | None = Header(default=None, alias="X-User-Id")):
+    try:
+        user = _current_platform_user(request)
+        user_id = user["id"]
+    except HTTPException:
+        user_id = x_user_id or "local-user"
+        user = repository.get_user_by_id_or_email(user_id) or {"id": user_id, "role": repository.ROLE_USER}
     subscription = repository.get_user_subscription(user_id)
+    saas_subscription = repository.get_active_saas_subscription(user_id)
     limits = {
         feature: repository.check_usage_limit(user_id, feature)
         for feature in ("prediction_view", "value_bet_view", "assistant_request", "bet_created", "performance_view")
     }
+    entitlements = repository.get_user_entitlements(user_id)
     return {
         "status": "ok",
         "user_id": user_id,
-        "plan": subscription.get("plan", "free"),
-        "subscription_status": subscription.get("status", "free"),
-        "current_period_end": subscription.get("current_period_end"),
-        "cancel_at_period_end": subscription.get("cancel_at_period_end", False),
+        "plan": (saas_subscription or {}).get("plan_code") or subscription.get("plan", "free"),
+        "subscription_status": (saas_subscription or {}).get("status") or subscription.get("status", "free"),
+        "current_period_end": (saas_subscription or {}).get("current_period_end") or subscription.get("current_period_end"),
+        "cancel_at_period_end": (saas_subscription or {}).get("cancel_at_period_end", subscription.get("cancel_at_period_end", False)),
         "limits": limits,
         "subscription": subscription,
+        "saas_subscription": saas_subscription,
+        "entitlements": [item.get("feature_key") for item in entitlements if item.get("enabled")],
+        "role": user.get("role"),
     }
 
 
 @app.post("/billing/create-checkout-session")
-async def billing_create_checkout_session(request: Request, x_user_id: str | None = Header(default=None, alias="X-User-Id")):
+async def billing_create_checkout_session(request: Request):
+    user = _current_platform_user(request)
     body = await request.json()
-    user_id = x_user_id or body.get("user_id") or "local-user"
-    plan = body.get("plan") or "premium"
-    interval = body.get("interval") or "monthly"
-    return create_checkout_session(str(user_id), str(plan), str(interval))
+    plan = body.get("plan_code") or body.get("plan") or "premium"
+    interval = body.get("billing_interval") or body.get("interval") or "monthly"
+    return create_checkout_session_for_user(user, str(plan), str(interval), body.get("success_url"), body.get("cancel_url"))
 
 
 @app.post("/billing/create-portal-session")
-def billing_create_portal_session(x_user_id: str | None = Header(default=None, alias="X-User-Id")):
-    return create_customer_portal_session(x_user_id or "local-user")
+def billing_create_portal_session(request: Request):
+    user = _current_platform_user(request)
+    return create_customer_portal_session_for_user(user)
 
 
 @app.post("/billing/webhook")
@@ -1167,7 +1180,47 @@ async def billing_webhook(request: Request, stripe_signature: str | None = Heade
     result = handle_stripe_webhook(payload, stripe_signature)
     if result.get("status") == "invalid_signature":
         raise HTTPException(status_code=400, detail=result.get("detail"))
+    if result.get("status") == "error":
+        raise HTTPException(status_code=500, detail=result.get("detail"))
     return result
+
+
+@app.get("/system/production-health")
+def production_health():
+    latest_model = repository.get_current_production_model() or repository.get_latest_candidate_model()
+    latest_refresh = repository.get_latest_refresh_log()
+    webhook_events = repository.list_stripe_webhook_events(limit=5)
+    payments = repository.list_saas_payments(limit=500)
+    failed_24h = 0
+    now = datetime.now(timezone.utc)
+    for payment in payments:
+        if payment.get("status") != "failed":
+            continue
+        created_at = payment.get("created_at")
+        try:
+            created = datetime.fromisoformat(str(created_at).replace("Z", "+00:00"))
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            if (now - created).total_seconds() <= 86400:
+                failed_24h += 1
+        except Exception:
+            failed_24h += 1
+    return {
+        "status": "ok",
+        "generated_at": now.isoformat(),
+        "database": "ok" if repository.db_available() else "missing",
+        "stripe": "configured" if os.getenv("STRIPE_SECRET_KEY") else "missing",
+        "stripe_webhook": "configured" if os.getenv("STRIPE_WEBHOOK_SECRET") else "missing",
+        "odds_provider": "configured" if is_odds_configured() else "missing",
+        "latest_refresh": latest_refresh,
+        "latest_model_version": (latest_model or {}).get("model_version"),
+        "last_webhook_event": webhook_events[0] if webhook_events else None,
+        "failed_payments_24h": failed_24h,
+        "api_status": "ok",
+        "admin_routes_status": "server_side_key_required",
+        "super_admin_routes_status": "jwt_role_required",
+        "secrets": "not_exposed",
+    }
 
 
 @app.get("/super-admin/overview")

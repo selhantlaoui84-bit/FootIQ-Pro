@@ -313,6 +313,7 @@ users_table = Table(
     Column("role", Text, nullable=False, default="user"),
     Column("status", Text, nullable=False, default="active"),
     Column("plan_id", Text, nullable=True),
+    Column("stripe_customer_id", Text, nullable=True),
     Column("created_at", TIMESTAMP(timezone=True)),
     Column("updated_at", TIMESTAMP(timezone=True)),
     Column("last_login_at", TIMESTAMP(timezone=True), nullable=True),
@@ -321,6 +322,7 @@ users_table = Table(
 Index("ux_users_email", users_table.c.email, unique=True)
 Index("ix_users_role", users_table.c.role)
 Index("ix_users_status", users_table.c.status)
+Index("ix_users_stripe_customer_id", users_table.c.stripe_customer_id)
 
 saas_plans_table = Table(
     "saas_plans",
@@ -409,6 +411,21 @@ super_admin_audit_log_table = Table(
 )
 Index("ix_super_admin_audit_actor_email", super_admin_audit_log_table.c.actor_email)
 Index("ix_super_admin_audit_created_at", super_admin_audit_log_table.c.created_at)
+
+stripe_webhook_events_table = Table(
+    "stripe_webhook_events",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("stripe_event_id", Text, nullable=False),
+    Column("type", Text, nullable=True),
+    Column("processed_at", TIMESTAMP(timezone=True), nullable=True),
+    Column("status", Text, nullable=False, default="processing"),
+    Column("error", Text, nullable=True),
+    Column("payload_json", Text, nullable=True),
+)
+Index("ux_stripe_webhook_events_event_id", stripe_webhook_events_table.c.stripe_event_id, unique=True)
+Index("ix_stripe_webhook_events_type", stripe_webhook_events_table.c.type)
+Index("ix_stripe_webhook_events_processed_at", stripe_webhook_events_table.c.processed_at)
 
 
 def get_database_url() -> str | None:
@@ -519,6 +536,8 @@ def _ensure_runtime_columns_and_indexes(engine: Engine) -> None:
             "CREATE UNIQUE INDEX IF NOT EXISTS ux_users_email ON users(email)",
             "CREATE INDEX IF NOT EXISTS ix_users_role ON users(role)",
             "CREATE INDEX IF NOT EXISTS ix_users_status ON users(status)",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT",
+            "CREATE INDEX IF NOT EXISTS ix_users_stripe_customer_id ON users(stripe_customer_id)",
             "CREATE UNIQUE INDEX IF NOT EXISTS ux_saas_plans_code ON saas_plans(code)",
             "CREATE INDEX IF NOT EXISTS ix_saas_plans_is_active ON saas_plans(is_active)",
             "CREATE INDEX IF NOT EXISTS ix_subscriptions_user_id ON subscriptions(user_id)",
@@ -529,6 +548,9 @@ def _ensure_runtime_columns_and_indexes(engine: Engine) -> None:
             "CREATE INDEX IF NOT EXISTS ix_access_entitlements_feature_key ON access_entitlements(feature_key)",
             "CREATE INDEX IF NOT EXISTS ix_super_admin_audit_actor_email ON super_admin_audit_log(actor_email)",
             "CREATE INDEX IF NOT EXISTS ix_super_admin_audit_created_at ON super_admin_audit_log(created_at)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_stripe_webhook_events_event_id ON stripe_webhook_events(stripe_event_id)",
+            "CREATE INDEX IF NOT EXISTS ix_stripe_webhook_events_type ON stripe_webhook_events(type)",
+            "CREATE INDEX IF NOT EXISTS ix_stripe_webhook_events_processed_at ON stripe_webhook_events(processed_at)",
         ]
     elif engine.dialect.name == "sqlite":
         statements = [
@@ -572,6 +594,7 @@ def _ensure_runtime_columns_and_indexes(engine: Engine) -> None:
             "CREATE UNIQUE INDEX IF NOT EXISTS ux_users_email ON users(email)",
             "CREATE INDEX IF NOT EXISTS ix_users_role ON users(role)",
             "CREATE INDEX IF NOT EXISTS ix_users_status ON users(status)",
+            "CREATE INDEX IF NOT EXISTS ix_users_stripe_customer_id ON users(stripe_customer_id)",
             "CREATE UNIQUE INDEX IF NOT EXISTS ux_saas_plans_code ON saas_plans(code)",
             "CREATE INDEX IF NOT EXISTS ix_saas_plans_is_active ON saas_plans(is_active)",
             "CREATE INDEX IF NOT EXISTS ix_subscriptions_user_id ON subscriptions(user_id)",
@@ -582,6 +605,9 @@ def _ensure_runtime_columns_and_indexes(engine: Engine) -> None:
             "CREATE INDEX IF NOT EXISTS ix_access_entitlements_feature_key ON access_entitlements(feature_key)",
             "CREATE INDEX IF NOT EXISTS ix_super_admin_audit_actor_email ON super_admin_audit_log(actor_email)",
             "CREATE INDEX IF NOT EXISTS ix_super_admin_audit_created_at ON super_admin_audit_log(created_at)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_stripe_webhook_events_event_id ON stripe_webhook_events(stripe_event_id)",
+            "CREATE INDEX IF NOT EXISTS ix_stripe_webhook_events_type ON stripe_webhook_events(type)",
+            "CREATE INDEX IF NOT EXISTS ix_stripe_webhook_events_processed_at ON stripe_webhook_events(processed_at)",
         ]
         with engine.connect() as connection:
             columns = {row._mapping["name"] for row in connection.execute(text("PRAGMA table_info(feature_snapshots)"))}
@@ -609,6 +635,10 @@ def _ensure_runtime_columns_and_indexes(engine: Engine) -> None:
         for column_name, alter_statement in sqlite_user_bet_columns.items():
             if column_name not in user_bet_columns:
                 statements.insert(0, alter_statement)
+        with engine.connect() as connection:
+            user_columns = {row._mapping["name"] for row in connection.execute(text("PRAGMA table_info(users)"))}
+        if "stripe_customer_id" not in user_columns:
+            statements.insert(0, "ALTER TABLE users ADD COLUMN stripe_customer_id TEXT")
     else:
         statements = []
 

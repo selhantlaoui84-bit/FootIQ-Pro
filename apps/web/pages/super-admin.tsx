@@ -4,6 +4,7 @@ import { Card, EmptyState, ErrorState, LoadingState, MetricCard, PageHeader, Sta
 import {
   getEntitlements,
   getPayments,
+  getProductionHealth,
   getRevenueSummary,
   getSaasPlans,
   getSubscriptions,
@@ -26,6 +27,7 @@ type SuperAdminState = {
   entitlements: any[];
   auditLog: any[];
   revenue: any | null;
+  productionHealth: any | null;
 };
 
 const emptyState: SuperAdminState = {
@@ -37,6 +39,7 @@ const emptyState: SuperAdminState = {
   entitlements: [],
   auditLog: [],
   revenue: null,
+  productionHealth: null,
 };
 
 function formatMoney(cents?: number | null, currency = 'EUR') {
@@ -74,7 +77,7 @@ export default function SuperAdminPage() {
     setLoading(true);
     setError(null);
     try {
-      const [overview, users, plans, subscriptions, payments, entitlements, auditLog, revenue] = await Promise.all([
+      const [overview, users, plans, subscriptions, payments, entitlements, auditLog, revenue, productionHealth] = await Promise.all([
         getSuperAdminOverview(accessToken),
         getSuperAdminUsers(undefined, accessToken),
         getSaasPlans(accessToken),
@@ -83,6 +86,7 @@ export default function SuperAdminPage() {
         getEntitlements(undefined, accessToken),
         getSuperAdminAuditLog(undefined, accessToken),
         getRevenueSummary(accessToken),
+        getProductionHealth(),
       ]);
       setState({
         overview,
@@ -93,6 +97,7 @@ export default function SuperAdminPage() {
         entitlements: entitlements?.items ?? [],
         auditLog: auditLog?.items ?? [],
         revenue,
+        productionHealth,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Super Admin indisponible.');
@@ -210,6 +215,18 @@ export default function SuperAdminPage() {
                   <h2>Revenus réels</h2>
                   <MetricCard label="Revenus 30 jours" value={formatMoney(state.revenue?.revenue_30_days_cents, state.revenue?.currency)} />
                   <p className="mutedText">{state.revenue?.note ?? 'Données Stripe synchronisées côté serveur.'}</p>
+                </Card>
+
+                <Card>
+                  <p className="eyebrow">Production Health</p>
+                  <h2>Monitoring production</h2>
+                  <div className="dataList">
+                    <span>Database <strong>{state.productionHealth?.database ?? 'Données insuffisantes'}</strong></span>
+                    <span>Stripe <strong>{state.productionHealth?.stripe ?? 'Données insuffisantes'}</strong></span>
+                    <span>Webhook <strong>{state.productionHealth?.stripe_webhook ?? 'Données insuffisantes'}</strong></span>
+                    <span>Cotes réelles <strong>{state.productionHealth?.odds_provider ?? 'Données insuffisantes'}</strong></span>
+                    <span>Paiements échoués 24h <strong>{state.productionHealth?.failed_payments_24h ?? 'Données insuffisantes'}</strong></span>
+                  </div>
                 </Card>
 
                 <Card className="span2">
